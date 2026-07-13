@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "DeepSeek V4 Flash Q2_K",
+  "description": "Build GGUF stabile ottimizzata per DS4 su Apple Silicon.",
+  "status": "stable",
+  "recommended": true,
+  "modelId": "deepseek-v4-flash",
+  "runtimeBranch": "main",
+  "runtimeCommit": "c58e91f48910f16be92ac1338bb39de36317722d",
+  "file": "deepseek-v4-flash-q2_k.gguf",
+  "minimumMemoryGb": 64
+}
