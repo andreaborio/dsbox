@@ -2,11 +2,26 @@ import { describe, expect, it } from "vitest";
 import { createDefaultConfig } from "../server/config.js";
 import {
   buildEngineArguments,
+  orderedLocalModelScanRoots,
   parseEnvironment,
   parseFallbackModelFilename,
   remainingDownloadBytes,
   tokenizeArguments
 } from "../server/runtime.js";
+
+describe("local model scan roots", () => {
+  it("checks visible home-folder siblings before caches and external volumes", () => {
+    const roots = orderedLocalModelScanRoots(
+      "/Users/alice/.dsbox/models/current/model.gguf",
+      "/Users/alice/.dsbox",
+      "/Users/alice"
+    );
+
+    expect(roots).toContain("/Users/alice");
+    expect(roots.indexOf("/Users/alice")).toBeLessThan(roots.indexOf("/Users/alice/.cache/huggingface/hub"));
+    expect(roots.indexOf("/Users/alice")).toBeLessThan(roots.indexOf("/Volumes"));
+  });
+});
 
 describe("argument tokenizer", () => {
   it("preserves quoted values without invoking a shell", () => {

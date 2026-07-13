@@ -6,7 +6,7 @@ const CANCELLED_RESULT = "__DSBOX_FILE_PICKER_CANCELLED__";
 
 export const finderGgufPickerScript = `
 try
-  set selectedFile to choose file with prompt "Choose a GGUF model file" of type {"gguf"}
+  set selectedFile to choose file with prompt "Choose a .gguf model file"
   return POSIX path of selectedFile
 on error number -128
   return "${CANCELLED_RESULT}"
@@ -34,8 +34,10 @@ function wasNativeCancellation(error: unknown): boolean {
 
 /**
  * Opens Finder's native file chooser without interpolating any user input into
- * the AppleScript. The selected path is validated by RuntimeManager before it
- * is persisted, so this function deliberately does not read or upload the file.
+ * the AppleScript. Do not use `of type {"gguf"}` here: GGUF does not have a
+ * universally registered macOS UTI, so Finder can disable valid files on a
+ * clean Mac. RuntimeManager validates the extension, magic bytes, and shards
+ * before persisting the selection.
  */
 export async function chooseGgufFileInFinder(
   runner: NativeFilePickerRunner = runNativeFilePicker,

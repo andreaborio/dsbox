@@ -7,7 +7,8 @@ describe("native GGUF file picker", () => {
 
     await expect(chooseGgufFileInFinder(runner, "darwin")).resolves.toBe("/Users/alice/My Models/model.gguf");
     expect(runner).toHaveBeenCalledWith("/usr/bin/osascript", ["-e", finderGgufPickerScript]);
-    expect(finderGgufPickerScript).toContain('of type {"gguf"}');
+    expect(finderGgufPickerScript).toContain("Choose a .gguf model file");
+    expect(finderGgufPickerScript).not.toContain("of type");
   });
 
   it("treats Finder cancellation as a clean empty result", async () => {
