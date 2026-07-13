@@ -104,7 +104,7 @@ The effective command is always available for inspection. The process is created
 ### Measured SSD-streaming performance
 
 The immutable benchmark reference is
-[`andreaborio/ds4@6aa496d`](https://github.com/andreaborio/ds4/commit/6aa496d98d5fb0121dec7546503fb0989369e921).
+[`andreaborio/ds4@91e0f5d`](https://github.com/andreaborio/ds4/commit/91e0f5dc4dbf26280207b2ae642a9ff835bf488f).
 All rows use the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF on AC power,
 without static-weight pinning. Short results are highly sensitive to workload
 length and macOS page-cache state, so they are not hardware guarantees.
@@ -112,6 +112,7 @@ length and macOS page-cache state, so they are not hardware guarantees.
 | Mac | Tested ds4 build and cache | Bounded workload | Generation throughput |
 | --- | --- | --- | ---: |
 | M1 Pro, 16 GB | `2f95e67`, exact 259, context 8,192 | DSBox API, 9 prompt + 2 output tokens | 0.30 t/s cold; 0.53 / 0.51 / 0.51 t/s warm (~0.52 t/s) |
+| M5 Pro, 64 GB | `6aa496d`, AUTO 3,613, context 32,768 | two sequential DSBox API requests, 22–23 prompt + 64 output tokens | 9.88 / 12.86 t/s |
 | M5 Pro, 64 GB | `f4e0e64`, AUTO 4,387, context 32,768 | `ds4-bench`, 128 prompt + 64 decode tokens | 13.05 / 13.59 t/s (13.3173 geomean) |
 | M5 Pro, 64 GB | `f4e0e64`, exact 4,342 reference | same bounded ABBA comparison | 13.74 / 13.78 t/s (13.7600 geomean) |
 
@@ -122,6 +123,11 @@ server row is historical: `2f95e67` was reverted because its startup bridge
 could admit too little sustained headroom. A separate extremely hot two-token
 CLI micro-canary reached 2.13–2.46 t/s; it is not representative of sustained
 DSBox service and is not used as the headline result.
+
+In the current M5 service-path canary, lower live headroom made AUTO choose
+3,613 experts / 23.82 GiB. Both 64-token requests kept macOS pressure normal
+and added zero swapout; the second, warmer but different prompt reached
+12.86 t/s.
 
 ## Models: local files and the DSBox catalog
 
