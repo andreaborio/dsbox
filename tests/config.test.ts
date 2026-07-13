@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { configSchema, createDefaultConfig, hardwareProfile, migrateLegacyLowMemoryDefaults } from "../server/config.js";
+import {
+  configSchema,
+  createDefaultConfig,
+  hardwareProfile,
+  migrateVersion1Config,
+  type LegacyDsboxConfig
+} from "../server/config.js";
 
 describe("default config", () => {
   it("prioritizes expert-cache headroom on a 16 GB Mac", () => {
@@ -16,13 +22,26 @@ describe("default config", () => {
     expect(createDefaultConfig(16 * 1024 ** 3).server.powerPercent).toBe(100);
   });
 
-  it("migrates the legacy 32 GB cache on low-memory Macs only", () => {
-    const legacy = createDefaultConfig(64 * 1024 ** 3);
-    const migrated = migrateLegacyLowMemoryDefaults(legacy, 16 * 1024 ** 3);
+  it("migrates the version-1 default cache exactly once on 16 and 64 GB Macs", () => {
+    const legacy = { ...createDefaultConfig(64 * 1024 ** 3), version: 1 } as LegacyDsboxConfig;
+    legacy.streaming.cacheMode = "manual";
+    const migrated = migrateVersion1Config(legacy, 16 * 1024 ** 3);
+    expect(migrated.version).toBe(2);
     expect(migrated.server.contextTokens).toBe(8_192);
     expect(migrated.server.maxOutputTokens).toBe(4_096);
     expect(migrated.streaming).toMatchObject({ cacheMode: "auto", cacheSizeGb: 8 });
-    expect(migrateLegacyLowMemoryDefaults(legacy, 64 * 1024 ** 3)).toEqual(legacy);
+    expect(migrateVersion1Config(legacy, 64 * 1024 ** 3).streaming.cacheMode).toBe("auto");
+  });
+
+  it("preserves an explicit version-1 cache override during migration", () => {
+    const legacy = { ...createDefaultConfig(64 * 1024 ** 3), version: 1 } as LegacyDsboxConfig;
+    legacy.streaming.cacheMode = "manual";
+    legacy.advanced.extraArgs = "--ssd-streaming-cache-experts=4342";
+    const migrated = migrateVersion1Config(legacy, 64 * 1024 ** 3);
+    expect(migrated).toMatchObject({
+      version: 2,
+      streaming: { cacheMode: "manual", cacheSizeGb: 32 }
+    });
   });
 
   it("selects a safe 32K profile on a 64 GB Mac", () => {
@@ -31,7 +50,7 @@ describe("default config", () => {
     expect(config.repository.branch).toBe("main");
     expect(config.server.contextTokens).toBe(32_768);
     expect(config.streaming.enabled).toBe(true);
-    expect(config.streaming.cacheMode).toBe("manual");
+    expect(config.streaming.cacheMode).toBe("auto");
     expect(config.kvCache.enabled).toBe(true);
     expect(config.server.internalHost).toBe("127.0.0.1");
   });

@@ -4,11 +4,11 @@ import path from "node:path";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { DsboxConfig } from "../src/types.js";
+import { hasArgumentOption } from "../src/lib/arguments.js";
 
 const positiveInt = z.number().int().positive();
 
-export const configSchema: z.ZodType<DsboxConfig> = z.object({
-  version: z.literal(1),
+const baseConfigSchema = z.object({
   repository: z.object({
     url: z.string().url().refine((value) => value.startsWith("https://"), "Use an HTTPS repository URL"),
     branch: z.string().min(1).max(160).regex(/^[A-Za-z0-9._\/-]+$/),
@@ -60,6 +60,10 @@ export const configSchema: z.ZodType<DsboxConfig> = z.object({
   })
 });
 
+const legacyConfigSchema = baseConfigSchema.extend({ version: z.literal(1) });
+export const configSchema: z.ZodType<DsboxConfig> = baseConfigSchema.extend({ version: z.literal(2) });
+export type LegacyDsboxConfig = z.infer<typeof legacyConfigSchema>;
+
 export interface HardwareProfile {
   contextTokens: number;
   maxOutputTokens: number;
@@ -72,21 +76,25 @@ export function hardwareProfile(totalMemory: number): HardwareProfile {
   if (gib <= 18) return { contextTokens: 8_192, maxOutputTokens: 4_096, cacheMode: "auto", cacheSizeGb: 8 };
   if (gib <= 26) return { contextTokens: 16_384, maxOutputTokens: 8_192, cacheMode: "auto", cacheSizeGb: 12 };
   if (gib <= 40) return { contextTokens: 32_768, maxOutputTokens: 16_384, cacheMode: "auto", cacheSizeGb: 20 };
-  if (gib <= 72) return { contextTokens: 32_768, maxOutputTokens: 32_768, cacheMode: "manual", cacheSizeGb: 32 };
+  if (gib <= 72) return { contextTokens: 32_768, maxOutputTokens: 32_768, cacheMode: "auto", cacheSizeGb: 32 };
   if (gib <= 160) return { contextTokens: 100_000, maxOutputTokens: 32_768, cacheMode: "auto", cacheSizeGb: 32 };
   return { contextTokens: 200_000, maxOutputTokens: 32_768, cacheMode: "auto", cacheSizeGb: 32 };
 }
 
-export function migrateLegacyLowMemoryDefaults(config: DsboxConfig, totalMemory: number): DsboxConfig {
+export function migrateVersion1Config(config: LegacyDsboxConfig, totalMemory: number): DsboxConfig {
   const profile = hardwareProfile(totalMemory);
-  const legacyLowMemoryProfile = totalMemory / 1024 ** 3 <= 40
-    && config.server.contextTokens === 32_768
+  const legacyDefaultProfile = config.server.contextTokens === 32_768
+    && config.server.maxOutputTokens === 32_768
     && config.streaming.enabled
     && config.streaming.cacheMode === "manual"
-    && config.streaming.cacheSizeGb === 32;
-  if (!legacyLowMemoryProfile) return config;
+    && config.streaming.cacheSizeGb === 32
+    && !config.streaming.coldStart
+    && config.streaming.preloadExperts === null
+    && !hasArgumentOption(config.advanced.extraArgs, "--ssd-streaming-cache-experts");
+  if (!legacyDefaultProfile) return { ...config, version: 2 };
   return {
     ...config,
+    version: 2,
     server: {
       ...config.server,
       contextTokens: profile.contextTokens,
@@ -105,7 +113,7 @@ export function createDefaultConfig(totalMemory: number): DsboxConfig {
   const runtimeDirectory = path.join(home, "runtime", "andreaborio-ds4");
   const profile = hardwareProfile(totalMemory);
   return {
-    version: 1,
+    version: 2,
     repository: {
       url: "https://github.com/andreaborio/ds4.git",
       branch: "main",
@@ -176,10 +184,12 @@ export class ConfigStore {
     let config: DsboxConfig;
     try {
       const raw = await readFile(configPath, "utf8");
-      const parsed = configSchema.parse(JSON.parse(raw));
-      config = migrateLegacyLowMemoryDefaults(parsed, totalMemory);
-      if (JSON.stringify(config) !== JSON.stringify(parsed)) {
+      const candidate = JSON.parse(raw) as { version?: unknown };
+      if (candidate.version === 1) {
+        config = migrateVersion1Config(legacyConfigSchema.parse(candidate), totalMemory);
         await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+      } else {
+        config = configSchema.parse(candidate);
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !(error instanceof z.ZodError)) {

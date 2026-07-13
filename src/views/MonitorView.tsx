@@ -19,6 +19,7 @@ import {
 import { useMemo, useState } from "react";
 import type { AppSnapshot, LogEntry, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
+import { argumentOptionValue, tokenizeArguments } from "../lib/arguments";
 import { formatBytes, formatPercent, timeLabel } from "../lib/format";
 import { Sparkline, StatusPill } from "../components/ui";
 
@@ -29,6 +30,12 @@ interface Props {
 }
 
 type LogFilter = "all" | LogEntry["source"] | "warnings";
+
+function cacheLabel(value: string): string {
+  if (value.toUpperCase().endsWith("GB")) return value;
+  const experts = Number(value);
+  return Number.isFinite(experts) ? `${experts.toLocaleString("en-US")} experts` : value;
+}
 
 export function MonitorView({ snapshot }: Props) {
   const [logFilter, setLogFilter] = useState<LogFilter>("all");
@@ -51,6 +58,31 @@ export function MonitorView({ snapshot }: Props) {
   const memoryWarning = latest?.memoryPressureLevel ? latest.memoryPressureLevel !== "normal" : pressure !== null && pressure !== undefined ? pressure > 65 : memoryPercent > 90;
   const fileCachePercent = latest?.memoryTotalBytes ? latest.memoryFileCacheBytes / latest.memoryTotalBytes * 100 : 0;
   const liveTokensPerSecond = snapshot.activity.stage === "idle" ? null : latest?.tokensPerSecond ?? null;
+  const runtimeActive = ["starting", "running", "stopping"].includes(runtime.phase);
+  const runtimeCache = runtimeActive
+    ? argumentOptionValue(runtime.command, "--ssd-streaming-cache-experts")
+    : null;
+  const runtimeStreaming = runtimeActive && runtime.command.includes("--ssd-streaming");
+  let configuredCacheOverride: string | null = null;
+  try {
+    configuredCacheOverride = argumentOptionValue(
+      tokenizeArguments(config.advanced.extraArgs),
+      "--ssd-streaming-cache-experts"
+    );
+  } catch {
+    // Invalid advanced arguments are reported when the user tries to start.
+  }
+  const modelCacheLabel = runtimeActive
+    ? !runtimeStreaming
+      ? "Not used"
+      : runtimeCache
+        ? cacheLabel(runtimeCache)
+        : "Adaptive · DS4"
+    : configuredCacheOverride
+      ? cacheLabel(configuredCacheOverride)
+      : config.streaming.cacheMode === "auto"
+        ? "Adaptive · DS4"
+        : `${config.streaming.cacheSizeGb} GB`;
 
   return (
     <div className="monitor-page page-scroll">
@@ -132,9 +164,9 @@ export function MonitorView({ snapshot }: Props) {
           </div>
           <div className="io-facts">
             <div><span>Volume</span><strong>{latest ? formatBytes(latest.diskTotalBytes, 0) : "—"}</strong></div>
-            <div><span>Model cache</span><strong>{config.streaming.cacheMode === "auto" ? "Adaptive" : `${config.streaming.cacheSizeGb} GB`}</strong></div>
+            <div><span>Model cache</span><strong>{modelCacheLabel}</strong></div>
             <div><span>On-disk context</span><strong>{config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
-            <div><span>Mode</span><strong>{config.streaming.enabled ? "SSD streaming" : "In memory"}</strong></div>
+            <div><span>Mode</span><strong>{(runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
           </div>
           <p className="metric-disclaimer"><Info size={13} /> macOS does not reliably expose per-process SSD throughput without internal instrumentation.</p>
         </article>

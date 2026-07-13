@@ -13,7 +13,8 @@ The interface is intentionally focused: a ChatGPT-style chat, a single control f
 - a multi-source model catalog for DS4 releases from `andreaborio` and relevant official Unsloth GGUF repositories;
 - recommendations attributed exclusively to DSBox, never to the catalog author;
 - graceful process startup and shutdown, with a real readiness check against `GET /v1/models`;
-- a 64 GB profile with `--ssd-streaming`, a 32K context, and a 32 GB expert cache;
+- RAM-aware context/output profiles with expert-cache sizing delegated to DS4's live hardware and model planner;
+- an independent 1 Hz macOS pressure/swap watchdog for automatic cache profiles;
 - adaptive 16/24 GB profiles that trade unused context allocation for a larger safe expert cache;
 - a profile with an automatically calculated cache budget;
 - UI controls for context, power, threads, prefill, KV disk, trace, imatrix, flags, and environment variables;
@@ -96,9 +97,31 @@ Artifacts are written to `release/`. Local development builds are intentionally 
 3. Wait until the model is shown as ready. Interrupted catalog downloads can resume from the point they reached.
 4. Select **Power on** and wait for **DSBox is on**.
 
-You do not need to choose a branch, calculate the cache size, or understand SSD streaming: DSBox adapts context and expert-cache planning to the detected Mac. A 16 GB Mac starts at an 8K context and lets DS4 calculate the largest safe cache; 24 GB starts at 16K; 32 GB and larger keep at least 32K. Manual controls remain available in **Settings**, while checkout details, the effective command, and logs are grouped in the technical section.
+You do not need to choose a branch, calculate the cache size, or understand SSD streaming: DSBox bounds context and output length from unified-memory capacity, then leaves expert-cache sizing to DS4's live model geometry and macOS memory budget. This avoids hard-coding a cache count from one GGUF into another quantization. Automatic cache runs start only at normal memory pressure and are checked independently once per second; DSBox stops the runtime if pressure reaches warning, host-wide swapout grows by more than 1 MiB, or the safety signals cannot be read three times in a row. A safety stop escalates from a short `SIGTERM` grace to `SIGKILL`. Manual controls remain available in **Settings**, while checkout details, the effective command, and logs are grouped in the technical section.
 
 The effective command is always available for inspection. The process is created from an `argv` array and never from a string passed to a shell.
+
+### Measured SSD-streaming performance
+
+The immutable benchmark reference is
+[`andreaborio/ds4@6aa496d`](https://github.com/andreaborio/ds4/commit/6aa496d98d5fb0121dec7546503fb0989369e921).
+All rows use the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF on AC power,
+without static-weight pinning. Short results are highly sensitive to workload
+length and macOS page-cache state, so they are not hardware guarantees.
+
+| Mac | Tested ds4 build and cache | Bounded workload | Generation throughput |
+| --- | --- | --- | ---: |
+| M1 Pro, 16 GB | `2f95e67`, exact 259, context 8,192 | DSBox API, 9 prompt + 2 output tokens | 0.30 t/s cold; 0.53 / 0.51 / 0.51 t/s warm (~0.52 t/s) |
+| M5 Pro, 64 GB | `f4e0e64`, AUTO 4,387, context 32,768 | `ds4-bench`, 128 prompt + 64 decode tokens | 13.05 / 13.59 t/s (13.3173 geomean) |
+| M5 Pro, 64 GB | `f4e0e64`, exact 4,342 reference | same bounded ABBA comparison | 13.74 / 13.78 t/s (13.7600 geomean) |
+
+The exact M5 reference was 3.32% faster than AUTO, with identical frontier
+logits and zero new swapout, but DSBox deliberately keeps the generic default
+on DS4 AUTO so cache size follows the actual GGUF and live host budget. The M1
+server row is historical: `2f95e67` was reverted because its startup bridge
+could admit too little sustained headroom. A separate extremely hot two-token
+CLI micro-canary reached 2.13–2.46 t/s; it is not representative of sustained
+DSBox service and is not used as the headline result.
 
 ## Models: local files and the DSBox catalog
 

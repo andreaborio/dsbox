@@ -20,6 +20,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Button, CopyButton, Field, Select, Toggle } from "../components/ui";
 import type { DsboxController } from "../hooks/useDsbox";
+import { hasArgumentOption, shellDisplayArgument } from "../lib/arguments";
+import { buildEngineArguments } from "../lib/engine-arguments";
 import { formatModelName } from "../lib/format";
 import type { AppSnapshot, DsboxConfig, ViewId } from "../types";
 
@@ -68,6 +70,7 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
   const runtimeActive = ["running", "starting"].includes(snapshot.runtime.phase);
   const unifiedMemoryGb = snapshot.system.totalMemoryBytes / 1024 ** 3;
   const manualCacheMaxGb = Math.min(128, Math.max(8, Math.floor((unifiedMemoryGb * 0.75) / 4) * 4));
+  const advancedCacheOverride = hasArgumentOption(draft.advanced.extraArgs, "--ssd-streaming-cache-experts");
 
   const update = <K extends keyof DsboxConfig>(section: K, value: DsboxConfig[K]) => {
     setDraft((current) => ({ ...current, [section]: value }));
@@ -86,23 +89,14 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
   };
 
   const commandPreview = useMemo(() => {
-    const parts = [
-      `${draft.repository.directory}/ds4-server`,
-      "--metal", "-m", draft.model.path,
-      "--ctx", String(draft.server.contextTokens),
-      "--tokens", String(draft.server.maxOutputTokens),
-      "--power", String(draft.server.powerPercent),
-      "--host", "127.0.0.1", "--port", String(draft.server.internalPort)
-    ];
-    if (draft.streaming.enabled) {
-      parts.push("--ssd-streaming");
-      if (draft.streaming.cacheMode === "manual") parts.push("--ssd-streaming-cache-experts", `${draft.streaming.cacheSizeGb}GB`);
+    try {
+      return [
+        `${draft.repository.directory}/ds4-server`,
+        ...buildEngineArguments(draft)
+      ].map(shellDisplayArgument).join(" ");
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
     }
-    if (draft.kvCache.enabled) parts.push("--kv-disk-dir", draft.kvCache.directory, "--kv-disk-space-mb", String(draft.kvCache.spaceMb));
-    if (draft.server.prefillChunk) parts.push("--prefill-chunk", String(draft.server.prefillChunk));
-    if (draft.server.quality) parts.push("--quality");
-    if (draft.server.warmWeights) parts.push("--warm-weights");
-    return parts.map((value) => /\s/.test(value) ? `'${value}'` : value).join(" ");
   }, [draft]);
 
   return (
@@ -151,7 +145,7 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
                 <div className="advanced-group">
                   <div className="advanced-group__head"><div><h3>Performance</h3><p>DSBox defaults are tuned for SSD streaming on this Mac.</p></div><Zap size={16} /></div>
                   <div className="setting-row"><span className="setting-row__icon"><HardDrive size={17} /></span><div><strong>Optimized SSD streaming</strong><p>Loads the useful parts of the model into memory and streams the rest when needed.</p></div><Toggle checked={draft.streaming.enabled} onChange={(enabled) => update("streaming", { ...draft.streaming, enabled })} label="Optimized SSD streaming" /></div>
-                  {draft.streaming.enabled && <div className="nested-settings"><div className="segmented-control"><button className={draft.streaming.cacheMode === "auto" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "auto"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "auto" })}>Adaptive</button><button className={draft.streaming.cacheMode === "manual" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "manual"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "manual" })}>Custom</button></div>{draft.streaming.cacheMode === "manual" && <Field label="Expert cache budget" hint="DS4 applies a safe cap"><div className="range-field"><input aria-label="Expert cache budget" type="range" min={8} max={manualCacheMaxGb} step={4} value={Math.min(draft.streaming.cacheSizeGb, manualCacheMaxGb)} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Expert cache budget in GB" type="number" min={1} max={manualCacheMaxGb} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}</div>}
+                  {draft.streaming.enabled && <div className="nested-settings"><div className="segmented-control"><button className={draft.streaming.cacheMode === "auto" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "auto"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "auto" })}>Adaptive</button><button className={draft.streaming.cacheMode === "manual" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "manual"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "manual" })}>Custom</button></div>{draft.streaming.cacheMode === "auto" && !advancedCacheOverride && <div className="privacy-note"><ShieldCheck size={15} /><p>DS4 sizes the expert cache from this Mac's live memory budget; DSBox stops it if pressure or new swapout crosses the safety limit.</p></div>}{draft.streaming.cacheMode === "manual" && <Field label="Expert cache budget" hint="DS4 applies a safe cap"><div className="range-field"><input aria-label="Expert cache budget" type="range" min={8} max={manualCacheMaxGb} step={4} value={Math.min(draft.streaming.cacheSizeGb, manualCacheMaxGb)} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Expert cache budget in GB" type="number" min={1} max={manualCacheMaxGb} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}</div>}
                 </div>
 
                 <div className="advanced-group">

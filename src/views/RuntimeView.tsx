@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppSnapshot, CatalogResponse, DsboxConfig, EnginePhase, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
 import { apiRequest } from "../lib/api";
+import { shellDisplayArgument } from "../lib/arguments";
 import { formatBytes, formatDuration, formatModelName, timeLabel } from "../lib/format";
 import { Button, CopyButton, StatusPill } from "../components/ui";
 import { DsboxOrb, type DsboxOrbState } from "../components/DsboxOrb";
@@ -123,9 +124,13 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
 
   useEffect(() => {
     if (!technicalOpen) return;
-    void apiRequest<{ command: string[] }>("/api/runtime/command").then((value) => setCommand(value.command)).catch(() => undefined);
+    if (["starting", "running", "stopping"].includes(runtime.phase)) {
+      setCommand(runtime.command);
+    } else {
+      void apiRequest<{ command: string[] }>("/api/runtime/command").then((value) => setCommand(value.command)).catch(() => undefined);
+    }
     void apiRequest<{ checkouts: DiscoveredCheckout[] }>("/api/runtime/discover").then((value) => setCheckouts(value.checkouts)).catch(() => undefined);
-  }, [config, runtime.gitHead, technicalOpen]);
+  }, [config, runtime.command, runtime.gitHead, runtime.phase, technicalOpen]);
 
   useEffect(() => {
     if (!technicalOpen) return;
@@ -276,8 +281,8 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           )}
 
           <div className="technical-block">
-            <div className="technical-block__head"><h4><Terminal size={14} /> Startup command</h4><CopyButton value={command.join(" ")} /></div>
-            <pre><code>{command.length ? command.map((value) => /\s/.test(value) ? `'${value}'` : value).join(" ") : "Available after setup"}</code></pre>
+            <div className="technical-block__head"><h4><Terminal size={14} /> Startup command</h4><CopyButton value={command.map(shellDisplayArgument).join(" ")} /></div>
+            <pre><code>{command.length ? command.map(shellDisplayArgument).join(" ") : "Available after setup"}</code></pre>
           </div>
 
           <div className="technical-block">

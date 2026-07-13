@@ -14,7 +14,7 @@ export type EnginePhase =
   | "error";
 
 export interface DsboxConfig {
-  version: 1;
+  version: 2;
   repository: {
     url: string;
     branch: string;

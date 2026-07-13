@@ -10,7 +10,6 @@ import { execFile } from "node:child_process";
 import { createServer } from "node:net";
 import type {
   CatalogModel,
-  DsboxConfig,
   LocalModelCandidate,
   LocalModelScanSnapshot,
   LogEntry,
@@ -20,10 +19,19 @@ import type {
 import { ConfigStore } from "./config.js";
 import { EventBus } from "./event-bus.js";
 import { chooseGgufFileInFinder } from "./native-file-picker.js";
+import { argumentOptionName, shellDisplayArgument, tokenizeArguments } from "../src/lib/arguments.js";
+import { buildEngineArguments } from "../src/lib/engine-arguments.js";
+
+export { tokenizeArguments } from "../src/lib/arguments.js";
+export { buildEngineArguments } from "../src/lib/engine-arguments.js";
 
 const execFileAsync = promisify(execFile);
 type ManagedChild = ChildProcessByStdio<null, Readable, Readable>;
 const ansiPattern = /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*)?\u0007|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+const automaticMemoryPollMs = 1_000;
+const automaticMemoryReadFailureLimit = 3;
+const automaticSafetyTermGraceMs = 3_000;
+const automaticSafetyKillGraceMs = 5_000;
 const fallbackModelVariables: Record<string, string> = {
   "q2-imatrix": "Q2_IMATRIX_FILE",
   "q2-q4-imatrix": "Q2_Q4_IMATRIX_FILE",
@@ -40,6 +48,13 @@ export function parseFallbackModelFilename(script: string, variant: string): str
 
 export function remainingDownloadBytes(estimatedBytes: number, partialBytes: number): number {
   return Math.max(0, estimatedBytes - Math.max(0, partialBytes));
+}
+
+export function parseVmStatSwapoutPages(output: string): number | null {
+  const match = output.match(/^Swapouts:\s+(\d+)\.?\s*$/im);
+  if (!match) return null;
+  const pages = Number(match[1]);
+  return Number.isSafeInteger(pages) && pages >= 0 ? pages : null;
 }
 
 export function orderedLocalModelScanRoots(
@@ -127,48 +142,6 @@ const initialState: RuntimeState = {
   readiness: "offline"
 };
 
-export function tokenizeArguments(input: string): string[] {
-  const result: string[] = [];
-  let token = "";
-  let quote: "'" | '"' | null = null;
-  let escaped = false;
-
-  const push = () => {
-    if (token.length > 0) result.push(token);
-    token = "";
-  };
-
-  for (const character of input) {
-    if (escaped) {
-      token += character;
-      escaped = false;
-      continue;
-    }
-    if (character === "\\" && quote !== "'") {
-      escaped = true;
-      continue;
-    }
-    if (quote) {
-      if (character === quote) quote = null;
-      else token += character;
-      continue;
-    }
-    if (character === "'" || character === '"') {
-      quote = character;
-      continue;
-    }
-    if (/\s/.test(character)) {
-      push();
-      continue;
-    }
-    token += character;
-  }
-  if (escaped) token += "\\";
-  if (quote) throw new Error("Unclosed quotation mark in advanced flags");
-  push();
-  return result;
-}
-
 export function parseEnvironment(input: string): Record<string, string> {
   const environment: Record<string, string> = {};
   for (const rawLine of input.split(/\r?\n/)) {
@@ -186,68 +159,12 @@ export function parseEnvironment(input: string): Record<string, string> {
   return environment;
 }
 
-export function buildEngineArguments(config: DsboxConfig): string[] {
-  const args = [
-    "--metal",
-    "-m", config.model.path,
-    "--ctx", String(config.server.contextTokens),
-    "--tokens", String(config.server.maxOutputTokens),
-    "--threads", String(config.server.threads),
-    "--power", String(config.server.powerPercent),
-    "--host", config.server.internalHost,
-    "--port", String(config.server.internalPort)
-  ];
-
-  if (config.streaming.enabled) {
-    args.push("--ssd-streaming");
-    if (config.streaming.cacheMode === "manual") {
-      args.push("--ssd-streaming-cache-experts", `${config.streaming.cacheSizeGb}GB`);
-    }
-    if (config.streaming.coldStart) args.push("--ssd-streaming-cold");
-    if (config.streaming.preloadExperts !== null) {
-      args.push("--ssd-streaming-preload-experts", String(config.streaming.preloadExperts));
-    }
-  }
-
-  if (config.server.prefillChunk !== null) {
-    args.push("--prefill-chunk", String(config.server.prefillChunk));
-  }
-  if (config.server.quality) args.push("--quality");
-  if (config.server.warmWeights) args.push("--warm-weights");
-
-  if (config.kvCache.enabled) {
-    args.push(
-      "--kv-disk-dir", config.kvCache.directory,
-      "--kv-disk-space-mb", String(config.kvCache.spaceMb),
-      "--kv-cache-min-tokens", String(config.kvCache.minTokens),
-      "--kv-cache-continued-interval-tokens", String(config.kvCache.continuedIntervalTokens)
-    );
-  }
-
-  if (config.observability.traceEnabled) {
-    args.push("--trace", config.observability.tracePath);
-  }
-  if (config.observability.imatrixEnabled) {
-    args.push(
-      "--imatrix-out", config.observability.imatrixPath,
-      "--imatrix-every", String(config.observability.imatrixEvery)
-    );
-  }
-
-  args.push(...tokenizeArguments(config.advanced.extraArgs));
-  return args;
-}
-
-function shellDisplay(value: string): string {
-  return /^[A-Za-z0-9_./:=+-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 function isOptionToken(value: string): boolean {
   return value.startsWith("--") || /^-[A-Za-z]$/.test(value);
 }
 
 function optionName(value: string): string {
-  return value.split("=", 1)[0];
+  return argumentOptionName(value);
 }
 
 export class RuntimeManager {
@@ -267,6 +184,15 @@ export class RuntimeManager {
   private localModelScanController: AbortController | null = null;
   private nextLocalModelScanId = 1;
   private readonly cancelledTasks = new WeakSet<ManagedChild>();
+  private automaticMemoryGuard: {
+    baselineSwapoutPages: number;
+    maxSwapoutDeltaPages: number;
+    consecutiveReadFailures: number;
+    triggered: boolean;
+  } | null = null;
+  private automaticMemoryTimer: NodeJS.Timeout | null = null;
+  private automaticMemoryPollPending = false;
+  private automaticSafetyStopPromise: Promise<void> | null = null;
 
   constructor(store: ConfigStore, bus: EventBus) {
     this.store = store;
@@ -287,6 +213,149 @@ export class RuntimeManager {
 
   hasTask(): boolean {
     return this.task !== null;
+  }
+
+  private async darwinMemorySafetySnapshot(): Promise<{
+    pressureLevel: number;
+    swapoutPages: number;
+  } | null> {
+    if (process.platform !== "darwin") return null;
+    const [pressure, vmStat] = await Promise.all([
+      execFileAsync("sysctl", ["-n", "kern.memorystatus_vm_pressure_level"], { timeout: 900 }).catch(() => null),
+      execFileAsync("vm_stat", [], { timeout: 900 }).catch(() => null)
+    ]);
+    if (!pressure || !vmStat) return null;
+    const pressureLevel = Number(pressure.stdout.trim());
+    const swapoutPages = parseVmStatSwapoutPages(vmStat.stdout);
+    if (![1, 2, 4].includes(pressureLevel) || swapoutPages === null) return null;
+    return { pressureLevel, swapoutPages };
+  }
+
+  private clearAutomaticMemoryWatchdog(): void {
+    if (this.automaticMemoryTimer) clearInterval(this.automaticMemoryTimer);
+    this.automaticMemoryTimer = null;
+  }
+
+  private startAutomaticMemoryWatchdog(): void {
+    this.clearAutomaticMemoryWatchdog();
+    if (!this.automaticMemoryGuard || !this.engine) return;
+    this.automaticMemoryTimer = setInterval(
+      () => void this.pollAutomaticMemorySafety(),
+      automaticMemoryPollMs
+    );
+    this.automaticMemoryTimer.unref();
+  }
+
+  private async pollAutomaticMemorySafety(): Promise<void> {
+    if (this.automaticMemoryPollPending || this.stopping) return;
+    const guard = this.automaticMemoryGuard;
+    const child = this.engine;
+    if (!guard || !child) return;
+    this.automaticMemoryPollPending = true;
+    try {
+      const snapshot = await this.darwinMemorySafetySnapshot();
+      if (this.automaticMemoryGuard !== guard || this.engine !== child) return;
+      await this.enforceAutomaticMemorySafety(
+        snapshot?.pressureLevel ?? null,
+        snapshot?.swapoutPages ?? null
+      );
+    } finally {
+      this.automaticMemoryPollPending = false;
+    }
+  }
+
+  private async waitForChildExit(child: ManagedChild, timeoutMs: number): Promise<boolean> {
+    if (this.engine !== child) return true;
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (exited: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        child.off("exit", onExit);
+        resolve(exited);
+      };
+      const onExit = () => finish(true);
+      const timeout = setTimeout(() => finish(this.engine !== child), timeoutMs);
+      timeout.unref();
+      child.once("exit", onExit);
+    });
+  }
+
+  private async performAutomaticSafetyStop(reason: string): Promise<void> {
+    const child = this.engine;
+    if (!child) return;
+    this.clearAutomaticMemoryWatchdog();
+    this.stopping = true;
+    this.setState({ phase: "stopping", currentTask: "Emergency memory-pressure shutdown" });
+    this.log("warn", "dsbox", "Safety watchdog is sending SIGTERM to protect macOS memory pressure.");
+    child.kill("SIGTERM");
+    let exited = await this.waitForChildExit(child, automaticSafetyTermGraceMs);
+
+    if (!exited && this.engine === child) {
+      this.log("warn", "dsbox", "Safety shutdown grace expired; sending SIGKILL.");
+      child.kill("SIGKILL");
+      exited = await this.waitForChildExit(child, automaticSafetyKillGraceMs);
+    }
+
+    if (!exited && this.engine === child) {
+      this.log("error", "dsbox", "The runtime did not exit after SIGKILL; the watchdog will retry.");
+      const guard = this.automaticMemoryGuard;
+      if (guard) guard.triggered = false;
+      this.stopping = false;
+      this.setState({ phase: "error", currentTask: null, lastError: reason });
+      this.startAutomaticMemoryWatchdog();
+      return;
+    }
+
+    this.setState({
+      phase: "error",
+      readiness: "offline",
+      pid: null,
+      currentTask: null,
+      lastError: reason,
+      startedAt: null
+    });
+  }
+
+  private automaticSafetyStop(reason: string): Promise<void> {
+    if (this.automaticSafetyStopPromise) return this.automaticSafetyStopPromise;
+    this.automaticSafetyStopPromise = (async () => {
+      try {
+        await this.performAutomaticSafetyStop(reason);
+      } finally {
+        this.automaticSafetyStopPromise = null;
+      }
+    })();
+    return this.automaticSafetyStopPromise;
+  }
+
+  async enforceAutomaticMemorySafety(
+    pressureLevel: number | null,
+    swapoutPages: number | null
+  ): Promise<void> {
+    const guard = this.automaticMemoryGuard;
+    if (!guard || !this.engine || this.stopping || guard.triggered) return;
+
+    let reason: string | null = null;
+    if (pressureLevel === null || swapoutPages === null) {
+      guard.consecutiveReadFailures += 1;
+      if (guard.consecutiveReadFailures < automaticMemoryReadFailureLimit) return;
+      reason = "Automatic cache stopped: macOS memory safety signals were unavailable for three consecutive checks.";
+    } else {
+      guard.consecutiveReadFailures = 0;
+      const swapoutDelta = Math.max(0, swapoutPages - guard.baselineSwapoutPages);
+      if (pressureLevel >= 2) {
+        reason = "Automatic cache stopped: macOS memory pressure reached WARNING.";
+      } else if (swapoutDelta > guard.maxSwapoutDeltaPages) {
+        reason = `Automatic cache stopped: host-wide swapout grew by ${swapoutDelta} pages.`;
+      }
+    }
+    if (!reason) return;
+
+    guard.triggered = true;
+    this.log("error", "dsbox", reason);
+    await this.automaticSafetyStop(reason);
   }
 
   private modelChangeBlocked(): boolean {
@@ -509,7 +578,7 @@ export class RuntimeManager {
     source: LogEntry["source"]
   ): Promise<void> {
     if (this.task || this.engine) throw new Error("Another DS4 operation is already in progress");
-    this.log("info", source, `$ ${[command, ...args].map(shellDisplay).join(" ")}`);
+    this.log("info", source, `$ ${[command, ...args].map(shellDisplayArgument).join(" ")}`);
     await new Promise<void>((resolve, reject) => {
       const child = spawn(command, args, {
         cwd,
@@ -1476,6 +1545,11 @@ export class RuntimeManager {
     }
     if (!modelStat.isFile()) throw new Error("The model path does not point to a GGUF file");
 
+    const hasAdvancedCacheOverride = tokenizeArguments(config.advanced.extraArgs)
+      .some((value) => optionName(value) === "--ssd-streaming-cache-experts");
+    const usesAdaptiveCache = config.streaming.enabled
+      && config.streaming.cacheMode === "auto"
+      && !hasAdvancedCacheOverride;
     const args = buildEngineArguments(config);
     const help = await this.detectHelp(binary, config.repository.directory);
     this.validateCapabilities(args, help);
@@ -1485,7 +1559,30 @@ export class RuntimeManager {
     if (config.observability.imatrixEnabled) await mkdir(path.dirname(config.observability.imatrixPath), { recursive: true, mode: 0o700 });
     const extraEnvironment = parseEnvironment(config.advanced.environment);
 
-    this.log("info", "dsbox", `$ ${[binary, ...args].map(shellDisplay).join(" ")}`);
+    this.clearAutomaticMemoryWatchdog();
+    this.automaticMemoryGuard = null;
+    if (usesAdaptiveCache) {
+      const memory = await this.darwinMemorySafetySnapshot();
+      if (!memory) {
+        throw new Error("Automatic cache could not read macOS memory pressure; refusing an unguarded launch");
+      }
+      if (memory.pressureLevel !== 1) {
+        throw new Error("Automatic cache requires normal macOS memory pressure before launch");
+      }
+      this.automaticMemoryGuard = {
+        baselineSwapoutPages: memory.swapoutPages,
+        maxSwapoutDeltaPages: 64,
+        consecutiveReadFailures: 0,
+        triggered: false
+      };
+      this.log(
+        "info",
+        "dsbox",
+        "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+      );
+    }
+
+    this.log("info", "dsbox", `$ ${[binary, ...args].map(shellDisplayArgument).join(" ")}`);
     this.setState({
       phase: "starting",
       readiness: "loading",
@@ -1511,7 +1608,9 @@ export class RuntimeManager {
     child.once("exit", (code, signal) => {
       if (this.readinessTimer) clearInterval(this.readinessTimer);
       this.readinessTimer = null;
+      this.clearAutomaticMemoryWatchdog();
       this.engine = null;
+      this.automaticMemoryGuard = null;
       const wasStopping = this.stopping;
       this.stopping = false;
       const normal = wasStopping || code === 0;
@@ -1526,6 +1625,8 @@ export class RuntimeManager {
         startedAt: null
       });
     });
+
+    if (this.automaticMemoryGuard) this.startAutomaticMemoryWatchdog();
 
     this.readinessTimer = setInterval(async () => {
       if (!this.engine || this.state.readiness === "ready") return;
@@ -1550,9 +1651,12 @@ export class RuntimeManager {
   }
 
   async stop(): Promise<void> {
+    if (this.automaticSafetyStopPromise) return this.automaticSafetyStopPromise;
     if (!this.engine) throw new Error("ds4-server is not running");
+    if (this.stopping) return;
     if (this.readinessTimer) clearInterval(this.readinessTimer);
     this.readinessTimer = null;
+    this.clearAutomaticMemoryWatchdog();
     this.stopping = true;
     this.setState({ phase: "stopping", currentTask: "Saving KV cache and stopping" });
     this.log("info", "dsbox", "Sending SIGTERM so ds4 can finish the active request and save the KV cache.");
@@ -1573,6 +1677,7 @@ export class RuntimeManager {
   async forceStop(): Promise<void> {
     if (!this.engine) throw new Error("ds4-server is not running");
     this.log("warn", "dsbox", "Force stop requested; the latest KV checkpoint may not be saved.");
+    this.clearAutomaticMemoryWatchdog();
     this.stopping = true;
     this.engine.kill("SIGKILL");
   }
