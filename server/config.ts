@@ -60,16 +60,50 @@ export const configSchema: z.ZodType<DsboxConfig> = z.object({
   })
 });
 
-function defaultContextTokens(totalMemory: number): number {
+export interface HardwareProfile {
+  contextTokens: number;
+  maxOutputTokens: number;
+  cacheMode: "auto" | "manual";
+  cacheSizeGb: number;
+}
+
+export function hardwareProfile(totalMemory: number): HardwareProfile {
   const gib = totalMemory / 1024 ** 3;
-  if (gib <= 72) return 32_768;
-  if (gib <= 160) return 100_000;
-  return 200_000;
+  if (gib <= 18) return { contextTokens: 8_192, maxOutputTokens: 4_096, cacheMode: "auto", cacheSizeGb: 8 };
+  if (gib <= 26) return { contextTokens: 16_384, maxOutputTokens: 8_192, cacheMode: "auto", cacheSizeGb: 12 };
+  if (gib <= 40) return { contextTokens: 32_768, maxOutputTokens: 16_384, cacheMode: "auto", cacheSizeGb: 20 };
+  if (gib <= 72) return { contextTokens: 32_768, maxOutputTokens: 32_768, cacheMode: "manual", cacheSizeGb: 32 };
+  if (gib <= 160) return { contextTokens: 100_000, maxOutputTokens: 32_768, cacheMode: "auto", cacheSizeGb: 32 };
+  return { contextTokens: 200_000, maxOutputTokens: 32_768, cacheMode: "auto", cacheSizeGb: 32 };
+}
+
+export function migrateLegacyLowMemoryDefaults(config: DsboxConfig, totalMemory: number): DsboxConfig {
+  const profile = hardwareProfile(totalMemory);
+  const legacyLowMemoryProfile = totalMemory / 1024 ** 3 <= 40
+    && config.server.contextTokens === 32_768
+    && config.streaming.enabled
+    && config.streaming.cacheMode === "manual"
+    && config.streaming.cacheSizeGb === 32;
+  if (!legacyLowMemoryProfile) return config;
+  return {
+    ...config,
+    server: {
+      ...config.server,
+      contextTokens: profile.contextTokens,
+      maxOutputTokens: config.server.maxOutputTokens === 32_768 ? profile.maxOutputTokens : config.server.maxOutputTokens
+    },
+    streaming: {
+      ...config.streaming,
+      cacheMode: profile.cacheMode,
+      cacheSizeGb: profile.cacheSizeGb
+    }
+  };
 }
 
 export function createDefaultConfig(totalMemory: number): DsboxConfig {
   const home = process.env.DSBOX_HOME || path.join(homedir(), ".dsbox");
   const runtimeDirectory = path.join(home, "runtime", "andreaborio-ds4");
+  const profile = hardwareProfile(totalMemory);
   return {
     version: 1,
     repository: {
@@ -84,8 +118,8 @@ export function createDefaultConfig(totalMemory: number): DsboxConfig {
     server: {
       internalHost: "127.0.0.1",
       internalPort: 8000,
-      contextTokens: defaultContextTokens(totalMemory),
-      maxOutputTokens: 32_768,
+      contextTokens: profile.contextTokens,
+      maxOutputTokens: profile.maxOutputTokens,
       powerPercent: 100,
       threads: Math.max(2, Math.min(16, Number(process.env.DSBOX_DEFAULT_THREADS) || 8)),
       prefillChunk: null,
@@ -94,8 +128,8 @@ export function createDefaultConfig(totalMemory: number): DsboxConfig {
     },
     streaming: {
       enabled: true,
-      cacheMode: totalMemory / 1024 ** 3 <= 72 ? "manual" : "auto",
-      cacheSizeGb: 32,
+      cacheMode: profile.cacheMode,
+      cacheSizeGb: profile.cacheSizeGb,
       coldStart: false,
       preloadExperts: null
     },
@@ -142,7 +176,11 @@ export class ConfigStore {
     let config: DsboxConfig;
     try {
       const raw = await readFile(configPath, "utf8");
-      config = configSchema.parse(JSON.parse(raw));
+      const parsed = configSchema.parse(JSON.parse(raw));
+      config = migrateLegacyLowMemoryDefaults(parsed, totalMemory);
+      if (JSON.stringify(config) !== JSON.stringify(parsed)) {
+        await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT" && !(error instanceof z.ZodError)) {
         throw error;
@@ -166,4 +204,3 @@ export class ConfigStore {
     return this.get();
   }
 }
-

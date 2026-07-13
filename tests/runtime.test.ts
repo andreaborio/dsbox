@@ -74,6 +74,16 @@ describe("resumable fallback downloads", () => {
 });
 
 describe("engine arguments", () => {
+  it("leaves low-memory expert-cache sizing to DS4", () => {
+    const config = createDefaultConfig(16 * 1024 ** 3);
+    const args = buildEngineArguments(config);
+    expect(args.slice(args.indexOf("--ctx"), args.indexOf("--ctx") + 2)).toEqual(["--ctx", "8192"]);
+    expect(args.slice(args.indexOf("--tokens"), args.indexOf("--tokens") + 2)).toEqual(["--tokens", "4096"]);
+    expect(args).toContain("--ssd-streaming");
+    expect(args).not.toContain("--ssd-streaming-cache-experts");
+    expect(args.slice(args.indexOf("--power"), args.indexOf("--power") + 2)).toEqual(["--power", "100"]);
+  });
+
   it("builds the conservative 64 GB Metal and SSD profile", () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     const args = buildEngineArguments(config);
