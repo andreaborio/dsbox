@@ -56,7 +56,7 @@ describe("Hugging Face model catalog", () => {
       recommended: false,
       outputFile: null,
       totalBytes: 244,
-      unavailableReason: "Pubblicato in più parti: installazione manuale richiesta"
+      unavailableReason: "Published in multiple parts: manual installation required"
     });
     expect(catalog.models[0].files.map((file) => file.name)).toEqual([
       "model.gguf.part-01",
@@ -91,8 +91,8 @@ describe("Hugging Face model catalog", () => {
       if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
         return jsonResponse({
           schemaVersion: 1,
-          name: "DeepSeek V4 Flash per DSBox",
-          description: "Profilo Metal e SSD streaming verificato da DSBox.",
+          name: "DeepSeek V4 Flash for DSBox",
+          description: "Metal and SSD streaming profile verified by DSBox.",
           status: "stable",
           recommended: true,
           minimumMemoryGb: 64,
@@ -112,7 +112,7 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.recommended).toMatchObject({
       repository,
       revision,
-      label: "DeepSeek V4 Flash per DSBox",
+      label: "DeepSeek V4 Flash for DSBox",
       runtimeBranch: "main",
       runtimeCommit: "d".repeat(40),
       outputFile: modelFile,
@@ -225,7 +225,71 @@ describe("Hugging Face model catalog", () => {
       installable: false,
       recommended: false,
       outputFile: null,
-      unavailableReason: "Il manifest indica un file assente: missing.gguf"
+      unavailableReason: "The manifest references a missing file: missing.gguf"
     });
+  });
+
+  it("adds pinned Unsloth GGUF repositories as a distinct non-endorsed source", async () => {
+    const repositories = ["unsloth/DeepSeek-V4-Flash-GGUF", "unsloth/GLM-5.2-GGUF"];
+    const revisions = ["1".repeat(40), "2".repeat(40)];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestedUrl(input);
+      if (url.includes("author=andreaborio")) return jsonResponse([]);
+      for (let index = 0; index < repositories.length; index += 1) {
+        const repository = repositories[index];
+        const revision = revisions[index];
+        const model = {
+          id: repository,
+          sha: revision,
+          tags: index === 0 ? ["gguf", "deepseek_v4"] : ["gguf", "glm-5.2"],
+          siblings: index === 0
+            ? [
+                { rfilename: "UD-IQ1_M/model-00001-of-00002.gguf", lfs: { size: 10, sha256: "a".repeat(64) } },
+                { rfilename: "UD-IQ1_M/model-00002-of-00002.gguf", lfs: { size: 20, sha256: "b".repeat(64) } },
+                { rfilename: "UD-IQ2_XXS/model-00001-of-00002.gguf", lfs: { size: 11, sha256: "c".repeat(64) } },
+                { rfilename: "UD-IQ2_XXS/model-00002-of-00002.gguf", lfs: { size: 21, sha256: "d".repeat(64) } }
+              ]
+            : [
+                { rfilename: "UD-IQ1_S/model-00001-of-00002.gguf", lfs: { size: 30, sha256: "e".repeat(64) } },
+                { rfilename: "UD-IQ1_S/model-00002-of-00002.gguf", lfs: { size: 40, sha256: "f".repeat(64) } }
+              ]
+        };
+        if (url === `https://huggingface.co/api/models/${repository}?blobs=true`
+          || url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
+          return jsonResponse(model);
+        }
+        if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
+          return jsonResponse({ error: "not found" }, 404);
+        }
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+
+    expect(catalog.sources).toContainEqual({
+      id: "unsloth",
+      label: "Unsloth",
+      url: "https://huggingface.co/unsloth/models"
+    });
+    expect(catalog.models).toHaveLength(2);
+    expect(catalog.models.find((model) => model.repository === repositories[0])).toMatchObject({
+      publisher: "unsloth",
+      label: "DeepSeek V4 Flash",
+      modelId: "deepseek-v4-flash",
+      variantCount: 2,
+      installable: false,
+      recommended: false,
+      sourceUrl: `https://huggingface.co/${repositories[0]}/tree/${revisions[0]}`
+    });
+    expect(catalog.models.find((model) => model.repository === repositories[1])).toMatchObject({
+      publisher: "unsloth",
+      label: "GLM 5.2",
+      modelId: "glm-5.2",
+      variantCount: 1,
+      installable: false,
+      recommended: false
+    });
+    expect(catalog.recommended).toBeNull();
   });
 });

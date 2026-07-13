@@ -1,13 +1,13 @@
 export type DsboxOrbState = "off" | "ready" | "preparing" | "prefill" | "thinking" | "decode" | "error";
 
 const labels: Record<DsboxOrbState, string> = {
-  off: "DSBox spento",
-  ready: "DSBox pronto",
-  preparing: "DSBox in preparazione",
-  prefill: "DSBox elabora il contesto",
-  thinking: "DSBox ragiona",
-  decode: "DSBox genera la risposta",
-  error: "DSBox richiede attenzione"
+  off: "DSBox is off",
+  ready: "DSBox is ready",
+  preparing: "DSBox is preparing",
+  prefill: "DSBox is processing context",
+  thinking: "DSBox is thinking",
+  decode: "DSBox is generating a response",
+  error: "DSBox needs attention"
 };
 
 export function DsboxOrb({

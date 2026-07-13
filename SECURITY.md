@@ -1,28 +1,27 @@
 # Security policy
 
-## Superficie locale
+## Local attack surface
 
-DSBox è progettato per un solo utente sullo stesso Mac:
+DSBox is designed for a single user on the same Mac:
 
 - control plane: `127.0.0.1:4242`;
-- ds4 interno: `127.0.0.1:8000` per default;
-- nessun bind `0.0.0.0` supportato dal control plane;
-- nessun CORS abilitato sul runtime;
-- header anti-CSRF obbligatorio per le mutazioni `/api/*`;
-- API key opzionale sul gateway `/v1/*`.
+- internal ds4 server: `127.0.0.1:8000` by default;
+- the control plane does not support binding to `0.0.0.0`;
+- CORS is not enabled on the runtime;
+- an anti-CSRF header is required for mutating `/api/*` requests;
+- API-key authentication is optional on the `/v1/*` gateway.
 
-Non pubblicare queste porte su Internet. Per accesso remoto usa un tunnel autenticato.
+Do not expose these ports to the Internet. Use an authenticated tunnel for remote access.
 
-## Dati sensibili
+## Sensitive data
 
-La trace ds4 può contenere richieste, prompt renderizzati, output e tool call. I checkpoint KV possono contenere testo del prompt. Prima di condividere log o support bundle:
+ds4 traces can contain requests, rendered prompts, outputs, and tool calls. KV checkpoints can contain prompt text. Before sharing logs or a support bundle:
 
-1. disabilita trace se non necessaria;
-2. controlla manualmente i file;
-3. rimuovi codice, segreti, path personali e conversazioni;
-4. non pubblicare `~/.dsbox/config.json` se contiene un token gateway usato altrove.
+1. disable tracing unless it is required;
+2. inspect the files manually;
+3. remove source code, secrets, personal paths, and conversations;
+4. do not publish `~/.dsbox/config.json` if it contains a gateway token that is also used elsewhere.
 
-## Segnalazioni
+## Reporting a vulnerability
 
-Non aprire issue pubbliche con exploit funzionanti, token o dati privati. Condividi inizialmente una descrizione minimale e riproducibile con il maintainer del repository che ospiterà DSBox.
-
+Do not open public issues containing working exploits, tokens, or private data. First share a minimal, reproducible description privately with the maintainer of the repository that hosts DSBox.

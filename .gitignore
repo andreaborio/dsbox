@@ -1,9 +1,11 @@
 node_modules/
 dist/
 dist-server/
+release/
+build/icon.iconset/
+build/icon-1024.png
 .DS_Store
 *.log
 .env
 .env.local
 coverage/
-

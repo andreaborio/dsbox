@@ -1,11 +1,11 @@
 import { createServer, request as httpRequest, type Server } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, createServices, type AppServices } from "../server/app.js";
-import type { CatalogModel } from "../src/types.js";
+import { TaskCancelledError } from "../server/runtime.js";
 
 describe("DSBox API", () => {
   let home: string;
@@ -54,34 +54,10 @@ describe("DSBox API", () => {
       .expect(403);
   });
 
-  it("starts the recommended DSBox model through the power endpoint without spawning work in the request", async () => {
-    const recommended: CatalogModel = {
-      repository: "andreaborio/deepseek-v4-flash-ds4-metal",
-      revision: "0123456789abcdef0123456789abcdef01234567",
-      label: "DeepSeek V4 Flash per DSBox",
-      description: "Profilo verificato da DSBox.",
-      modelId: "deepseek-v4-flash",
-      runtimeBranch: "main",
-      runtimeCommit: "d".repeat(40),
-      files: [{ name: "model.gguf", sizeBytes: 1024, sha256: "sha256" }],
-      outputFile: "model.gguf",
-      totalBytes: 1024,
-      recommended: true,
-      experimental: false,
-      installable: true,
-      minimumMemoryGb: 64,
-      lastModified: "2026-07-12T10:00:00.000Z",
-      sourceUrl: "https://huggingface.co/andreaborio/deepseek-v4-flash-ds4-metal",
-      unavailableReason: null
-    };
-    vi.spyOn(services.catalog, "list").mockResolvedValue({
-      author: "andreaborio",
-      label: "Modelli DSBox",
-      models: [recommended],
-      recommended,
-      refreshedAt: "2026-07-12T10:00:00.000Z",
-      stale: false
-    });
+  it("starts the selected local model through the power endpoint without implicit downloads", async () => {
+    const modelPath = path.join(home, "my-local-model.gguf");
+    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await services.runtime.selectLocalModel(modelPath);
     const oneClickStart = vi.spyOn(services.runtime, "oneClickStart").mockResolvedValue();
 
     const response = await request(createApp(services))
@@ -97,7 +73,201 @@ describe("DSBox API", () => {
       .expect(202);
     expect(repeated.body).toEqual({ accepted: true, action: "working" });
     await vi.waitFor(() => expect(oneClickStart).toHaveBeenCalledOnce());
-    expect(oneClickStart).toHaveBeenCalledWith(recommended);
+    expect(oneClickStart).toHaveBeenCalledWith();
+  });
+
+  it("requires an explicit model choice before power-on", async () => {
+    const oneClickStart = vi.spyOn(services.runtime, "oneClickStart").mockResolvedValue();
+    const response = await request(createApp(services))
+      .post("/api/runtime/power")
+      .set("x-dsbox-control", "1")
+      .expect(409);
+    expect(response.body.error).toMatch(/Choose a GGUF file/);
+    expect(oneClickStart).not.toHaveBeenCalled();
+  });
+
+  it("discovers and selects a valid GGUF without starting a download", async () => {
+    const modelPath = path.join(home, "glm52-local.gguf");
+    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    const app = createApp(services);
+    const selected = await request(app)
+      .post("/api/models/local/select")
+      .set("x-dsbox-control", "1")
+      .send({ path: modelPath })
+      .expect(200);
+    expect(selected.body).toMatchObject({ path: modelPath, modelId: "glm-5.2", selected: true });
+    const local = await request(app).get("/api/models/local").expect(200);
+    expect(local.body.models).toContainEqual(expect.objectContaining({ path: modelPath, selected: true }));
+    expect(services.runtime.getState()).toMatchObject({ modelPresent: true, pid: null });
+    expect(services.runtime.hasTask()).toBe(false);
+  });
+
+  it("runs a pollable full-disk scan and returns validated GGUF results", async () => {
+    const nestedDirectory = path.join(home, "nested", "models");
+    const modelPath = path.join(nestedDirectory, "local-scan.gguf");
+    await mkdir(nestedDirectory, { recursive: true });
+    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    const app = createApp(services);
+
+    const started = await request(app)
+      .post("/api/models/local/scan")
+      .set("x-dsbox-control", "1")
+      .expect(202);
+    expect(started.body).toMatchObject({
+      status: "scanning",
+      stage: "spotlight",
+      strategy: "none",
+      progress: { directoriesScanned: 0, entriesScanned: 0, candidateFiles: 0, modelsFound: 0 }
+    });
+
+    await vi.waitFor(async () => {
+      const scan = await request(app).get("/api/models/local/scan").expect(200);
+      expect(scan.body.status).toBe("complete");
+    });
+    const completed = await request(app).get("/api/models/local/scan").expect(200);
+    expect(completed.body).toMatchObject({
+      status: "complete",
+      stage: "complete",
+      strategy: "filesystem-fallback",
+      error: null,
+      truncated: false
+    });
+    expect(completed.body.progress.modelsFound).toBe(1);
+    expect(completed.body.models).toContainEqual(expect.objectContaining({ path: modelPath, name: "local-scan" }));
+    expect(services.runtime.getState().pid).toBeNull();
+    expect(services.runtime.hasTask()).toBe(false);
+  });
+
+  it("cancels a running local-model scan without touching the runtime", async () => {
+    const internal = services.runtime as unknown as {
+      filesystemGgufPaths(signal: AbortSignal): Promise<{ paths: string[]; truncated: boolean }>;
+    };
+    vi.spyOn(internal, "filesystemGgufPaths").mockImplementation(async (signal) => {
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(Object.assign(new Error("cancelled"), { name: "AbortError" })), { once: true });
+      });
+      return { paths: [], truncated: false };
+    });
+    const app = createApp(services);
+    await request(app).post("/api/models/local/scan").set("x-dsbox-control", "1").expect(202);
+    await vi.waitFor(() => expect(services.runtime.getLocalModelScan().stage).toBe("filesystem"));
+
+    const cancelled = await request(app)
+      .post("/api/models/local/scan/cancel")
+      .set("x-dsbox-control", "1")
+      .expect(200);
+    expect(cancelled.body).toMatchObject({ status: "cancelled", stage: "idle", error: null });
+    expect(services.runtime.getState().pid).toBeNull();
+    expect(services.runtime.hasTask()).toBe(false);
+  });
+
+  it("selects a Finder-picked GGUF through the existing validation path", async () => {
+    const modelPath = path.join(home, "finder-model.gguf");
+    const invalidPath = path.join(home, "finder-invalid.gguf");
+    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(invalidPath, "not a GGUF");
+
+    await expect(services.runtime.chooseLocalModelFromFinder(async () => modelPath)).resolves.toMatchObject({
+      cancelled: false,
+      model: { path: modelPath, selected: true }
+    });
+    expect(services.store.get().model.path).toBe(modelPath);
+    await expect(services.runtime.chooseLocalModelFromFinder(async () => null)).resolves.toEqual({
+      cancelled: true,
+      model: null
+    });
+    await expect(services.runtime.chooseLocalModelFromFinder(async () => invalidPath)).rejects.toThrow(/readable GGUF/);
+    expect(services.store.get().model.path).toBe(modelPath);
+    expect(services.runtime.getState().pid).toBeNull();
+  });
+
+  it("exposes clean native-picker cancellation through the API", async () => {
+    vi.spyOn(services.runtime, "chooseLocalModelFromFinder").mockResolvedValue({ cancelled: true, model: null });
+    const response = await request(createApp(services))
+      .post("/api/models/local/choose")
+      .set("x-dsbox-control", "1")
+      .expect(200);
+    expect(response.body).toEqual({ cancelled: true, model: null });
+  });
+
+  it("does not present incomplete GGUF shards as usable models", async () => {
+    const shardPath = path.join(home, "split-00001-of-00003.gguf");
+    await writeFile(shardPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    const app = createApp(services);
+    await request(app)
+      .post("/api/models/local/select")
+      .set("x-dsbox-control", "1")
+      .send({ path: shardPath })
+      .expect(400);
+    const local = await request(app).get("/api/models/local").expect(200);
+    expect(local.body.models).not.toContainEqual(expect.objectContaining({ path: shardPath }));
+  });
+
+  it("accepts a complete multipart GGUF once and reports its aggregate size", async () => {
+    const bytes = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    const firstShard = path.join(home, "complete-00001-of-00002.gguf");
+    await writeFile(firstShard, bytes);
+    await writeFile(path.join(home, "complete-00002-of-00002.gguf"), bytes);
+    const app = createApp(services);
+    const selected = await request(app)
+      .post("/api/models/local/select")
+      .set("x-dsbox-control", "1")
+      .send({ path: firstShard })
+      .expect(200);
+    expect(selected.body).toMatchObject({ path: firstShard, name: "complete", sizeBytes: bytes.length * 2, selected: true });
+    const local = await request(app).get("/api/models/local").expect(200);
+    expect(local.body.models.filter((model: { path: string }) => model.path.includes("complete-0000"))).toHaveLength(1);
+  });
+
+  it("rejects invalid local files and treats repeated cancellation as safe", async () => {
+    const invalidPath = path.join(home, "not-a-model.gguf");
+    await writeFile(invalidPath, "not gguf");
+    const app = createApp(services);
+    await request(app)
+      .post("/api/models/local/select")
+      .set("x-dsbox-control", "1")
+      .send({ path: invalidPath })
+      .expect(400);
+    const cancelled = await request(app)
+      .post("/api/runtime/cancel-task")
+      .set("x-dsbox-control", "1")
+      .expect(200);
+    expect(cancelled.body).toEqual({ ok: true, alreadyStopped: true });
+  });
+
+  it("cancels the active child only and leaves the next task unaffected", async () => {
+    const internal = services.runtime as unknown as {
+      runTask(command: string, args: string[], cwd: string, source: "download"): Promise<void>;
+    };
+    const result = internal.runTask("/bin/sh", ["-c", "sleep 30"], home, "download")
+      .then(() => null)
+      .catch((error: unknown) => error);
+    await vi.waitFor(() => expect(services.runtime.hasTask()).toBe(true));
+    await expect(services.runtime.cancelTask()).resolves.toBe(true);
+    expect(await result).toBeInstanceOf(TaskCancelledError);
+    expect(services.runtime.hasTask()).toBe(false);
+    await expect(internal.runTask("/bin/sh", ["-c", "exit 0"], home, "download")).resolves.toBeUndefined();
+  });
+
+  it("keeps cancellation and model selection races out of the error state", async () => {
+    const modelPath = path.join(home, "safe-local.gguf");
+    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await services.runtime.selectLocalModel(modelPath);
+    services.runtime.prepareOneClickStart();
+    vi.spyOn(services.runtime, "installOrUpdate").mockRejectedValue(new TaskCancelledError());
+    await expect(services.runtime.oneClickStart()).rejects.toBeInstanceOf(TaskCancelledError);
+    expect(services.runtime.getState()).toMatchObject({ phase: "uninstalled", lastError: null });
+  });
+
+  it("does not switch models while one-click startup is preparing", async () => {
+    const firstPath = path.join(home, "first.gguf");
+    const secondPath = path.join(home, "second.gguf");
+    await writeFile(firstPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(secondPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await services.runtime.selectLocalModel(firstPath);
+    services.runtime.prepareOneClickStart();
+    await expect(services.runtime.selectLocalModel(secondPath)).rejects.toThrow(/Cancel the download|turn off DSBox/);
+    expect(services.store.get().model.path).toBe(firstPath);
   });
 });
 
@@ -122,7 +292,7 @@ describe("gateway passthrough", () => {
       if (req.url === "/v1/chat/completions") {
         res.setHeader("content-type", "text/event-stream");
         res.write(": prefill\n\n");
-        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "ciao" } }] })}\n\n`);
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "hello" } }] })}\n\n`);
         res.end("data: [DONE]\n\n");
         return;
       }
@@ -182,7 +352,7 @@ describe("gateway passthrough", () => {
       .expect(200)
       .expect("content-type", /text\/event-stream/);
     expect(response.text).toContain(": prefill");
-    expect(response.text).toContain('"content":"ciao"');
+    expect(response.text).toContain('"content":"hello"');
     expect(response.text).toContain("data: [DONE]");
     expect(activityStages).toContain("prefill");
     expect(activityStages).toContain("decode");

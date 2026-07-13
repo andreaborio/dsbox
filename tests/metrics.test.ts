@@ -1,7 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { parseMacVmStat, parseMacVmStatUsedBytes } from "../server/metrics.js";
+import { EventBus } from "../server/event-bus.js";
+import { MetricsMonitor, parseMacVmStat, parseMacVmStatUsedBytes } from "../server/metrics.js";
+import type { ConfigStore } from "../server/config.js";
+import type { RuntimeManager } from "../server/runtime.js";
 
 describe("macOS unified memory metrics", () => {
+  it("clears the last decode speed as soon as inference becomes idle", () => {
+    const bus = new EventBus();
+    const monitor = new MetricsMonitor({} as ConfigStore, {} as RuntimeManager, bus);
+    const internal = monitor as unknown as { tokensPerSecond: number | null };
+
+    bus.publish({
+      type: "log",
+      payload: { id: 1, timestamp: new Date().toISOString(), level: "runtime", source: "ds4", message: "decode avg=6.45 t/s" }
+    });
+    expect(internal.tokensPerSecond).toBe(6.45);
+
+    bus.publish({ type: "activity", payload: { stage: "idle", source: null, requestId: null, startedAt: null } });
+    expect(internal.tokensPerSecond).toBeNull();
+  });
+
   it("counts inactive and speculative file cache as reclaimable", () => {
     const output = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
 Pages free:                                    33045.

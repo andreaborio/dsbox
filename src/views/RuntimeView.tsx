@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  CircleStop,
   Clock3,
   Cpu,
   ExternalLink,
@@ -40,59 +41,59 @@ const busyPhases: EnginePhase[] = ["preparing", "installing", "updating", "build
 
 const copyByPhase: Record<EnginePhase, { title: string; description: string; action: string }> = {
   uninstalled: {
-    title: "DSBox è spento",
-    description: "Accendilo e preparerò automaticamente tutto il necessario per questo Mac.",
-    action: "Accendi DSBox"
+    title: "DSBox is off",
+    description: "Turn it on and I'll automatically prepare everything this Mac needs.",
+    action: "Turn on DSBox"
   },
   idle: {
-    title: "DSBox è spento",
-    description: "Il modello e le impostazioni restano pronti. Accendilo quando vuoi usarlo.",
-    action: "Accendi DSBox"
+    title: "DSBox is off",
+    description: "Your model and settings stay ready. Turn it on whenever you want to use it.",
+    action: "Turn on DSBox"
   },
   preparing: {
-    title: "Sto preparando DSBox",
-    description: "Scelgo il modello e le impostazioni corrette per questo Mac.",
-    action: "Preparazione in corso"
+    title: "Preparing DSBox",
+    description: "Choosing the right model and settings for this Mac.",
+    action: "Preparing"
   },
   installing: {
-    title: "Sto preparando DSBox",
-    description: "Configuro il motore per questo Mac. Questa operazione serve solo la prima volta.",
-    action: "Preparazione in corso"
+    title: "Preparing DSBox",
+    description: "Setting up the engine for this Mac. This is only required the first time.",
+    action: "Preparing"
   },
   updating: {
-    title: "Aggiorno DSBox",
-    description: "Applico gli aggiornamenti senza toccare le tue modifiche locali.",
-    action: "Aggiornamento in corso"
+    title: "Updating DSBox",
+    description: "Applying updates without touching your local changes.",
+    action: "Updating"
   },
   building: {
-    title: "Ottimizzo per questo Mac",
-    description: "Preparo il motore Metal usando le caratteristiche del tuo Apple Silicon.",
-    action: "Ottimizzazione in corso"
+    title: "Optimizing for this Mac",
+    description: "Building the Metal engine for your Apple silicon.",
+    action: "Optimizing"
   },
   downloading: {
-    title: "Scarico il modello",
-    description: "Se interrompi il download, riprenderà da dove era arrivato.",
-    action: "Download in corso"
+    title: "Downloading the model",
+    description: "If you stop the download, it will resume where it left off.",
+    action: "Downloading"
   },
   starting: {
-    title: "Avvio il modello",
-    description: "Il primo avvio può richiedere alcuni minuti. Ti avviserò appena sarà pronto.",
-    action: "Accensione in corso"
+    title: "Starting the model",
+    description: "The first launch may take a few minutes. I'll let you know as soon as it's ready.",
+    action: "Starting"
   },
   running: {
-    title: "DSBox è acceso",
-    description: "Il modello è pronto per la chat e per i tuoi coding agent.",
-    action: "Spegni"
+    title: "DSBox is on",
+    description: "The model is ready for chat and your coding agents.",
+    action: "Turn off"
   },
   stopping: {
-    title: "Sto spegnendo DSBox",
-    description: "Attendo il salvataggio del contesto prima di chiudere.",
-    action: "Spegnimento in corso"
+    title: "Turning off DSBox",
+    description: "Waiting for the context to be saved before shutting down.",
+    action: "Shutting down"
   },
   error: {
-    title: "Non sono riuscito ad avviare DSBox",
-    description: "Puoi riprovare. Il dettaglio tecnico è disponibile più in basso.",
-    action: "Riprova"
+    title: "DSBox couldn't start",
+    description: "You can try again. Technical details are available below.",
+    action: "Try again"
   }
 };
 
@@ -107,6 +108,14 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   const latest = metrics.at(-1);
   const phaseCopy = copyByPhase[runtime.phase];
   const busy = busyPhases.includes(runtime.phase);
+  const modelMissing = !runtime.modelPresent && runtime.phase !== "running" && !busy;
+  const visibleCopy = modelMissing
+    ? {
+        title: "Choose a model",
+        description: "Use a GGUF file already on your Mac, or choose exactly what to download from the DSBox catalog.",
+        action: "Choose model"
+      }
+    : phaseCopy;
 
   useEffect(() => {
     void apiRequest<CatalogResponse>("/api/models/catalog").then(setCatalog).catch(() => undefined);
@@ -147,7 +156,11 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
 
   const power = () => {
     if (busy) return;
-    void controller.action(runtime.phase === "running" ? "Spegnimento DSBox" : "Accensione DSBox", "/api/runtime/power").catch(() => undefined);
+    if (modelMissing) {
+      onNavigate("models");
+      return;
+    }
+    void controller.action(runtime.phase === "running" ? "Turning off DSBox" : "Turning on DSBox", "/api/runtime/power").catch(() => undefined);
   };
 
   const useCheckout = async (checkout: DiscoveredCheckout) => {
@@ -178,88 +191,103 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           onClick={power}
           disabled={busy}
           whileTap={busy ? undefined : { scale: 0.96 }}
-          aria-label={phaseCopy.action}
+          aria-label={visibleCopy.action}
         >
           <span className="power-control__ring" />
           <DsboxOrb state={orbState} size="hero" decorative />
         </motion.button>
-        <h2>{phaseCopy.title}</h2>
-        <p>{phaseCopy.description}</p>
-        <strong className="power-panel__action">{phaseCopy.action}</strong>
-        {busy && (
-          <div className="simple-progress" role="progressbar" aria-label="Avanzamento preparazione" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+        <h2>{visibleCopy.title}</h2>
+        <p>{visibleCopy.description}</p>
+        <strong className="power-panel__action">{visibleCopy.action}</strong>
+        {busy && runtime.phase === "downloading" && (
+          <div className="simple-progress simple-progress--indeterminate" role="progressbar" aria-label="Model download in progress">
+            <span />
+          </div>
+        )}
+        {busy && runtime.phase !== "downloading" && (
+          <div className="simple-progress" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
             <span style={{ width: `${progress}%` }} />
           </div>
         )}
+        {runtime.phase === "downloading" && (
+          <Button
+            variant="secondary"
+            className="download-cancel"
+            icon={<CircleStop size={15} />}
+            onClick={() => void controller.action("Stopping download", "/api/runtime/cancel-task").catch(() => undefined)}
+          >
+            Stop download
+          </Button>
+        )}
         {runtime.phase === "error" && runtime.lastError && (
-          <button className="error-detail-link" onClick={() => setTechnicalOpen(true)}>Mostra dettagli tecnici</button>
+          <button className="error-detail-link" onClick={() => setTechnicalOpen(true)}>Show technical details</button>
         )}
       </section>
 
       <section className="automatic-card panel">
         <div className="automatic-card__head">
           <span className="automatic-icon"><ShieldCheck size={18} /></span>
-          <div><h3>Automatico</h3><p>DSBox ha già scelto le impostazioni adatte a questo Mac.</p></div>
-          <span className={dsboxChoiceActive ? "dsbox-recommended" : "chosen-by-user"}>{dsboxChoiceActive ? <><Check size={12} /> Consigliato da DSBox</> : "Scelto da te"}</span>
+          <div><h3>Automatic setup</h3><p>DSBox has already selected the right settings for this Mac.</p></div>
+          <span className={dsboxChoiceActive ? "dsbox-recommended" : "chosen-by-user"}>{dsboxChoiceActive ? <><Check size={12} /> Recommended by DSBox</> : "Chosen by you"}</span>
         </div>
         <div className="automatic-facts">
-          <div><span><Cpu size={15} /> Questo Mac</span><strong>{system.cpuModel.replace(/^Apple\s*/i, "")} · {formatBytes(system.totalMemoryBytes, 0)}</strong></div>
-          <div><span><Gauge size={15} /> Modello</span><strong>{modelName}</strong></div>
-          <div><span><MemoryStick size={15} /> Memoria</span><strong>Bilanciata automaticamente</strong></div>
-          <div><span><ShieldCheck size={15} /> Privacy</span><strong>Solo sul tuo Mac</strong></div>
+          <div><span><Cpu size={15} /> This Mac</span><strong>{system.cpuModel.replace(/^Apple\s*/i, "")} · {formatBytes(system.totalMemoryBytes, 0)}</strong></div>
+          <div><span><Gauge size={15} /> Model</span><strong>{modelName}</strong></div>
+          <div><span><MemoryStick size={15} /> Memory</span><strong>Automatically balanced</strong></div>
+          <div><span><ShieldCheck size={15} /> Privacy</span><strong>Stays on your Mac</strong></div>
         </div>
-        <button className="automatic-card__settings" onClick={() => onNavigate("settings")}>Cambia modello o impostazioni <ExternalLink size={13} /></button>
+        <button className="automatic-card__settings" onClick={() => onNavigate("models")}>Change model <ExternalLink size={13} /></button>
       </section>
 
       {runtime.phase === "running" && (
         <section className="ready-actions">
-          <button className="ready-action panel" onClick={() => onNavigate("chat")}><span><MessageSquareText size={19} /></span><div><strong>Apri la chat</strong><p>Inizia una conversazione privata.</p></div><ExternalLink size={14} /></button>
-          <button className="ready-action panel" onClick={() => onNavigate("agents")}><span><Bot size={19} /></span><div><strong>Collega un agente</strong><p>Codex, Claude Code e altri.</p></div><ExternalLink size={14} /></button>
+          <button className="ready-action panel" onClick={() => onNavigate("chat")}><span><MessageSquareText size={19} /></span><div><strong>Open chat</strong><p>Start a private conversation.</p></div><ExternalLink size={14} /></button>
+          <button className="ready-action panel" onClick={() => onNavigate("agents")}><span><Bot size={19} /></span><div><strong>Connect an agent</strong><p>Codex, Claude Code, and others.</p></div><ExternalLink size={14} /></button>
         </section>
       )}
 
       <section className="simple-metrics">
-        <article className="panel"><span><MemoryStick size={16} /> Pressione memoria</span><strong>{latest?.memoryPressurePercent === null || latest?.memoryPressurePercent === undefined ? "N/D" : `${Math.round(latest.memoryPressurePercent)}%`}</strong><small>{latest ? `${latest.memoryPressureLevel === "critical" ? "Critica" : latest.memoryPressureLevel === "warning" ? "Attenzione" : "Normale"} · ${formatBytes(latest.memoryUsedBytes)} impegnati` : "cache macOS separata"}</small></article>
-        <article className="panel"><span><Gauge size={16} /> Velocità</span><strong>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(2)} t/s` : "—"}</strong><small>{runtime.phase === "running" ? "in attesa di una risposta" : "DSBox spento"}</small></article>
-        <article className="panel"><span><HardDrive size={16} /> Spazio libero</span><strong>{latest ? formatBytes(latest.diskFreeBytes) : "—"}</strong><small>sul disco del modello</small></article>
-        <article className="panel"><span><Clock3 size={16} /> Attivo da</span><strong>{formatDuration(runtime.startedAt)}</strong><small>{runtime.phase === "running" ? "sessione corrente" : "—"}</small></article>
+        <article className="panel"><span><MemoryStick size={16} /> Memory pressure</span><strong>{latest?.memoryPressurePercent === null || latest?.memoryPressurePercent === undefined ? "N/A" : `${Math.round(latest.memoryPressurePercent)}%`}</strong><small>{latest ? `${latest.memoryPressureLevel === "critical" ? "Critical" : latest.memoryPressureLevel === "warning" ? "Warning" : "Normal"} · ${formatBytes(latest.memoryUsedBytes)} committed` : "macOS cache tracked separately"}</small></article>
+        <article className="panel"><span><Gauge size={16} /> Speed</span><strong>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(2)} t/s` : "—"}</strong><small>{runtime.phase === "running" ? "waiting for a response" : "DSBox is off"}</small></article>
+        <article className="panel"><span><HardDrive size={16} /> Free space</span><strong>{latest ? formatBytes(latest.diskFreeBytes) : "—"}</strong><small>on the model drive</small></article>
+        <article className="panel"><span><Clock3 size={16} /> Uptime</span><strong>{formatDuration(runtime.startedAt)}</strong><small>{runtime.phase === "running" ? "current session" : "—"}</small></article>
       </section>
 
       <details ref={technicalRef} className="technical-disclosure panel" open={technicalOpen} onToggle={(event) => setTechnicalOpen(event.currentTarget.open)}>
-        <summary><span><Wrench size={16} /> Dettagli tecnici</span><ChevronDown size={15} /></summary>
+        <summary><span><Wrench size={16} /> Technical details</span><ChevronDown size={15} /></summary>
         <div className="technical-content">
           <div className="technical-overview">
-            <div><span>Canale</span><strong>{runtime.gitBranch ?? config.repository.branch}</strong></div>
-            <div><span>Versione</span><strong>{runtime.gitHead ?? "non installata"}</strong></div>
-            <div><span>Modalità</span><strong>{config.streaming.enabled ? "Metal + SSD streaming" : "Metal resident"}</strong></div>
-            <div><span>Contesto</span><strong>{config.server.contextTokens.toLocaleString("it-IT")} token</strong></div>
+            <div><span>Channel</span><strong>{runtime.gitBranch ?? config.repository.branch}</strong></div>
+            <div><span>Version</span><strong>{runtime.gitHead ?? "not installed"}</strong></div>
+            <div><span>Mode</span><strong>{config.streaming.enabled ? "Metal + SSD streaming" : "Metal resident"}</strong></div>
+            <div><span>Context</span><strong>{config.server.contextTokens.toLocaleString("en-US")} tokens</strong></div>
           </div>
 
           {checkouts.length > 0 && (
             <div className="technical-block">
-              <h4><FolderGit2 size={14} /> Installazioni DS4 trovate</h4>
+              <h4><FolderGit2 size={14} /> DS4 installations found</h4>
               {checkouts.map((checkout) => (
                 <div className="technical-checkout" key={checkout.path}>
                   <div><code>{checkout.path}</code><small>{checkout.branch} · {checkout.head}</small></div>
-                  {checkout.path === config.repository.directory ? <span><Check size={12} /> In uso</span> : <button onClick={() => void useCheckout(checkout).catch(() => undefined)}>Usa</button>}
+                  {checkout.path === config.repository.directory ? <span><Check size={12} /> In use</span> : <button onClick={() => void useCheckout(checkout).catch(() => undefined)}>Use</button>}
                 </div>
               ))}
             </div>
           )}
 
           <div className="technical-block">
-            <div className="technical-block__head"><h4><Terminal size={14} /> Comando di avvio</h4><CopyButton value={command.join(" ")} /></div>
-            <pre><code>{command.length ? command.map((value) => /\s/.test(value) ? `'${value}'` : value).join(" ") : "Disponibile dopo la configurazione"}</code></pre>
+            <div className="technical-block__head"><h4><Terminal size={14} /> Startup command</h4><CopyButton value={command.join(" ")} /></div>
+            <pre><code>{command.length ? command.map((value) => /\s/.test(value) ? `'${value}'` : value).join(" ") : "Available after setup"}</code></pre>
           </div>
 
           <div className="technical-block">
-            <h4><Terminal size={14} /> Ultimi eventi</h4>
+            <h4><Terminal size={14} /> Recent events</h4>
             <div className="technical-logs">
-              {recentLogs.length ? recentLogs.map((entry) => <div key={entry.id} className={`technical-log technical-log--${entry.level}`}><time>{timeLabel(entry.timestamp)}</time><span>{entry.source}</span><p>{entry.message}</p></div>) : <p className="technical-empty">Nessun evento.</p>}
+              {recentLogs.length ? recentLogs.map((entry) => <div key={entry.id} className={`technical-log technical-log--${entry.level}`}><time>{timeLabel(entry.timestamp)}</time><span>{entry.source}</span><p>{entry.message}</p></div>) : <p className="technical-empty">No events yet.</p>}
             </div>
           </div>
 
-          {runtime.phase === "stopping" && <Button variant="danger" icon={<AlertTriangle size={15} />} onClick={() => void controller.action("Forza spegnimento", "/api/runtime/force-stop").catch(() => undefined)}>Forza spegnimento</Button>}
+          {runtime.phase === "stopping" && <Button variant="danger" icon={<AlertTriangle size={15} />} onClick={() => void controller.action("Force stop", "/api/runtime/force-stop").catch(() => undefined)}>Force stop</Button>}
         </div>
       </details>
 

@@ -27,7 +27,7 @@ describe("argument tokenizer", () => {
   });
 
   it("rejects unclosed quotes", () => {
-    expect(() => tokenizeArguments(`--trace "broken`)).toThrow(/Virgolette/);
+    expect(() => tokenizeArguments(`--trace "broken`)).toThrow(/quotation mark/);
   });
 });
 
@@ -40,7 +40,7 @@ describe("environment parser", () => {
   });
 
   it("rejects invalid names", () => {
-    expect(() => parseEnvironment("BAD-NAME=1")).toThrow(/Nome variabile/);
+    expect(() => parseEnvironment("BAD-NAME=1")).toThrow(/variable name/);
   });
 });
 

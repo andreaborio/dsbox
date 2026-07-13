@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "DeepSeek V4 Flash Q2_K",
-  "description": "Build GGUF stabile ottimizzata per DS4 su Apple Silicon.",
+  "description": "Stable GGUF build optimized for DS4 on Apple Silicon.",
   "status": "stable",
   "recommended": true,
   "modelId": "deepseek-v4-flash",

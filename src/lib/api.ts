@@ -10,8 +10,8 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   if (!response.ok) {
     const message = typeof body === "object" && body && "error" in body
       ? typeof body.error === "string" ? body.error : (body.error as { message?: string })?.message
-      : typeof body === "string" ? body : `Richiesta fallita (${response.status})`;
-    throw new Error(message || `Richiesta fallita (${response.status})`);
+      : typeof body === "string" ? body : `Request failed (${response.status})`;
+    throw new Error(message || `Request failed (${response.status})`);
   }
   return body as T;
 }

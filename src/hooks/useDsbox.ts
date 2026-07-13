@@ -50,7 +50,7 @@ export function useDsbox(): DsboxController {
   }, [refresh]);
 
   const saveConfig = useCallback(async (config: DsboxConfig) => {
-    setBusyAction("Salvataggio configurazione");
+    setBusyAction("Saving configuration");
     setError(null);
     try {
       const next = await apiRequest<DsboxConfig>("/api/config", {

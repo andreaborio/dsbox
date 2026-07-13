@@ -34,8 +34,8 @@ const adapterMeta: Array<{ id: AdapterId; name: string; detail: string; icon: ty
   { id: "codex", name: "Codex CLI", detail: "Responses API", icon: Command },
   { id: "claude", name: "Claude Code", detail: "Anthropic Messages", icon: Bot },
   { id: "opencode", name: "OpenCode", detail: "Chat Completions", icon: TerminalSquare },
-  { id: "pi", name: "Pi", detail: "Compatibile OpenAI", icon: Code2 },
-  { id: "generic", name: "Generico", detail: "cURL / SDK", icon: Network }
+  { id: "pi", name: "Pi", detail: "OpenAI-compatible", icon: Code2 },
+  { id: "generic", name: "Generic", detail: "cURL / SDK", icon: Network }
 ];
 
 export function AgentsView({ snapshot, onNavigate }: Props) {
@@ -57,18 +57,18 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
   const snippets = useMemo<Record<AdapterId, { file: string; description: string; code: string; run?: string }>>(() => ({
     codex: {
       file: "~/.codex/config.toml",
-      description: "Codex usa l'endpoint Responses nativo della fork, con streaming di testo e tool call.",
+      description: "Codex uses the fork's native Responses endpoint, with streamed text and tool calls.",
       code: `[model_providers.ds4]\nname = "DS4 local"\nbase_url = "${base}"\nwire_api = "responses"${config.gateway.requireApiKey ? '\nenv_key = "DSBOX_API_KEY"' : ""}\nstream_idle_timeout_ms = 1000000`,
       run: `${config.gateway.requireApiKey ? `DSBOX_API_KEY=${config.gateway.apiKey} ` : ""}codex --model ${model} -c model_provider=ds4`
     },
     claude: {
       file: "~/bin/claude-ds4",
-      description: "Claude Code si collega alla route Anthropic /v1/messages. Il base URL non include /v1.",
+      description: "Claude Code connects to the Anthropic /v1/messages route. The base URL does not include /v1.",
       code: `#!/bin/sh\nunset ANTHROPIC_API_KEY\n\nexport ANTHROPIC_BASE_URL="${root}"\nexport ANTHROPIC_AUTH_TOKEN="${config.gateway.apiKey}"\nexport ANTHROPIC_MODEL="${model}"\nexport ANTHROPIC_DEFAULT_SONNET_MODEL="${model}"\nexport ANTHROPIC_DEFAULT_HAIKU_MODEL="${model}"\nexport ANTHROPIC_DEFAULT_OPUS_MODEL="${model}"\nexport CLAUDE_CODE_SUBAGENT_MODEL="${model}"\nexport CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nexport CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1\nexport CLAUDE_STREAM_IDLE_TIMEOUT_MS=600000\n\nexec "$HOME/.local/bin/claude" "$@"`
     },
     opencode: {
       file: "~/.config/opencode/opencode.json",
-      description: "Provider OpenAI-compatible con context allineato al profilo DSBox corrente.",
+      description: "An OpenAI-compatible provider with a context window matched to the current DSBox profile.",
       code: JSON.stringify({
         $schema: "https://opencode.ai/config.json",
         provider: {
@@ -89,7 +89,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     },
     pi: {
       file: "~/.pi/agent/models.json",
-      description: "Configurazione compatibile con il reasoning DeepSeek e usage nello stream SSE.",
+      description: "A configuration compatible with DeepSeek reasoning and usage data in the SSE stream.",
       code: JSON.stringify({
         providers: {
           ds4: {
@@ -118,9 +118,9 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
       }, null, 2)
     },
     generic: {
-      file: "Terminale",
-      description: "Richiesta OpenAI Chat Completions minimale con streaming disabilitato per leggibilità.",
-      code: `curl ${base}/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer ${config.gateway.apiKey}' \\\n  -d '${JSON.stringify({ model, messages: [{ role: "user", content: "Scrivi hello world in Rust." }], stream: false })}'`
+      file: "Terminal",
+      description: "A minimal OpenAI Chat Completions request with streaming disabled for readability.",
+      code: `curl ${base}/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer ${config.gateway.apiKey}' \\\n  -d '${JSON.stringify({ model, messages: [{ role: "user", content: "Write hello world in Rust." }], stream: false })}'`
     }
   }), [base, config.gateway.apiKey, config.server.contextTokens, config.server.maxOutputTokens, model, root]);
 
@@ -146,25 +146,25 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
   };
 
   const endpoints = [
-    { label: "OpenAI", protocol: "Codex e app compatibili", url: base, icon: MessagesSquare },
+    { label: "OpenAI", protocol: "Codex and compatible apps", url: base, icon: MessagesSquare },
     { label: "Anthropic", protocol: "Claude Code", url: root, icon: Bot },
-    { label: "Stato", protocol: "Controllo disponibilità", url: `${base}/models`, icon: Zap }
+    { label: "Status", protocol: "Availability check", url: `${base}/models`, icon: Zap }
   ];
 
   return (
     <div className="agents-page page-scroll">
       <section className="agents-intro">
         <div>
-          <span className="eyebrow"><Link2 size={13} /> Connessione locale</span>
-          <h2>Collega il coding agent che preferisci.</h2>
-          <p>Scegli il tuo strumento e copia la configurazione pronta. DSBox gestisce indirizzo, modello e sicurezza.</p>
+          <span className="eyebrow"><Link2 size={13} /> Local connection</span>
+          <h2>Connect your preferred coding agent.</h2>
+          <p>Choose your tool and copy the ready-to-use configuration. DSBox handles the address, model, and security.</p>
         </div>
         <div className="agents-intro__status panel">
           <StatusPill phase={runtime.phase} />
-          <div><span>Indirizzo</span><strong>{system.gatewayBaseUrl.replace("http://", "")}</strong></div>
+          <div><span>Address</span><strong>{system.gatewayBaseUrl.replace("http://", "")}</strong></div>
           <button className={testResult === "error" ? "connection-test--error" : ""} onClick={() => void testConnection()} disabled={testing} aria-live="polite">
             {testing ? <RefreshCw size={14} className="spin" /> : testResult === "ok" ? <CircleCheck size={14} /> : testResult === "error" ? <Unplug size={14} /> : <Play size={14} />}
-            {testing ? "Verifico…" : testResult === "ok" ? "Pronto" : testResult === "error" ? "Non raggiungibile" : "Verifica connessione"}
+            {testing ? "Checking…" : testResult === "ok" ? "Ready" : testResult === "error" ? "Unavailable" : "Test connection"}
           </button>
         </div>
       </section>
@@ -173,10 +173,10 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         <div className="connection-error" role="alert">
           <Unplug size={17} />
           <div>
-            <strong>{runtime.phase === "running" ? "Gateway non raggiungibile" : "DSBox è spento"}</strong>
-            <p>{runtime.phase === "running" ? "Controlla lo stato del server e riprova." : "Accendi il server e riprova la verifica."}</p>
+            <strong>{runtime.phase === "running" ? "Gateway unavailable" : "DSBox is off"}</strong>
+            <p>{runtime.phase === "running" ? "Check the server status and try again." : "Turn on the server, then test the connection again."}</p>
           </div>
-          <Button variant="secondary" onClick={() => onNavigate("runtime")}>Vai al server</Button>
+          <Button variant="secondary" onClick={() => onNavigate("runtime")}>Open server</Button>
         </div>
       )}
 
@@ -187,7 +187,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
             <article className="endpoint-card panel" key={endpoint.label}>
               <span className="endpoint-card__icon"><Icon size={17} /></span>
               <div><strong>{endpoint.label}</strong><small>{endpoint.protocol}</small><code>{endpoint.url}</code></div>
-              <CopyButton value={endpoint.url} label={`Copia URL ${endpoint.label}`} />
+              <CopyButton value={endpoint.url} label={`Copy ${endpoint.label} URL`} />
             </article>
           );
         })}
@@ -195,7 +195,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
 
       <section className="connector-workbench panel">
         <aside className="connector-list">
-          <div className="connector-list__heading">Scegli l'agente</div>
+          <div className="connector-list__heading">Choose an agent</div>
           {adapterMeta.map((item) => {
             const Icon = item.icon;
             return (
@@ -206,7 +206,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
               </button>
             );
           })}
-          <div className="connector-list__note"><ShieldCheck size={15} /><p>Il server interno non viene mai esposto sulla rete.</p></div>
+          <div className="connector-list__note"><ShieldCheck size={15} /><p>The internal server is never exposed to the network.</p></div>
         </aside>
 
         <div className="connector-detail">
@@ -218,14 +218,14 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
                   <h3>{adapterMeta.find((item) => item.id === adapter)?.name}</h3>
                   <p>{current.description}</p>
                 </div>
-                <CopyButton value={current.code} label="Copia configurazione" />
+                <CopyButton value={current.code} label="Copy configuration" />
               </div>
               <div className="code-window">
                 <div className="code-window__bar"><i /><i /><i /><span>{current.file}</span></div>
                 <pre><code>{current.code}</code></pre>
               </div>
               {current.run && (
-                <div className="run-command"><TerminalSquare size={15} /><code>{current.run}</code><CopyButton value={current.run} label="Copia comando" /></div>
+                <div className="run-command"><TerminalSquare size={15} /><code>{current.run}</code><CopyButton value={current.run} label="Copy command" /></div>
               )}
             </motion.div>
           </AnimatePresence>
@@ -235,19 +235,19 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
       <section className="agent-notes">
         <article className="panel">
           <span><KeyRound size={17} /></span>
-          <div><strong>Autenticazione locale</strong><p>{config.gateway.requireApiKey ? "Il gateway richiede il token mostrato nelle configurazioni." : "La chiave è un placeholder perché il gateway è limitato a 127.0.0.1."}</p></div>
+          <div><strong>Local authentication</strong><p>{config.gateway.requireApiKey ? "The gateway requires the token shown in Settings." : "The key is a placeholder because the gateway is restricted to 127.0.0.1."}</p></div>
         </article>
         <article className="panel">
           <span><ShieldCheck size={17} /></span>
-          <div><strong>Avvii più rapidi</strong><p>DSBox può riusare il contesto già elaborato senza ricominciare ogni volta da zero.</p></div>
+          <div><strong>Faster starts</strong><p>DSBox can reuse previously processed context instead of starting from scratch every time.</p></div>
         </article>
         <article className="panel">
           <span><Network size={17} /></span>
-          <div><strong>Richieste ordinate</strong><p>Quando arrivano più richieste insieme, DSBox le gestisce in sequenza per restare stabile.</p></div>
+          <div><strong>Queued requests</strong><p>When multiple requests arrive at once, DSBox processes them in sequence to remain stable.</p></div>
         </article>
       </section>
 
-      <div className="compatibility-note"><CircleAlert size={14} /><p>Le configurazioni usano automaticamente il modello selezionato in DSBox.</p></div>
+      <div className="compatibility-note"><CircleAlert size={14} /><p>These configuration snippets automatically use the model selected in DSBox.</p></div>
     </div>
   );
 }

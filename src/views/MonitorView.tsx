@@ -50,125 +50,126 @@ export function MonitorView({ snapshot }: Props) {
   const pressure = latest?.memoryPressurePercent;
   const memoryWarning = latest?.memoryPressureLevel ? latest.memoryPressureLevel !== "normal" : pressure !== null && pressure !== undefined ? pressure > 65 : memoryPercent > 90;
   const fileCachePercent = latest?.memoryTotalBytes ? latest.memoryFileCacheBytes / latest.memoryTotalBytes * 100 : 0;
+  const liveTokensPerSecond = snapshot.activity.stage === "idle" ? null : latest?.tokensPerSecond ?? null;
 
   return (
     <div className="monitor-page page-scroll">
       <section className="monitor-summary">
         <div>
-          <span className="eyebrow"><Activity size={13} /> Aggiornamento in tempo reale</span>
-          <h2>Cosa sta usando DSBox.</h2>
-          <p>Memoria, CPU, spazio su disco e velocità del modello, senza stime inventate.</p>
+          <span className="eyebrow"><Activity size={13} /> Real-time updates</span>
+          <h2>What DSBox is using.</h2>
+          <p>Memory, CPU, disk space, and model speed, with no fabricated estimates.</p>
         </div>
         <div className="monitor-summary__status panel">
           <StatusPill phase={runtime.phase} />
-          <div><small>Processo</small><strong>{runtime.pid ?? "—"}</strong></div>
-          <div><small>Motore</small><strong>Metal</strong></div>
-          <div><small>Stato modello</small><strong>{snapshot.activity.stage === "idle" ? "In attesa" : snapshot.activity.stage === "prefill" ? "Prefill" : snapshot.activity.stage === "thinking" ? "Thinking" : "Decode"}</strong></div>
+          <div><small>Process</small><strong>{runtime.pid ?? "—"}</strong></div>
+          <div><small>Engine</small><strong>Metal</strong></div>
+          <div><small>Model status</small><strong>{snapshot.activity.stage === "idle" ? "Waiting" : snapshot.activity.stage === "prefill" ? "Prefill" : snapshot.activity.stage === "thinking" ? "Thinking" : "Decode"}</strong></div>
         </div>
       </section>
 
       <section className="monitor-cards">
         <article className="resource-card panel">
-          <div className="resource-card__head"><span><MemoryStick size={17} /></span><div><small>Memoria unificata</small><strong>{latest ? formatBytes(latest.memoryUsedBytes) : "—"}<em> / {latest ? formatBytes(latest.memoryTotalBytes) : "—"}</em></strong></div><b>{formatPercent(memoryPercent)}</b></div>
+          <div className="resource-card__head"><span><MemoryStick size={17} /></span><div><small>Unified memory</small><strong>{latest ? formatBytes(latest.memoryUsedBytes) : "—"}<em> / {latest ? formatBytes(latest.memoryTotalBytes) : "—"}</em></strong></div><b>{formatPercent(memoryPercent)}</b></div>
           <Sparkline values={memoryValues} max={100} color="#6658d3" height={74} />
-          <div className="resource-card__foot"><span>Pressione {pressure === null || pressure === undefined ? "N/D" : formatPercent(pressure)}</span><span>Cache riutilizzabile {latest ? formatBytes(latest.memoryFileCacheBytes) : "—"}</span></div>
+          <div className="resource-card__foot"><span>Pressure {pressure === null || pressure === undefined ? "N/A" : formatPercent(pressure)}</span><span>Cache {latest ? formatBytes(latest.memoryFileCacheBytes) : "—"}</span></div>
         </article>
         <article className="resource-card panel">
-          <div className="resource-card__head"><span><Cpu size={17} /></span><div><small>CPU sistema</small><strong>{latest ? formatPercent(latest.systemCpuPercent, 1) : "—"}</strong></div></div>
+          <div className="resource-card__head"><span><Cpu size={17} /></span><div><small>System CPU</small><strong>{latest ? formatPercent(latest.systemCpuPercent, 1) : "—"}</strong></div></div>
           <Sparkline values={cpuValues} max={100} color="#1e8b68" />
           <div className="resource-card__foot"><span>DS4 {latest && runtime.pid ? formatPercent(latest.processCpuPercent, 1) : "—"}</span><span>Load {latest?.loadAverage.toFixed(2) ?? "—"}</span></div>
         </article>
         <article className="resource-card panel">
-          <div className="resource-card__head"><span><Gauge size={17} /></span><div><small>Velocità risposta</small><strong>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(2)} t/s` : "In attesa"}</strong></div></div>
+          <div className="resource-card__head"><span><Gauge size={17} /></span><div><small>Response speed</small><strong>{liveTokensPerSecond !== null ? `${liveTokensPerSecond.toFixed(2)} t/s` : "Waiting"}</strong></div></div>
           <Sparkline values={tokenValues} color="#d17832" />
-          <div className="resource-card__foot"><span>Misurata da DSBox</span><span>non stimata</span></div>
+          <div className="resource-card__foot"><span>Measured by DSBox</span><span>not estimated</span></div>
         </article>
         <article className="resource-card panel">
-          <div className="resource-card__head"><span><HardDrive size={17} /></span><div><small>Spazio libero</small><strong>{latest ? formatBytes(latest.diskFreeBytes, 0) : "—"}</strong></div></div>
+          <div className="resource-card__head"><span><HardDrive size={17} /></span><div><small>Free space</small><strong>{latest ? formatBytes(latest.diskFreeBytes, 0) : "—"}</strong></div></div>
           <div className="disk-usage-line"><span style={{ width: `${Math.min(100, diskUsedPercent)}%` }} /></div>
-          <div className="resource-card__foot"><span>Disco del modello</span><span>{latest ? `${formatPercent(diskUsedPercent)} usato` : "—"}</span></div>
+          <div className="resource-card__foot"><span>Model volume</span><span>{latest ? `${formatPercent(diskUsedPercent)} used` : "—"}</span></div>
         </article>
       </section>
 
       <details className="monitor-technical panel">
-        <summary><span><Wrench size={17} /><span><strong>Dettagli tecnici</strong><small>Swap, cache, Metal e log diagnostici</small></span></span><ChevronDown size={16} /></summary>
+        <summary><span><Wrench size={17} /><span><strong>Technical details</strong><small>Swap, cache, Metal, and diagnostic logs</small></span></span><ChevronDown size={16} /></summary>
         <div className="monitor-technical__content">
       <section className="monitor-detail-grid">
         <article className="panel memory-breakdown">
-          <div className="panel-heading"><div><span className="eyebrow">Memoria macOS</span><h3>Pressione e swap</h3></div><Database size={17} /></div>
+          <div className="panel-heading"><div><span className="eyebrow">macOS memory</span><h3>Pressure and swap</h3></div><Database size={17} /></div>
           <div className="memory-bars">
             <div>
-              <span><i className="legend-dot legend-dot--ram" />RAM utilizzata <strong>{formatPercent(memoryPercent)}</strong></span>
+              <span><i className="legend-dot legend-dot--ram" />RAM used <strong>{formatPercent(memoryPercent)}</strong></span>
               <div className="progress-bar"><i style={{ width: `${Math.min(100, memoryPercent)}%` }} /></div>
-              <small>{latest ? `${formatBytes(latest.memoryUsedBytes)} di ${formatBytes(latest.memoryTotalBytes)}` : "Nessun sample"}</small>
+              <small>{latest ? `${formatBytes(latest.memoryUsedBytes)} of ${formatBytes(latest.memoryTotalBytes)}` : "No samples"}</small>
             </div>
             <div>
-              <span><i className="legend-dot legend-dot--process" />Processo ds4 <strong>{latest && runtime.pid ? formatBytes(latest.processRssBytes) : "—"}</strong></span>
+              <span><i className="legend-dot legend-dot--process" />ds4 process <strong>{latest && runtime.pid ? formatBytes(latest.processRssBytes) : "—"}</strong></span>
               <div className="progress-bar progress-bar--process"><i style={{ width: `${latest && latest.memoryTotalBytes ? Math.min(100, latest.processRssBytes / latest.memoryTotalBytes * 100) : 0}%` }} /></div>
-              <small>RSS del child process, non memoria Metal allocata</small>
+              <small>Child process RSS, not allocated Metal memory</small>
             </div>
             <div>
               <span><i className="legend-dot legend-dot--swap" />Swap macOS <strong>{latest ? formatBytes(latest.swapUsedBytes) : "—"}</strong></span>
               <div className="progress-bar progress-bar--swap"><i style={{ width: `${latest?.swapTotalBytes ? Math.min(100, latest.swapUsedBytes / latest.swapTotalBytes * 100) : 0}%` }} /></div>
-              <small>{latest?.swapTotalBytes ? `${formatBytes(latest.swapUsedBytes)} di ${formatBytes(latest.swapTotalBytes)}` : "Nessuno swap allocato"}</small>
+              <small>{latest?.swapTotalBytes ? `${formatBytes(latest.swapUsedBytes)} of ${formatBytes(latest.swapTotalBytes)}` : "No swap allocated"}</small>
             </div>
             <div>
-              <span><i className="legend-dot legend-dot--cache" />Cache file riutilizzabile <strong>{latest ? formatBytes(latest.memoryFileCacheBytes) : "—"}</strong></span>
+              <span><i className="legend-dot legend-dot--cache" />Reclaimable file cache <strong>{latest ? formatBytes(latest.memoryFileCacheBytes) : "—"}</strong></span>
               <div className="progress-bar progress-bar--cache"><i style={{ width: `${Math.min(100, fileCachePercent)}%` }} /></div>
-              <small>Può contenere file e pesi mmap; macOS la recupera quando serve.</small>
+              <small>May include files and mmap weights; macOS reclaims it when needed.</small>
             </div>
           </div>
           <div className={`health-callout ${memoryWarning ? "health-callout--warn" : ""}`}>
             {memoryWarning ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
-            <p>{memoryWarning ? "Pressione memoria alta: riduci la conversazione o la cache del modello prima di riavviare." : "Pressione memoria normale. La cache riutilizzabile di macOS non viene contata come memoria occupata."}</p>
+            <p>{memoryWarning ? "High memory pressure: shorten the conversation or reduce the model cache before restarting." : "Memory pressure is normal. Reclaimable macOS cache is not counted as occupied memory."}</p>
           </div>
         </article>
 
         <article className="panel io-panel">
-          <div className="panel-heading"><div><span className="eyebrow">Archiviazione</span><h3>SSD e contesto</h3></div><HardDrive size={17} /></div>
+          <div className="panel-heading"><div><span className="eyebrow">Storage</span><h3>SSD and context</h3></div><HardDrive size={17} /></div>
           <div className="disk-donut" style={{ "--disk": `${diskUsedPercent * 3.6}deg` } as React.CSSProperties}>
-            <div><strong>{latest ? formatBytes(latest.diskFreeBytes, 0) : "—"}</strong><span>liberi</span></div>
+            <div><strong>{latest ? formatBytes(latest.diskFreeBytes, 0) : "—"}</strong><span>free</span></div>
           </div>
           <div className="io-facts">
             <div><span>Volume</span><strong>{latest ? formatBytes(latest.diskTotalBytes, 0) : "—"}</strong></div>
-            <div><span>Cache modello</span><strong>{config.streaming.cacheMode === "auto" ? "Adattiva" : `${config.streaming.cacheSizeGb} GB`}</strong></div>
-            <div><span>Contesto su disco</span><strong>{config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
-            <div><span>Modalità</span><strong>{config.streaming.enabled ? "Streaming SSD" : "In memoria"}</strong></div>
+            <div><span>Model cache</span><strong>{config.streaming.cacheMode === "auto" ? "Adaptive" : `${config.streaming.cacheSizeGb} GB`}</strong></div>
+            <div><span>On-disk context</span><strong>{config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
+            <div><span>Mode</span><strong>{config.streaming.enabled ? "SSD streaming" : "In memory"}</strong></div>
           </div>
-          <p className="metric-disclaimer"><Info size={13} /> La velocità SSD del singolo processo non è esposta in modo affidabile da macOS senza strumentazione interna.</p>
+          <p className="metric-disclaimer"><Info size={13} /> macOS does not reliably expose per-process SSD throughput without internal instrumentation.</p>
         </article>
 
         <article className="panel metal-panel">
           <div className="panel-heading"><div><span className="eyebrow">Apple GPU</span><h3>Metal</h3></div><Server size={17} /></div>
-          <div className="na-metric"><span>N/D</span><p>Utilizzo GPU</p></div>
+          <div className="na-metric"><span>N/A</span><p>GPU usage</p></div>
           <div className="metal-facts">
-            <div><Circle size={8} fill="currentColor" /><span>Motore</span><strong>Metal</strong></div>
-            <div><Circle size={8} fill="currentColor" /><span>Architettura</span><strong>{snapshot.system.arch}</strong></div>
-            <div><Circle size={8} fill="currentColor" /><span>Memoria</span><strong>Unificata</strong></div>
+            <div><Circle size={8} fill="currentColor" /><span>Engine</span><strong>Metal</strong></div>
+            <div><Circle size={8} fill="currentColor" /><span>Architecture</span><strong>{snapshot.system.arch}</strong></div>
+            <div><Circle size={8} fill="currentColor" /><span>Memory</span><strong>Unified</strong></div>
           </div>
-          <div className="metal-note"><Info size={14} /><p><code>powermetrics</code> richiede privilegi. DSBox non chiede sudo e non mostra percentuali inventate.</p></div>
+          <div className="metal-note"><Info size={14} /><p><code>powermetrics</code> requires elevated privileges. DSBox does not request sudo access or display fabricated percentages.</p></div>
         </article>
       </section>
 
       <section className="panel logs-panel">
         <div className="logs-toolbar">
-          <div><span className="eyebrow"><Terminal size={13} /> Diagnostica</span><h3>Eventi runtime</h3></div>
+          <div><span className="eyebrow"><Terminal size={13} /> Diagnostics</span><h3>Runtime events</h3></div>
           <div className="logs-toolbar__controls">
-            <label className="log-search"><Search size={14} /><input aria-label="Cerca negli eventi runtime" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cerca nei log" />{query && <button onClick={() => setQuery("")} aria-label="Cancella ricerca"><X size={13} /></button>}</label>
-            <label className="log-filter"><select aria-label="Filtra gli eventi per fonte" value={logFilter} onChange={(event) => setLogFilter(event.target.value as LogFilter)}><option value="all">Tutte le fonti</option><option value="ds4">ds4</option><option value="dsbox">dsbox</option><option value="build">build</option><option value="git">git</option><option value="download">download</option><option value="warnings">Avvisi + errori</option></select><ChevronDown size={13} /></label>
+            <label className="log-search"><Search size={14} /><input aria-label="Search runtime events" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search logs" />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={13} /></button>}</label>
+            <label className="log-filter"><select aria-label="Filter events by source" value={logFilter} onChange={(event) => setLogFilter(event.target.value as LogFilter)}><option value="all">All sources</option><option value="ds4">ds4</option><option value="dsbox">dsbox</option><option value="build">build</option><option value="git">git</option><option value="download">download</option><option value="warnings">Warnings + errors</option></select><ChevronDown size={13} /></label>
           </div>
         </div>
         <div className="terminal-window">
-          <div className="terminal-window__head"><i /><i /><i /><span>{filteredLogs.length} righe · buffer max 1.200</span></div>
+          <div className="terminal-window__head"><i /><i /><i /><span>{filteredLogs.length} lines · 1,200 max buffer</span></div>
           <div className="terminal-window__body">
             {filteredLogs.length ? filteredLogs.map((entry) => (
               <div className={`terminal-line terminal-line--${entry.level}`} key={entry.id}>
                 <time>{timeLabel(entry.timestamp)}</time><span className="terminal-line__source">{entry.source.padEnd(8)}</span><span className="terminal-line__marker">{entry.level === "error" ? "×" : entry.level === "warn" ? "!" : entry.level === "success" ? "✓" : "·"}</span><p>{entry.message}</p>
               </div>
-            )) : <div className="terminal-empty">Nessuna riga corrisponde al filtro.</div>}
+            )) : <div className="terminal-empty">No lines match this filter.</div>}
           </div>
         </div>
-        {config.observability.traceEnabled && <div className="trace-warning"><AlertTriangle size={14} /><p>Trace attiva: ds4 può salvare prompt, output e tool call in chiaro.</p></div>}
+        {config.observability.traceEnabled && <div className="trace-warning"><AlertTriangle size={14} /><p>Tracing enabled: ds4 may save prompts, outputs, and tool calls as plain text.</p></div>}
       </section>
         </div>
       </details>
