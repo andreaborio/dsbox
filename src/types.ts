@@ -1,4 +1,4 @@
-export type ViewId = "chat" | "runtime" | "agents" | "monitor" | "settings";
+export type ViewId = "chat" | "models" | "runtime" | "agents" | "monitor" | "settings";
 
 export type EnginePhase =
   | "uninstalled"
@@ -136,7 +136,16 @@ export interface CatalogModelFile {
   sha256: string | null;
 }
 
+export type CatalogPublisher = "andreaborio" | "unsloth";
+
+export interface CatalogSource {
+  id: CatalogPublisher;
+  label: string;
+  url: string;
+}
+
 export interface CatalogModel {
+  publisher: CatalogPublisher;
   repository: string;
   revision: string;
   label: string;
@@ -154,11 +163,13 @@ export interface CatalogModel {
   lastModified: string | null;
   sourceUrl: string;
   unavailableReason: string | null;
+  variantCount: number;
 }
 
 export interface CatalogResponse {
   author: "andreaborio";
-  label: "Modelli DSBox";
+  label: "DSBox Models";
+  sources: CatalogSource[];
   models: CatalogModel[];
   recommended: CatalogModel | null;
   refreshedAt: string;
@@ -171,6 +182,33 @@ export interface LocalModelCandidate {
   sizeBytes: number;
   modelId: string;
   selected: boolean;
+}
+
+export type LocalModelScanStatus = "idle" | "scanning" | "complete" | "cancelled" | "error";
+export type LocalModelScanStage = "idle" | "spotlight" | "filesystem" | "validating" | "complete";
+
+export interface LocalModelScanSnapshot {
+  id: string | null;
+  status: LocalModelScanStatus;
+  stage: LocalModelScanStage;
+  strategy: "none" | "spotlight" | "filesystem-fallback";
+  startedAt: string | null;
+  completedAt: string | null;
+  progress: {
+    directoriesScanned: number;
+    entriesScanned: number;
+    candidateFiles: number;
+    modelsFound: number;
+  };
+  models: LocalModelCandidate[];
+  truncated: boolean;
+  warning: string | null;
+  error: string | null;
+}
+
+export interface NativeModelSelectionResult {
+  cancelled: boolean;
+  model: LocalModelCandidate | null;
 }
 
 export interface AppSnapshot {
@@ -194,8 +232,46 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  createdAt?: number;
   reasoning?: string;
   pending?: boolean;
   error?: boolean;
   interrupted?: boolean;
+  stats?: ChatResponseStats;
+  sources?: ChatSource[];
+  skillNotice?: string;
+}
+
+export interface ChatSource {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface ChatResponseStats {
+  startedAt: number;
+  firstTokenAt: number | null;
+  reasoningStartedAt: number | null;
+  answerStartedAt: number | null;
+  completedAt: number | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  reasoningTokens: number | null;
+  totalTokens: number | null;
+  prefillMs: number | null;
+  thinkingMs: number | null;
+  decodeMs: number | null;
+  totalMs: number | null;
+  webSearchMs: number | null;
+  prefillTokensPerSecond: number | null;
+  averageTokensPerSecond: number | null;
+  timingSource: "server" | "end-to-end";
+}
+
+export interface ChatThread {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
 }

@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bot,
+  Box,
   ChevronRight,
+  CircleStop,
   Gauge,
   MessageSquareText,
   PanelLeftClose,
@@ -10,13 +12,17 @@ import {
   Settings,
   X
 } from "lucide-react";
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { DsboxOrb, type DsboxOrbState } from "./components/DsboxOrb";
+import { ChatSidebarThreads } from "./components/ChatSidebarThreads";
+import { Onboarding } from "./components/Onboarding";
+import { chatSessionStore, useChatStreaming } from "./hooks/useChatSession";
 import { useDsbox } from "./hooks/useDsbox";
 import { formatModelName } from "./lib/format";
 import type { ViewId } from "./types";
 
 const ChatView = lazy(() => import("./views/ChatView").then((module) => ({ default: module.ChatView })));
+const ModelsView = lazy(() => import("./views/ModelsView").then((module) => ({ default: module.ModelsView })));
 const RuntimeView = lazy(() => import("./views/RuntimeView").then((module) => ({ default: module.RuntimeView })));
 const AgentsView = lazy(() => import("./views/AgentsView").then((module) => ({ default: module.AgentsView })));
 const MonitorView = lazy(() => import("./views/MonitorView").then((module) => ({ default: module.MonitorView })));
@@ -24,36 +30,48 @@ const SettingsView = lazy(() => import("./views/SettingsView").then((module) => 
 
 const navigation: Array<{ id: ViewId; label: string; icon: typeof MessageSquareText }> = [
   { id: "chat", label: "Chat", icon: MessageSquareText },
+  { id: "models", label: "Models", icon: Box },
+  { id: "agents", label: "Agents", icon: Bot },
   { id: "runtime", label: "Server", icon: Power },
-  { id: "agents", label: "Agenti", icon: Bot },
-  { id: "monitor", label: "Attività", icon: Gauge }
+  { id: "monitor", label: "Activity", icon: Gauge }
 ];
 
 const titles: Record<ViewId, { title: string; subtitle: string }> = {
-  chat: { title: "Chat", subtitle: "Sessione locale privata" },
-  runtime: { title: "Server", subtitle: "Accensione e modello" },
-  agents: { title: "Agenti", subtitle: "Collega il tuo coding agent" },
-  monitor: { title: "Attività", subtitle: "Risorse e stato" },
-  settings: { title: "Impostazioni", subtitle: "Modello, prestazioni e privacy" }
+  chat: { title: "Chat", subtitle: "Private local session" },
+  models: { title: "Models", subtitle: "Catalog and models on this Mac" },
+  runtime: { title: "Server", subtitle: "Power and status" },
+  agents: { title: "Agents", subtitle: "Connect your coding tools" },
+  monitor: { title: "Activity", subtitle: "Real resources, no estimates" },
+  settings: { title: "Settings", subtitle: "Simple by default, deep when needed" }
 };
 
 export default function App() {
   const controller = useDsbox();
+  const chatStreaming = useChatStreaming();
   const [view, setView] = useState<ViewId>("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [modelsInitialFilter, setModelsInitialFilter] = useState<"all" | "catalog" | "unsloth" | "local">("all");
+  const [onboardingComplete, setOnboardingComplete] = useState(() => window.localStorage.getItem("dsbox:onboarding-complete") === "1");
   const snapshot = controller.snapshot;
+
+  useEffect(() => {
+    if (!snapshot?.runtime.modelPresent || onboardingComplete) return;
+    window.localStorage.setItem("dsbox:onboarding-complete", "1");
+    setOnboardingComplete(true);
+  }, [onboardingComplete, snapshot?.runtime.modelPresent]);
 
   const content = useMemo(() => {
     if (!snapshot) return null;
     const shared = { snapshot, controller, onNavigate: setView };
     switch (view) {
       case "chat": return <ChatView {...shared} />;
+      case "models": return <ModelsView {...shared} initialFilter={modelsInitialFilter} />;
       case "runtime": return <RuntimeView {...shared} />;
       case "agents": return <AgentsView {...shared} />;
       case "monitor": return <MonitorView {...shared} />;
       case "settings": return <SettingsView {...shared} />;
     }
-  }, [controller, snapshot, view]);
+  }, [controller, modelsInitialFilter, snapshot, view]);
 
   if (!snapshot) {
     return (
@@ -61,7 +79,7 @@ export default function App() {
         <DsboxOrb state="preparing" size="md" />
         <div className="boot-screen__wordmark">DSBox</div>
         <div className="boot-screen__line"><span /></div>
-        <p>Apro DSBox…</p>
+        <p>Opening DSBox…</p>
         {controller.error && <div className="boot-screen__error">{controller.error}</div>}
       </div>
     );
@@ -76,6 +94,25 @@ export default function App() {
       : snapshot.runtime.phase === "running"
         ? snapshot.activity.stage === "idle" ? "ready" : snapshot.activity.stage
         : "off";
+  const runtimeBusy = ["preparing", "installing", "updating", "building", "downloading", "starting", "stopping"].includes(snapshot.runtime.phase);
+  const downloadActive = snapshot.runtime.phase === "downloading";
+  const modelMissing = !snapshot.runtime.modelPresent && snapshot.runtime.phase !== "running";
+  const powerLabel = snapshot.runtime.phase === "running"
+    ? "On"
+    : downloadActive
+      ? "Stop download"
+      : runtimeBusy
+        ? "In progress"
+        : modelMissing
+          ? "Choose model"
+          : "Turn on";
+  const powerAriaLabel = snapshot.runtime.phase === "running"
+    ? "Turn off DSBox"
+    : downloadActive
+      ? "Stop the model download"
+      : modelMissing
+        ? "Choose a model"
+        : "Turn on DSBox";
 
   return (
     <div className={`app-shell ${sidebarCollapsed ? "app-shell--collapsed" : ""}`}>
@@ -91,20 +128,20 @@ export default function App() {
                 exit={{ opacity: 0, x: -6 }}
               >
                 <strong>DSBox</strong>
-                <span>AI locale</span>
+                <span>Local AI</span>
               </motion.div>
             )}
           </AnimatePresence>
           <button
             className="sidebar__collapse icon-button"
             onClick={() => setSidebarCollapsed((current) => !current)}
-            aria-label={sidebarCollapsed ? "Espandi barra laterale" : "Comprimi barra laterale"}
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
         </div>
 
-        <nav className="sidebar__nav" aria-label="Navigazione principale">
+        <nav className="sidebar__nav" aria-label="Primary navigation">
           <div className="nav-label">Workspace</div>
           {navigation.map((item) => {
             const Icon = item.icon;
@@ -120,7 +157,8 @@ export default function App() {
                 <Icon size={18} strokeWidth={1.8} />
                 <span>{item.label}</span>
                 {item.id === "runtime" && snapshot.runtime.phase === "error" && <i className="nav-alert" />}
-                {item.id === "monitor" && snapshot.runtime.phase === "running" && (
+                {item.id === "chat" && chatStreaming && <small>live</small>}
+                {item.id === "monitor" && snapshot.runtime.phase === "running" && snapshot.activity.stage !== "idle" && (
                   <small>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(1)} t/s` : "live"}</small>
                 )}
               </button>
@@ -128,24 +166,26 @@ export default function App() {
           })}
         </nav>
 
+        {view === "chat" && <ChatSidebarThreads onOpenChat={() => setView("chat")} />}
+
         <div className="sidebar__spacer" />
         <button
           className={`nav-item nav-item--settings ${view === "settings" ? "nav-item--active" : ""}`}
           onClick={() => setView("settings")}
-          title={sidebarCollapsed ? "Impostazioni" : undefined}
-          aria-label="Impostazioni"
+          title={sidebarCollapsed ? "Settings" : undefined}
+          aria-label="Settings"
           aria-current={view === "settings" ? "page" : undefined}
         >
           <Settings size={18} strokeWidth={1.8} />
-          <span>Impostazioni</span>
+          <span>Settings</span>
         </button>
 
-        <button className="sidebar__runtime" onClick={() => setView("runtime")} aria-label={`Server: ${snapshot.runtime.phase === "running" ? "acceso" : "spento"}`}>
+        <button className="sidebar__runtime" onClick={() => setView("runtime")} aria-label={`Server: ${snapshot.runtime.phase === "running" ? "on" : "off"}`}>
           <div className="sidebar__runtime-head">
             <span className={`status-orb status-orb--${snapshot.runtime.phase}`} />
             <div>
-              <strong>{formatModelName(snapshot.config.model.id)}</strong>
-              <span>{snapshot.runtime.phase === "running" ? "Pronto sul tuo Mac" : snapshot.runtime.currentTask ?? "DSBox spento"}</span>
+              <strong>{snapshot.runtime.modelPresent ? formatModelName(snapshot.config.model.id) : "Choose a model"}</strong>
+              <span>{snapshot.runtime.phase === "running" ? "Ready on your Mac" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "DSBox is off" : "Local file or DSBox catalog")}</span>
             </div>
           </div>
           <ChevronRight size={15} />
@@ -159,21 +199,34 @@ export default function App() {
             <span>{activeTitle.subtitle}</span>
           </div>
           <div className="topbar__actions">
+            {chatStreaming && (
+              <button className="topbar__generation-stop" onClick={chatSessionStore.stop} aria-label="Stop the active chat generation">
+                <CircleStop size={15} />
+                <span>Stop generation</span>
+              </button>
+            )}
             <button
-              className={`topbar__power ${snapshot.runtime.phase === "running" ? "topbar__power--on" : ""}`}
+              className={`topbar__power ${snapshot.runtime.phase === "running" ? "topbar__power--on" : ""} ${downloadActive ? "topbar__power--cancel" : ""}`}
               onClick={() => {
-                const busy = ["preparing", "installing", "updating", "building", "downloading", "starting", "stopping"].includes(snapshot.runtime.phase);
-                if (busy) {
+                if (downloadActive) {
+                  void controller.action("Stopping download", "/api/runtime/cancel-task").catch(() => undefined);
+                  return;
+                }
+                if (runtimeBusy) {
                   setView("runtime");
                   return;
                 }
-                void controller.action(snapshot.runtime.phase === "running" ? "Spegnimento DSBox" : "Accensione DSBox", "/api/runtime/power").catch(() => undefined);
+                if (modelMissing) {
+                  setView("models");
+                  return;
+                }
+                void controller.action(snapshot.runtime.phase === "running" ? "Turning off DSBox" : "Turning on DSBox", "/api/runtime/power").catch(() => undefined);
               }}
-              aria-label={snapshot.runtime.phase === "running" ? "Spegni DSBox" : "Accendi DSBox"}
+              aria-label={powerAriaLabel}
             >
               <span className="topbar__power-dot" />
-              <span>{snapshot.runtime.phase === "running" ? "Acceso" : ["preparing", "installing", "updating", "building", "downloading", "starting", "stopping"].includes(snapshot.runtime.phase) ? "In corso" : "Accendi"}</span>
-              <Power size={15} />
+              <span>{powerLabel}</span>
+              {downloadActive ? <CircleStop size={15} /> : <Power size={15} />}
             </button>
           </div>
         </header>
@@ -188,7 +241,7 @@ export default function App() {
               exit={{ opacity: 0, y: -3 }}
               transition={{ duration: 0.14, ease: [0.2, 0.8, 0.2, 1] }}
             >
-              <Suspense fallback={<div className="view-loading"><DsboxOrb state="preparing" size="sm" decorative /><span>Caricamento vista…</span></div>}>
+              <Suspense fallback={<div className="view-loading"><DsboxOrb state="preparing" size="sm" decorative /><span>Loading view…</span></div>}>
                 {content}
               </Suspense>
             </motion.div>
@@ -206,15 +259,35 @@ export default function App() {
             exit={{ opacity: 0, y: 8 }}
           >
             <span className="toast__icon">!</span>
-            <div><strong>Operazione non riuscita</strong><p>{controller.error}</p></div>
-            <button onClick={controller.clearError} aria-label="Chiudi"><X size={16} /></button>
+            <div><strong>Operation failed</strong><p>{controller.error}</p></div>
+            <button onClick={controller.clearError} aria-label="Close"><X size={16} /></button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className={`connection-indicator ${controller.connected ? "connection-indicator--on" : ""}`} title={controller.connected ? "Aggiornamenti live connessi" : "Riconnessione…"}>
+      <div className={`connection-indicator ${controller.connected ? "connection-indicator--on" : ""}`} title={controller.connected ? "Live updates connected" : "Reconnecting…"}>
         <span />
       </div>
+
+      <AnimatePresence>
+        {!snapshot.runtime.modelPresent && !onboardingComplete && (
+          <Onboarding
+            snapshot={snapshot}
+            onChooseLocal={() => {
+              window.localStorage.setItem("dsbox:onboarding-complete", "1");
+              setOnboardingComplete(true);
+              setModelsInitialFilter("local");
+              setView("models");
+            }}
+            onChooseCatalog={() => {
+              window.localStorage.setItem("dsbox:onboarding-complete", "1");
+              setOnboardingComplete(true);
+              setModelsInitialFilter("catalog");
+              setView("models");
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

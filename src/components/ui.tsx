@@ -14,17 +14,17 @@ export function BrandMark({ small = false }: { small?: boolean }) {
 }
 
 const phaseLabels: Record<EnginePhase, string> = {
-  uninstalled: "Non configurato",
-  idle: "Spento",
-  preparing: "Preparazione",
-  installing: "Preparazione",
-  updating: "Aggiornamento",
-  building: "Ottimizzazione",
-  downloading: "Download modello",
-  starting: "Accensione",
-  running: "Acceso",
-  stopping: "Spegnimento",
-  error: "Serve attenzione"
+  uninstalled: "Not configured",
+  idle: "Off",
+  preparing: "Preparing",
+  installing: "Preparing",
+  updating: "Updating",
+  building: "Optimizing",
+  downloading: "Downloading model",
+  starting: "Starting",
+  running: "On",
+  stopping: "Stopping",
+  error: "Needs attention"
 };
 
 export function StatusPill({ phase, compact = false }: { phase: EnginePhase; compact?: boolean }) {
@@ -64,7 +64,7 @@ export function Button({
   );
 }
 
-export function CopyButton({ value, label = "Copia" }: { value: string; label?: string }) {
+export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     await navigator.clipboard.writeText(value);
@@ -72,9 +72,9 @@ export function CopyButton({ value, label = "Copia" }: { value: string; label?: 
     window.setTimeout(() => setCopied(false), 1600);
   };
   return (
-    <button className="copy-button" onClick={() => void copy()} title={label || "Copia negli appunti"} aria-label={copied ? "Copiato" : label || "Copia negli appunti"}>
+    <button className="copy-button" onClick={() => void copy()} title={label || "Copy to clipboard"} aria-label={copied ? "Copied" : label || "Copy to clipboard"}>
       {copied ? <Check size={14} /> : <Copy size={14} />}
-      <span>{copied ? "Copiato" : label}</span>
+      <span>{copied ? "Copied" : label}</span>
     </button>
   );
 }
@@ -85,7 +85,7 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label={label || "Attiva o disattiva opzione"}
+      aria-label={label || "Toggle option"}
       className={`toggle ${checked ? "toggle--checked" : ""}`}
       onClick={() => onChange(!checked)}
     >
@@ -191,7 +191,7 @@ export function Modal({
           >
             <div className="modal__header">
               <h3 id={titleId}>{title}</h3>
-              <button className="icon-button" onClick={onClose} aria-label="Chiudi"><X size={18} /></button>
+              <button className="icon-button" onClick={onClose} aria-label="Close"><X size={18} /></button>
             </div>
             <div className="modal__body">{children}</div>
             {footer && <div className="modal__footer">{footer}</div>}

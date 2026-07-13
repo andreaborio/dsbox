@@ -1,4 +1,4 @@
-# Contribuire a DSBox
+# Contributing to DSBox
 
 ## Setup
 
@@ -7,7 +7,7 @@ npm ci
 npm run dev
 ```
 
-Prima di aprire una modifica:
+Before submitting a change, run:
 
 ```sh
 npm run typecheck
@@ -15,23 +15,26 @@ npm test
 npm run build
 ```
 
-## Regole del runtime
+## Runtime rules
 
-- Non costruire comandi shell interpolati: usa sempre executable + array `argv`.
-- Mantieni `ds4-server` su `127.0.0.1`; l'esposizione LAN non è parte del profilo base.
-- Non aggiungere fallback CPU automatici su macOS.
-- Non inviare `SIGKILL` nello stop normale: SIGTERM deve lasciare a ds4 il tempo di drenare e salvare KV.
-- Verifica i flag contro `ds4-server --help all`; `main` e il branch GLM non hanno capability identiche.
-- Non mostrare metriche Metal o I/O che non possono essere misurate in modo attendibile.
-- Trace e KV cache vanno trattate come dati potenzialmente sensibili.
+- Never construct interpolated shell commands; always use an executable and an `argv` array.
+- Keep `ds4-server` on `127.0.0.1`; LAN exposure is not part of the base profile.
+- Do not add automatic CPU fallbacks on macOS.
+- Do not send `SIGKILL` during normal shutdown. SIGTERM must give ds4 time to drain requests and save KV state.
+- Validate flags against `ds4-server --help all`; `main` and the GLM branch do not expose identical capabilities.
+- Do not display Metal or I/O metrics that cannot be measured reliably.
+- Treat traces and KV caches as potentially sensitive data.
+- Never start a model download implicitly from the power action. Users must select a local GGUF or explicitly confirm a catalog download.
+- Attribute model recommendations exclusively to DSBox, never to the repository or catalog author.
 
 ## UI
 
-- Usa solo asset locali e rispetta `prefers-reduced-motion`.
-- Mantieni navigazione da tastiera, nomi accessibili e layout senza overflow a 430 px.
-- Le animazioni devono chiarire cambi di stato, non mascherare attese o errori.
+- Use only local assets and respect `prefers-reduced-motion`.
+- Preserve keyboard navigation, accessible names, and an overflow-free layout at 430 px.
+- Animations must clarify state changes, not conceal waits or errors.
+- Make local-file selection and catalog downloads visibly distinct. Show the download size and destination before confirmation.
+- Keep download cancellation visible while a transfer is active, and explain that partial downloads are resumable.
 
-## Test
+## Tests
 
-Per log, SSE e processo usa fixture o fake server. Non avviare download reali di modelli nei test. I test che richiedono un GGUF o il backend Metal reale devono essere separati e opt-in.
-
+Use fixtures or fake servers for logs, SSE, and process tests. Never start real model downloads in the test suite. Tests requiring a GGUF or the actual Metal backend must be separate and opt-in.

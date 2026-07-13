@@ -1,0 +1,36 @@
+appId: com.dsbox.desktop
+productName: DSBox
+artifactName: DSBox-${version}-macOS-${arch}.${ext}
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-server/**/*
+  - desktop/**/*
+  - package.json
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  icon: build/icon.icns
+  identity: null
+  minimumSystemVersion: "13.0"
+  darkModeSupport: true
+dmg:
+  title: DSBox ${version}
+  backgroundColor: "#f7f7f5"
+  window:
+    width: 600
+    height: 410
+  contents:
+    - x: 160
+      y: 205
+      type: file
+    - x: 440
+      y: 205
+      type: link
+      path: /Applications

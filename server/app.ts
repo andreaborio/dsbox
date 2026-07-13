@@ -8,8 +8,9 @@ import type { AppSnapshot, InferenceActivity, InferenceStage, ServerEvent, Syste
 import { ConfigStore } from "./config.js";
 import { EventBus } from "./event-bus.js";
 import { MetricsMonitor } from "./metrics.js";
-import { RuntimeManager, isTaskCancelledError } from "./runtime.js";
+import { ModelSelectionError, RuntimeManager, isTaskCancelledError } from "./runtime.js";
 import { ModelCatalog } from "./catalog.js";
+import { searchWeb } from "./web-search.js";
 
 export interface AppServices {
   store: ConfigStore;
@@ -78,7 +79,7 @@ async function relayToDs4(
   if (services.runtime.getState().readiness !== "ready") {
     response.status(503).json({
       error: {
-        message: "ds4-server non è ancora pronto",
+        message: "ds4-server is not ready yet",
         type: "dsbox_runtime_unavailable"
       }
     });
@@ -86,7 +87,7 @@ async function relayToDs4(
   }
   if (requireGatewayAuth && !gatewayAuthorized(request, services.store)) {
     response.status(401).json({
-      error: { message: "API key DSBox non valida", type: "authentication_error" }
+      error: { message: "Invalid DSBox API key", type: "authentication_error" }
     });
     return;
   }
@@ -218,12 +219,12 @@ export function createApp(services: AppServices) {
     response.setHeader("Referrer-Policy", "no-referrer");
     response.setHeader("X-Frame-Options", "DENY");
     if (!isLoopbackUrlHost(request.header("host") ?? "")) {
-      response.status(403).json({ error: "Host non consentito" });
+      response.status(403).json({ error: "Host not allowed" });
       return;
     }
     const origin = request.header("origin");
     if (origin && !isLoopbackUrlHost(origin)) {
-      response.status(403).json({ error: "Origin non consentita" });
+      response.status(403).json({ error: "Origin not allowed" });
       return;
     }
     next();
@@ -234,7 +235,7 @@ export function createApp(services: AppServices) {
       next();
       return;
     }
-    response.status(403).json({ error: "Header di controllo DSBox mancante" });
+    response.status(403).json({ error: "Missing DSBox control header" });
   });
 
   app.get("/api/health", (_request, response) => {
@@ -268,7 +269,7 @@ export function createApp(services: AppServices) {
     const config = await services.store.set(request.body);
     services.bus.publish({ type: "config", payload: config });
     if (["running", "starting"].includes(services.runtime.getState().phase)) {
-      services.runtime.log("warn", "dsbox", "Configurazione salvata. Riavvia il runtime per applicare i flag.");
+      services.runtime.log("warn", "dsbox", "Configuration saved. Restart the runtime to apply the flags.");
     }
     await services.runtime.refresh();
     response.json(config);
@@ -291,17 +292,49 @@ export function createApp(services: AppServices) {
     response.json({ models: await services.runtime.discoverLocalModels() });
   }));
 
+  app.get("/api/models/local/scan", (_request, response) => {
+    response.json(services.runtime.getLocalModelScan());
+  });
+
+  app.post("/api/models/local/scan", (_request, response) => {
+    response.status(202).json(services.runtime.startLocalModelScan());
+  });
+
+  app.post("/api/models/local/scan/cancel", (_request, response) => {
+    response.json(services.runtime.cancelLocalModelScan());
+  });
+
+  app.post("/api/models/local/choose", asyncRoute(async (_request, response) => {
+    try {
+      response.json(await services.runtime.chooseLocalModelFromFinder());
+    } catch (error) {
+      if (error instanceof ModelSelectionError) {
+        response.status(error.status).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+  }));
+
   app.post("/api/models/local/select", asyncRoute(async (request, response) => {
     const modelPath = String(request.body?.path ?? "");
     const modelId = request.body?.modelId ? String(request.body.modelId) : undefined;
-    response.json(await services.runtime.selectLocalModel(modelPath, modelId));
+    try {
+      response.json(await services.runtime.selectLocalModel(modelPath, modelId));
+    } catch (error) {
+      if (error instanceof ModelSelectionError) {
+        response.status(error.status).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
   }));
 
   app.post("/api/models/download", (request, response) => {
     const repository = String(request.body?.repository ?? "");
     void services.catalog.list(services.system.totalMemoryBytes).then((catalog) => {
       const model = catalog.models.find((candidate) => candidate.repository === repository);
-      if (!model) throw new Error("Modello non presente nel catalogo DSBox");
+      if (!model) throw new Error("Model not found in the DSBox catalog");
       return services.runtime.downloadCatalogModel(model);
     }).catch((error) => {
       if (isTaskCancelledError(error)) return;
@@ -326,18 +359,10 @@ export function createApp(services: AppServices) {
     response.status(202).json({ accepted: true });
   });
 
-  app.post("/api/runtime/cancel-task", (_request, response, next) => {
-    if (!services.runtime.hasTask()) {
-      response.json({ ok: true, alreadyStopped: true });
-      return;
-    }
-    try {
-      services.runtime.cancelTask();
-      response.json({ ok: true });
-    } catch (error) {
-      next(error);
-    }
-  });
+  app.post("/api/runtime/cancel-task", asyncRoute(async (_request, response) => {
+    const cancelled = await services.runtime.cancelTask();
+    response.json(cancelled ? { ok: true } : { ok: true, alreadyStopped: true });
+  }));
 
   app.post("/api/runtime/start", asyncRoute(async (_request, response) => {
     await services.runtime.start();
@@ -355,17 +380,21 @@ export function createApp(services: AppServices) {
       response.status(202).json({ accepted: true, action: "stop" });
       return;
     }
+    if (!services.runtime.getState().modelPresent) {
+      response.status(409).json({
+        error: "No model is ready. Choose a GGUF file on this Mac or explicitly download one from the DSBox catalog."
+      });
+      return;
+    }
     try {
       services.runtime.prepareOneClickStart();
     } catch (error) {
       response.status(409).json({ error: error instanceof Error ? error.message : String(error) });
       return;
     }
-    void services.catalog.list(services.system.totalMemoryBytes).then((catalog) => {
-      const branch = services.store.get().repository.branch;
-      const recommended = catalog.models.find((model) => model.recommended && (!model.runtimeBranch || model.runtimeBranch === branch)) ?? null;
-      return services.runtime.oneClickStart(recommended);
-    }).catch((error) => services.runtime.failOneClickStart(error));
+    void services.runtime.oneClickStart().catch((error) => {
+      if (!isTaskCancelledError(error)) services.runtime.failOneClickStart(error);
+    });
     response.status(202).json({ accepted: true, action: "start" });
   });
 
@@ -382,6 +411,22 @@ export function createApp(services: AppServices) {
   app.post("/api/runtime/restart", asyncRoute(async (_request, response) => {
     await services.runtime.restart();
     response.status(202).json({ accepted: true });
+  }));
+
+  app.post("/api/skills/web-search", asyncRoute(async (request, response) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    request.once("aborted", abort);
+    response.once("close", abort);
+    try {
+      response.json(await searchWeb(String(request.body?.query ?? ""), globalThis.fetch, controller.signal));
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      response.status(502).json({ error: error instanceof Error ? error.message : "Web search failed" });
+    } finally {
+      request.off("aborted", abort);
+      response.off("close", abort);
+    }
   }));
 
   app.all("/api/chat", asyncRoute(async (request, response) => {
@@ -405,7 +450,7 @@ export function createApp(services: AppServices) {
     const status = error instanceof ZodError ? 400 : 500;
     const message = error instanceof ZodError
       ? error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")
-      : error instanceof Error ? error.message : "Errore interno DSBox";
+      : error instanceof Error ? error.message : "Internal DSBox error";
     if (status >= 500) services.runtime.log("error", "dsbox", message);
     response.status(status).json({ error: message });
   });

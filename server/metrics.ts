@@ -76,6 +76,11 @@ export class MetricsMonitor {
     this.runtime = runtime;
     this.bus = bus;
     bus.on("event", (event: { type: string; payload?: unknown }) => {
+      if (event.type === "activity") {
+        const stage = (event.payload as { stage?: string })?.stage;
+        if (stage === "idle") this.tokensPerSecond = null;
+        return;
+      }
       if (event.type === "runtime") {
         const phase = (event.payload as { phase?: string })?.phase;
         if (phase === "starting" || phase === "idle" || phase === "error") this.tokensPerSecond = null;
