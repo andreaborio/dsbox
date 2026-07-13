@@ -42,6 +42,29 @@ export function remainingDownloadBytes(estimatedBytes: number, partialBytes: num
   return Math.max(0, estimatedBytes - Math.max(0, partialBytes));
 }
 
+export function orderedLocalModelScanRoots(
+  selectedModelPath: string,
+  dsboxHomeDirectory: string,
+  userHome: string
+): string[] {
+  return [...new Set([
+    path.dirname(selectedModelPath),
+    path.join(dsboxHomeDirectory, "models"),
+    path.join(userHome, "Downloads"),
+    path.join(userHome, "Documents"),
+    path.join(userHome, "Desktop"),
+    path.join(userHome, "Models"),
+    userHome,
+    path.join(userHome, ".cache", "huggingface", "hub"),
+    "/Volumes",
+    "/Users/Shared",
+    "/opt",
+    "/usr/local",
+    "/private/var/tmp",
+    "/"
+  ].map((root) => path.resolve(root)))];
+}
+
 export class TaskCancelledError extends Error {
   constructor() {
     super("Operation cancelled by the user");
@@ -1055,22 +1078,7 @@ export class RuntimeManager {
     const config = this.store.get();
     if (process.env.NODE_ENV === "test") return [this.store.homeDirectory];
     const userHome = homedir();
-    return [...new Set([
-      path.dirname(config.model.path),
-      path.join(this.store.homeDirectory, "models"),
-      path.join(userHome, "Downloads"),
-      path.join(userHome, "Documents"),
-      path.join(userHome, "Desktop"),
-      path.join(userHome, "Models"),
-      path.join(userHome, ".cache", "huggingface", "hub"),
-      "/Volumes",
-      userHome,
-      "/Users/Shared",
-      "/opt",
-      "/usr/local",
-      "/private/var/tmp",
-      "/"
-    ].map((root) => path.resolve(root)))];
+    return orderedLocalModelScanRoots(config.model.path, this.store.homeDirectory, userHome);
   }
 
   private async filesystemGgufPaths(
@@ -1148,7 +1156,11 @@ export class RuntimeManager {
         const candidatePath = path.join(absoluteDirectory, entry.name);
         if (entry.isDirectory()) {
           const skippedAtFilesystemRoot = absoluteDirectory === "/" && skippedSystemRootDirectories.has(entry.name);
-          if (!skippedAtFilesystemRoot && !skippedDirectories.has(entry.name)) await visit(candidatePath, depth + 1);
+          const hiddenDirectory = entry.name.startsWith(".");
+          const macLibrary = absoluteDirectory === homedir() && entry.name === "Library";
+          if (!skippedAtFilesystemRoot && !hiddenDirectory && !macLibrary && !skippedDirectories.has(entry.name)) {
+            await visit(candidatePath, depth + 1);
+          }
         } else if ((entry.isFile() || entry.isSymbolicLink()) && entry.name.toLowerCase().endsWith(".gguf")) {
           paths.push(path.resolve(candidatePath));
         }
