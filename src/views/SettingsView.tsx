@@ -30,12 +30,15 @@ interface Props {
 }
 
 const conversationPresets = [
+  { value: 8_192, label: "Compact · 8K" },
+  { value: 16_384, label: "Efficient · 16K" },
   { value: 32_768, label: "Standard · 32K" },
   { value: 65_536, label: "Long · 64K" },
   { value: 100_000, label: "Very long · 100K" }
 ] as const;
 
 const responsePresets = [
+  { value: 4_096, label: "Compact · 4K" },
   { value: 8_192, label: "Standard · 8K" },
   { value: 16_384, label: "Long · 16K" },
   { value: 32_768, label: "Very long · 32K" }
@@ -63,6 +66,8 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
 
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(snapshot.config), [draft, snapshot.config]);
   const runtimeActive = ["running", "starting"].includes(snapshot.runtime.phase);
+  const unifiedMemoryGb = snapshot.system.totalMemoryBytes / 1024 ** 3;
+  const manualCacheMaxGb = Math.min(128, Math.max(8, Math.floor((unifiedMemoryGb * 0.75) / 4) * 4));
 
   const update = <K extends keyof DsboxConfig>(section: K, value: DsboxConfig[K]) => {
     setDraft((current) => ({ ...current, [section]: value }));
@@ -146,7 +151,7 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
                 <div className="advanced-group">
                   <div className="advanced-group__head"><div><h3>Performance</h3><p>DSBox defaults are tuned for SSD streaming on this Mac.</p></div><Zap size={16} /></div>
                   <div className="setting-row"><span className="setting-row__icon"><HardDrive size={17} /></span><div><strong>Optimized SSD streaming</strong><p>Loads the useful parts of the model into memory and streams the rest when needed.</p></div><Toggle checked={draft.streaming.enabled} onChange={(enabled) => update("streaming", { ...draft.streaming, enabled })} label="Optimized SSD streaming" /></div>
-                  {draft.streaming.enabled && <div className="nested-settings"><div className="segmented-control"><button className={draft.streaming.cacheMode === "manual" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "manual"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "manual" })}>Balanced</button><button className={draft.streaming.cacheMode === "auto" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "auto"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "auto" })}>Adaptive</button></div>{draft.streaming.cacheMode === "manual" && <Field label="Memory reserved for the model" hint={`${draft.streaming.cacheSizeGb} GB`}><div className="range-field"><input aria-label="Memory reserved for the model" type="range" min={8} max={128} step={4} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Memory reserved for the model in GB" type="number" min={1} max={1024} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}</div>}
+                  {draft.streaming.enabled && <div className="nested-settings"><div className="segmented-control"><button className={draft.streaming.cacheMode === "auto" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "auto"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "auto" })}>Adaptive</button><button className={draft.streaming.cacheMode === "manual" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "manual"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "manual" })}>Custom</button></div>{draft.streaming.cacheMode === "manual" && <Field label="Expert cache budget" hint={`${draft.streaming.cacheSizeGb} GB · DS4 applies a safe cap`}><div className="range-field"><input aria-label="Expert cache budget" type="range" min={8} max={manualCacheMaxGb} step={4} value={Math.min(draft.streaming.cacheSizeGb, manualCacheMaxGb)} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Expert cache budget in GB" type="number" min={1} max={manualCacheMaxGb} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}</div>}
                 </div>
 
                 <div className="advanced-group">

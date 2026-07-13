@@ -14,6 +14,7 @@ The interface is intentionally focused: a ChatGPT-style chat, a single control f
 - recommendations attributed exclusively to DSBox, never to the catalog author;
 - graceful process startup and shutdown, with a real readiness check against `GET /v1/models`;
 - a 64 GB profile with `--ssd-streaming`, a 32K context, and a 32 GB expert cache;
+- adaptive 16/24 GB profiles that trade unused context allocation for a larger safe expert cache;
 - a profile with an automatically calculated cache budget;
 - UI controls for context, power, threads, prefill, KV disk, trace, imatrix, flags, and environment variables;
 - a stable local gateway at `http://127.0.0.1:4242`;
@@ -95,7 +96,7 @@ Artifacts are written to `release/`. Local development builds are intentionally 
 3. Wait until the model is shown as ready. Interrupted catalog downloads can resume from the point they reached.
 4. Select **Power on** and wait for **DSBox is on**.
 
-You do not need to choose a branch, calculate the cache size, or understand SSD streaming: DSBox uses conservative defaults appropriate for the detected Mac and selected model. Manual controls remain available in **Settings**, while checkout details, the effective command, and logs are grouped in the technical section.
+You do not need to choose a branch, calculate the cache size, or understand SSD streaming: DSBox adapts context and expert-cache planning to the detected Mac. A 16 GB Mac starts at an 8K context and lets DS4 calculate the largest safe cache; 24 GB starts at 16K; 32 GB and larger keep at least 32K. Manual controls remain available in **Settings**, while checkout details, the effective command, and logs are grouped in the technical section.
 
 The effective command is always available for inspection. The process is created from an `argv` array and never from a string passed to a shell.
 

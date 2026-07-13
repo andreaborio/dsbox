@@ -70,7 +70,7 @@ export function MonitorView({ snapshot }: Props) {
 
       <section className="monitor-cards">
         <article className="resource-card panel">
-          <div className="resource-card__head"><span><MemoryStick size={17} /></span><div><small>Unified memory</small><strong>{latest ? formatBytes(latest.memoryUsedBytes) : "—"}<em> / {latest ? formatBytes(latest.memoryTotalBytes) : "—"}</em></strong></div><b>{formatPercent(memoryPercent)}</b></div>
+          <div className="resource-card__head"><span><MemoryStick size={17} /></span><div><small>Committed memory</small><strong>{latest ? formatBytes(latest.memoryUsedBytes) : "—"}<em> / {latest ? formatBytes(latest.memoryTotalBytes) : "—"}</em></strong></div><b>{formatPercent(memoryPercent)}</b></div>
           <Sparkline values={memoryValues} max={100} color="#6658d3" height={74} />
           <div className="resource-card__foot"><span>Pressure {pressure === null || pressure === undefined ? "N/A" : formatPercent(pressure)}</span><span>Cache {latest ? formatBytes(latest.memoryFileCacheBytes) : "—"}</span></div>
         </article>
@@ -99,7 +99,7 @@ export function MonitorView({ snapshot }: Props) {
           <div className="panel-heading"><div><span className="eyebrow">macOS memory</span><h3>Pressure and swap</h3></div><Database size={17} /></div>
           <div className="memory-bars">
             <div>
-              <span><i className="legend-dot legend-dot--ram" />RAM used <strong>{formatPercent(memoryPercent)}</strong></span>
+              <span><i className="legend-dot legend-dot--ram" />Committed memory <strong>{formatPercent(memoryPercent)}</strong></span>
               <div className="progress-bar"><i style={{ width: `${Math.min(100, memoryPercent)}%` }} /></div>
               <small>{latest ? `${formatBytes(latest.memoryUsedBytes)} of ${formatBytes(latest.memoryTotalBytes)}` : "No samples"}</small>
             </div>
