@@ -3191,19 +3191,21 @@ pre,
 .setting-row strong { display: block; font-size: 12px; }
 .setting-row p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 
-.nested-settings { margin: 4px 0 0 48px; padding: 16px; border-left: 2px solid #dedbeF; border-radius: 0 9px 9px 0; background: #f8f7fc; }
-.segmented-control { display: grid; max-width: 310px; margin-bottom: 15px; padding: 3px; grid-template-columns: 1fr 1fr; border-radius: 9px; background: #eae9e5; }
-.segmented-control button { height: 44px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 650; }
-.segmented-control button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08); }
+.nested-settings { margin: 12px 0 0; padding: 15px; border: 1px solid #e7e8e3; border-radius: 12px; background: #fafaf8; }
+.segmented-control { display: grid; width: 100%; margin-bottom: 17px; padding: 3px; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid #e1e2dd; border-radius: 10px; background: #efefeb; }
+.segmented-control button { height: 38px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 650; transition: color 0.16s var(--ease-standard), background 0.16s var(--ease-standard), box-shadow 0.16s var(--ease-standard); }
+.segmented-control button:hover { color: var(--ink-2); }
+.segmented-control button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(20, 24, 22, 0.08), 0 0 0 1px rgba(20, 24, 22, 0.035); }
 
 .range-field { display: flex; align-items: center; height: 44px; gap: 9px; }
-.range-field input[type="range"] { flex: 1; height: 44px; padding: 0; appearance: none; border: 0; background: transparent; box-shadow: none; }
+.range-field input[type="range"] { min-width: 0; flex: 1; height: 44px; padding: 0; appearance: none; border: 0; background: transparent; box-shadow: none; }
 .range-field input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 5px; background: #dcdadf; }
 .range-field input[type="range"]::-moz-range-track { height: 4px; border: 0; border-radius: 5px; background: #dcdadf; }
-.range-field input[type="range"]::-webkit-slider-thumb { width: 16px; height: 16px; appearance: none; border: 2px solid #fff; border-radius: 50%; background: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
+.range-field input[type="range"]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6px; appearance: none; border: 2px solid #fff; border-radius: 50%; background: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
+.range-field input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border: 2px solid #fff; border-radius: 50%; background: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
 .range-field input[type="range"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 8px; }
 .range-field input[type="number"] { width: 70px; }
-.range-field > span { color: var(--muted); font-size: 11px; }
+.range-field > span { min-width: 20px; color: var(--muted); font-size: 11px; }
 .range-field--power > span { min-width: 35px; color: var(--ink); font-weight: 700; }
 
 .inline-toggles { display: flex; justify-content: space-between; gap: 10px; }
