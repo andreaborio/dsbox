@@ -89,7 +89,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     },
     pi: {
       file: "~/.pi/agent/models.json",
-      description: "A configuration compatible with DeepSeek reasoning and usage data in the SSE stream.",
+      description: "A configuration with streamed reasoning and usage data.",
       code: JSON.stringify({
         providers: {
           ds4: {

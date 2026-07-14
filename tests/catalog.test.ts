@@ -168,7 +168,12 @@ describe("Hugging Face model catalog", () => {
 
     const catalog = await new ModelCatalog().list(128 * 1024 ** 3, true);
 
-    expect(catalog.models[0]).toMatchObject({ experimental: true, installable: true, recommended: false });
+    expect(catalog.models[0]).toMatchObject({
+      modelId: "labs-model-experimental",
+      experimental: true,
+      installable: true,
+      recommended: false
+    });
     expect(catalog.recommended).toBeNull();
   });
 

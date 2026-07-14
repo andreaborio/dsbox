@@ -47,7 +47,7 @@ const responsePresets = [
 ] as const;
 
 const engineBranches = [
-  { value: "main", label: "DeepSeek · Stable" },
+  { value: "main", label: "Stable · main" },
   { value: "codex/glm52-upstream-clean-bench", label: "GLM 5.2 · Experimental" }
 ] as const;
 

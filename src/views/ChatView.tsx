@@ -17,7 +17,6 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
-  Sparkles,
   Timer,
   Trash2,
   Zap
@@ -400,7 +399,6 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
               transition={{ duration: 0.24 }}
             >
               <BrandMark />
-              <div className="eyebrow chat-empty__model"><Sparkles size={13} /><span>{formatModelName(snapshot.config.model.id)} · on your Mac</span></div>
               <h2>What do you want to build?</h2>
               <p>{runtimePresentation.description}</p>
               <div className="suggestion-grid">

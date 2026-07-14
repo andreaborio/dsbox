@@ -1224,9 +1224,6 @@ pre,
 }
 
 .chat-empty .brand-mark { margin-bottom: 12px; }
-.chat-empty .eyebrow { color: var(--violet); }
-.chat-empty__model { max-width: 100%; }
-.chat-empty__model > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .chat-empty h2 {
   margin: 10px 0 0;

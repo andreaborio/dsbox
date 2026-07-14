@@ -85,9 +85,17 @@ function cleanLabel(repository: string): string {
     .replace(/\bQ(\d+)k\b/gi, "Q$1_K");
 }
 
-function inferredModelId(tags: string[]): string {
-  if (tags.some((tag) => tag.toLowerCase().includes("glm-5.2"))) return "glm-5.2";
-  return "deepseek-v4-flash";
+function inferredModelId(repository: string, tags: string[]): string {
+  const identity = `${repository} ${tags.join(" ")}`.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  if (identity.includes("glm 5 2")) return "glm-5.2";
+  if (identity.includes("deepseek v4")) return "deepseek-v4-flash";
+
+  const repositoryName = repository.split("/").at(-1) ?? "model";
+  return repositoryName
+    .replace(/[-_]gguf$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "model";
 }
 
 function quantizationVariantCount(files: Array<HubSibling & { rfilename: string }>): number {
@@ -340,7 +348,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
         : experimental
           ? "Experimental version available for advanced testing."
           : "DS4 model published on Hugging Face."),
-    modelId: explicitModelId || inferredModelId(tags),
+    modelId: explicitModelId || inferredModelId(repository, tags),
     runtimeBranch,
     runtimeCommit,
     files,

@@ -156,7 +156,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   const recommendedRepositoryName = recommendedModel?.repository.split("/").at(-1);
   const modelName = useMemo(() => {
     if (runtime.modelPresent) return formatModelName(config.model.id);
-    return recommendedModel?.label || "DeepSeek V4 Flash";
+    return recommendedModel?.label || "No model selected";
   }, [config.model.id, recommendedModel, runtime.modelPresent]);
 
   const dsboxChoiceActive = recommendedModel
