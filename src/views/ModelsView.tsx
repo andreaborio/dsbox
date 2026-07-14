@@ -5,11 +5,13 @@ import {
   Check,
   ChevronDown,
   CircleStop,
+  Compass,
   Download,
   ExternalLink,
   FileBox,
   FolderOpen,
   HardDrive,
+  LibraryBig,
   Pause,
   Play,
   RefreshCw,
@@ -50,9 +52,9 @@ interface Props {
 
 type ModelView = "library" | "discover";
 
-const views: Array<{ id: ModelView; label: string }> = [
-  { id: "library", label: "Library" },
-  { id: "discover", label: "Discover" }
+const views: Array<{ id: ModelView; label: string; icon: typeof LibraryBig }> = [
+  { id: "library", label: "Library", icon: LibraryBig },
+  { id: "discover", label: "Discover", icon: Compass }
 ];
 
 function modelPublisher(model: CatalogModel): CatalogPublisher {
@@ -398,16 +400,20 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
       <div className="models-page__inner">
         <div className="models-toolbar">
           <div className="models-view-switcher" role="group" aria-label="Models view">
-            {views.map((item) => (
-              <button
-                key={item.id}
-                className={activeView === item.id ? "active" : ""}
-                onClick={() => { setActiveView(item.id); setQuery(""); }}
-                aria-pressed={activeView === item.id}
-              >
-                {item.label}
-              </button>
-            ))}
+            {views.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  className={activeView === item.id ? "active" : ""}
+                  onClick={() => { setActiveView(item.id); setQuery(""); }}
+                  aria-pressed={activeView === item.id}
+                >
+                  <span className="models-view-switcher__icon" aria-hidden="true"><Icon size={14} strokeWidth={2.1} /></span>
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
           </div>
           <label className="models-search">
             <span className="sr-only">Search {activeView === "library" ? "your library" : "the model catalog"}</span>

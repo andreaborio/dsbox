@@ -1,15 +1,15 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Bot,
-  Box,
+  Boxes,
+  ChartNoAxesCombined,
   ChevronRight,
+  CirclePower,
   CircleStop,
-  Gauge,
-  MessageSquareText,
+  MessageCircleMore,
   PanelLeftClose,
   PanelLeftOpen,
-  Power,
-  Settings,
+  SlidersHorizontal,
+  Workflow,
   X
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
@@ -29,12 +29,12 @@ const AgentsView = lazy(() => import("./views/AgentsView").then((module) => ({ d
 const MonitorView = lazy(() => import("./views/MonitorView").then((module) => ({ default: module.MonitorView })));
 const SettingsView = lazy(() => import("./views/SettingsView").then((module) => ({ default: module.SettingsView })));
 
-const navigation: Array<{ id: ViewId; label: string; icon: typeof MessageSquareText }> = [
-  { id: "chat", label: "Chat", icon: MessageSquareText },
-  { id: "models", label: "Models", icon: Box },
-  { id: "agents", label: "Agents", icon: Bot },
-  { id: "runtime", label: "Server", icon: Power },
-  { id: "monitor", label: "Activity", icon: Gauge }
+const navigation: Array<{ id: ViewId; label: string; icon: typeof MessageCircleMore }> = [
+  { id: "chat", label: "Chat", icon: MessageCircleMore },
+  { id: "models", label: "Models", icon: Boxes },
+  { id: "agents", label: "Agents", icon: Workflow },
+  { id: "runtime", label: "Server", icon: CirclePower },
+  { id: "monitor", label: "Activity", icon: ChartNoAxesCombined }
 ];
 
 const viewLabels: Record<ViewId, string> = {
@@ -135,7 +135,7 @@ export default function App() {
                 aria-label={item.label}
                 aria-current={view === item.id ? "page" : undefined}
               >
-                <Icon size={18} strokeWidth={1.8} />
+                <i className="nav-item__icon" aria-hidden="true"><Icon size={17} strokeWidth={2} /></i>
                 <span>{item.label}</span>
                 {item.id === "runtime" && snapshot.runtime.phase === "error" && <i className="nav-alert" />}
                 {item.id === "models" && activeDownload && <small>{Math.round((activeDownload.downloadedBytes / Math.max(activeDownload.totalBytes, 1)) * 100)}%</small>}
@@ -159,7 +159,7 @@ export default function App() {
           aria-label="Settings"
           aria-current={view === "settings" ? "page" : undefined}
         >
-          <Settings size={18} strokeWidth={1.8} />
+          <i className="nav-item__icon" aria-hidden="true"><SlidersHorizontal size={17} strokeWidth={2} /></i>
           <span>Settings</span>
         </button>
 
