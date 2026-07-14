@@ -141,6 +141,20 @@ describe("transparent Hugging Face downloads", () => {
     });
   }
 
+  it("isolates concurrent atomic state writes across manager instances", async () => {
+    const managers = await Promise.all(Array.from({ length: 8 }, () => manager()));
+    const persist = (downloads: ModelDownloadManager) => (
+      downloads as unknown as { persist(): Promise<void> }
+    ).persist();
+
+    await expect(Promise.all(
+      Array.from({ length: 64 }, (_, index) => persist(managers[index % managers.length]))
+    )).resolves.toHaveLength(64);
+
+    const state = JSON.parse(await readFile(path.join(home, "downloads", "state.json"), "utf8"));
+    expect(state).toEqual({ version: 1, downloads: [] });
+  });
+
   it("downloads and transactionally installs every standard GGUF shard", async () => {
     const first = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(64, 1)]);
     const second = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(80, 2)]);

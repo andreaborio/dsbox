@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import {
   access,
@@ -270,7 +270,7 @@ export class ModelDownloadManager {
       version: stateVersion,
       downloads: [...this.records.values()]
     };
-    const temporaryPath = `${this.statePath}.tmp-${process.pid}`;
+    const temporaryPath = `${this.statePath}.tmp-${process.pid}-${randomUUID()}`;
     this.persistQueue = this.persistQueue.then(async () => {
       await writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
       await rename(temporaryPath, this.statePath);
