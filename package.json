@@ -1,6 +1,6 @@
 {
   "name": "dsbox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "A polished local launcher and agent gateway for andreaborio/ds4 on Apple Silicon.",
   "author": "DSBox",
@@ -22,6 +22,7 @@
     "desktop": "npm run build && electron .",
     "pack:mac": "npm run build && electron-builder --mac dir --arm64",
     "dist:mac": "npm run build && electron-builder --mac dmg --arm64",
+    "verify:mac": "bash scripts/verify-macos-release.sh",
     "start": "node dist-server/server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",

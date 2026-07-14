@@ -17,7 +17,10 @@ mac:
       arch:
         - arm64
   icon: build/icon.icns
-  identity: null
+  # Ad-hoc signing gives Apple Silicon a structurally valid, sealed bundle.
+  # It does not establish a publisher identity or notarize the app.
+  identity: "-"
+  hardenedRuntime: false
   minimumSystemVersion: "13.0"
   darkModeSupport: true
 dmg:

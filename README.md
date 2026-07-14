@@ -63,13 +63,14 @@ DSBox also ships as a native Apple Silicon desktop app. The app embeds the contr
 
 ### Install from the DMG
 
-1. Download `DSBox-<version>-macOS-arm64.dmg` from the latest GitHub release, or use the file generated in `release/` when building locally.
-2. Double-click the DMG to mount it.
-3. Drag **DSBox** onto the **Applications** shortcut in the installer window.
-4. Eject the **DSBox** disk image from Finder. Do not run the app permanently from the mounted DMG.
-5. Open **Applications**, then double-click **DSBox**. The app opens its local control plane automatically; no Terminal command is required.
+1. Download `DSBox-<version>-macOS-arm64.dmg` and `SHA256SUMS.txt` from the [latest GitHub release](https://github.com/andreaborio/dsbox/releases/latest).
+2. In Terminal, from the folder containing both downloads, run `shasum -a 256 -c SHA256SUMS.txt` and continue only if it reports `OK`.
+3. Double-click the DMG to mount it.
+4. Drag **DSBox** onto the **Applications** shortcut in the installer window.
+5. Eject the **DSBox** disk image from Finder. Do not run the app permanently from the mounted DMG.
+6. In **Applications**, Control-click **DSBox**, choose **Open**, then confirm **Open**. The app opens its local control plane automatically; no Terminal command is required.
 
-Official release builds should be signed and notarized. A local development DMG is unsigned, so macOS may block its first launch. Only if you built the app yourself or trust the exact artifact, try opening it once, then go to **System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway**. Apple documents this exception flow in [Open a Mac app by overriding security settings](https://support.apple.com/guide/mac-help/open-an-app-by-overriding-security-settings-mh40617/mac). Do not bypass the warning for an artifact you cannot verify.
+The current GitHub community build is ad-hoc signed so macOS can verify the complete bundle, but it is not signed with an Apple Developer ID and is not notarized. macOS will therefore require explicit approval on first launch. If Control-click → **Open** is unavailable, try launching the app once, then go to **System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway**. Apple documents this exception flow in [Open a Mac app by overriding security settings](https://support.apple.com/guide/mac-help/open-an-app-by-overriding-security-settings-mh40617/mac). If macOS reports that the app is damaged, follow the checksum-first recovery steps in [`docs/INSTALL-macOS.md`](docs/INSTALL-macOS.md). Do not bypass the warning for an artifact you cannot verify.
 
 After installation, follow **First-time setup** below. Updating DSBox uses the same process: quit the app, mount the newer DMG, and replace the existing copy in Applications. Models, configuration, and local chat data remain outside the application bundle.
 
@@ -87,7 +88,7 @@ Build the drag-to-Applications DMG:
 npm run dist:mac
 ```
 
-Artifacts are written to `release/`. Local development builds are intentionally unsigned. Public distribution requires a Developer ID Application certificate and Apple notarization credentials to be configured in the packaging environment.
+Artifacts are written to `release/`. Builds are ad-hoc signed: their sealed bundle is verifiable, but they have no verified publisher identity and are not notarized. `npm run verify:mac` checks the DMG, bundle metadata, arm64 executable, and complete signature. A pushed version tag such as `v0.1.1` runs the same checks on GitHub Actions and publishes the DMG, checksum, and installation guide as a GitHub release. Fully trusted first-launch distribution still requires a Developer ID Application certificate and Apple notarization credentials.
 
 ## First-time setup
 
