@@ -1,27 +1,21 @@
-## DSBox 0.2.0
+## DSBox 0.2.1
 
-This release turns DSBox into a more complete local-AI workspace for Apple
-Silicon while keeping DS4 as the single inference engine.
+This patch removes DeepSeek-specific promotional copy from the general DSBox
+experience and simplifies decorative UI elements.
 
-### What is new
+### What changed
 
-- A redesigned, lighter chat experience with persistent local threads,
-  contextual model switching, optional reasoning, automatic scrolling,
-  syntax-highlighted code, copy controls, and response-level prefill and decode
-  statistics.
-- Local GGUF discovery with persistent validated inventory, plus a native Finder
-  picker for selecting a model without typing filesystem paths.
-- In-app Hugging Face downloads from DSBox sources, including Unsloth GGUF
-  repositories, resumable transfers, standard shard sets, multipart assembly,
-  disk checks, and advisory hardware guidance.
-- A cleaner server power flow, safer runtime transitions, explicit stop
-  controls, and improved activity tracking so completed external requests do not
-  remain stuck in a processing state.
-- A new DSBox brand mark and macOS application icon, a shared design system, a
-  refined thread sidebar, and a screenshot-led product README.
-- Text-only gateway validation before requests reach DS4, while preserving the
-  OpenAI Chat, Responses, and Anthropic-compatible loopback endpoints used by
-  coding agents.
+- Removed the `DeepSeek V4 Flash · on your Mac` promotional row from the empty
+  chat state.
+- Removed every decorative star and sparkle icon from the interface.
+- Kept model recommendations as plain, readable status labels.
+- Replaced DeepSeek-centric engine and coding-agent descriptions with neutral
+  DS4 wording.
+- Fixed catalog fallback IDs so an unknown compatible model is no longer
+  mislabeled as DeepSeek.
+
+Actual DeepSeek model names still appear when that model is selected or listed
+as a real Hugging Face source; DSBox itself remains model-agnostic.
 
 ### macOS community build
 
