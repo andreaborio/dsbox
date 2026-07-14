@@ -68,6 +68,7 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
 
   const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(snapshot.config), [draft, snapshot.config]);
   const runtimeActive = ["running", "starting"].includes(snapshot.runtime.phase);
+  const qwenManaged = draft.model.id === "qwen3.6-35b-a3b";
   const unifiedMemoryGb = snapshot.system.totalMemoryBytes / 1024 ** 3;
   const manualCacheMaxGb = Math.min(128, Math.max(8, Math.floor((unifiedMemoryGb * 0.75) / 4) * 4));
   const advancedCacheOverride = hasArgumentOption(draft.advanced.extraArgs, "--ssd-streaming-cache-experts");
@@ -91,13 +92,14 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
   const commandPreview = useMemo(() => {
     try {
       return [
-        `${draft.repository.directory}/ds4-server`,
+        ...(qwenManaged ? ["DS4_QWEN_EXPERIMENTAL_METAL=1"] : []),
+        qwenManaged ? "<Qwen-capable DS4 checkout>/ds4-server" : `${draft.repository.directory}/ds4-server`,
         ...buildEngineArguments(draft)
       ].map(shellDisplayArgument).join(" ");
     } catch (error) {
       return error instanceof Error ? error.message : String(error);
     }
-  }, [draft]);
+  }, [draft, qwenManaged]);
 
   return (
     <div className="settings-simple page-scroll">
@@ -113,17 +115,27 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
             <Field label="Conversation memory"><Select value={draft.server.contextTokens} onChange={(event) => update("server", { ...draft.server, contextTokens: Number(event.target.value) })}>{!conversationPresets.some((preset) => preset.value === draft.server.contextTokens) && <option value={draft.server.contextTokens}>Custom · {draft.server.contextTokens.toLocaleString("en-US")}</option>}{conversationPresets.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}</Select></Field>
             <Field label="Answer length"><Select value={draft.server.maxOutputTokens} onChange={(event) => update("server", { ...draft.server, maxOutputTokens: Number(event.target.value) })}>{!responsePresets.some((preset) => preset.value === draft.server.maxOutputTokens) && <option value={draft.server.maxOutputTokens}>Custom · {draft.server.maxOutputTokens.toLocaleString("en-US")}</option>}{responsePresets.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}</Select></Field>
           </div>
-          <div className="setting-row"><div><strong>Best quality</strong><p>Prefer precision even when an answer takes a little longer.</p></div><Toggle checked={draft.server.quality} onChange={(quality) => update("server", { ...draft.server, quality })} label="Best quality" /></div>
+          <div className={`setting-row ${qwenManaged ? "setting-row--managed" : ""}`}>
+            <div>
+              <strong>Best quality</strong>
+              <p>{qwenManaged ? "Qwen uses its validated Metal path; the generic quality mode is not available." : "Prefer precision even when an answer takes a little longer."}</p>
+            </div>
+            {qwenManaged
+              ? <span className="managed-setting-badge" aria-label="Best quality is managed by DSBox and off">Managed · off</span>
+              : <Toggle checked={draft.server.quality} onChange={(quality) => update("server", { ...draft.server, quality })} label="Best quality" />}
+          </div>
         </section>
 
         <section className="settings-simple-card panel" aria-labelledby="privacy-settings-title">
           <div className="settings-simple-card__head"><div><h2 id="privacy-settings-title">Privacy & data</h2><p>Everything below stays in your user folder. Nothing is uploaded by DSBox.</p></div><ShieldCheck size={17} /></div>
-          <div className="setting-row">
+          <div className={`setting-row ${qwenManaged ? "setting-row--managed" : ""}`}>
             <span className="setting-row__icon setting-row__icon--green"><Database size={18} /></span>
-            <div><strong>Reuse context between sessions</strong><p>Keeps part of long conversations on disk so agents restart faster. It may contain prompt text.</p></div>
-            <Toggle checked={draft.kvCache.enabled} onChange={(enabled) => update("kvCache", { ...draft.kvCache, enabled })} label="Reuse context between sessions" />
+            <div><strong>Reuse context between sessions</strong><p>{qwenManaged ? "Disk context snapshots are not available on the current Qwen runtime. The active conversation can still reuse its live context while DSBox stays on." : "Keeps part of long conversations on disk so agents restart faster. It may contain prompt text."}</p></div>
+            {qwenManaged
+              ? <span className="managed-setting-badge" aria-label="Disk context reuse is unavailable and off">Unavailable · off</span>
+              : <Toggle checked={draft.kvCache.enabled} onChange={(enabled) => update("kvCache", { ...draft.kvCache, enabled })} label="Reuse context between sessions" />}
           </div>
-          {draft.kvCache.enabled && (
+          {!qwenManaged && draft.kvCache.enabled && (
             <div className="nested-settings form-grid">
               <Field label="Context folder" className="form-grid--full"><input value={draft.kvCache.directory} onChange={(event) => update("kvCache", { ...draft.kvCache, directory: event.target.value })} /></Field>
               <Field label="Maximum disk space (MB)"><input type="number" min={1} value={draft.kvCache.spaceMb} onChange={(event) => update("kvCache", { ...draft.kvCache, spaceMb: Number(event.target.value) })} /></Field>
@@ -145,17 +157,42 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
                 <div className="advanced-group">
                   <div className="advanced-group__head"><div><h3>Performance</h3><p>DSBox defaults are tuned for SSD streaming on this Mac.</p></div><Zap size={16} /></div>
                   <div className="setting-row"><span className="setting-row__icon"><HardDrive size={17} /></span><div><strong>Optimized SSD streaming</strong><p>Loads the useful parts of the model into memory and streams the rest when needed.</p></div><Toggle checked={draft.streaming.enabled} onChange={(enabled) => update("streaming", { ...draft.streaming, enabled })} label="Optimized SSD streaming" /></div>
-                  {draft.streaming.enabled && <div className="nested-settings"><div className="segmented-control"><button className={draft.streaming.cacheMode === "auto" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "auto"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "auto" })}>Adaptive</button><button className={draft.streaming.cacheMode === "manual" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "manual"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "manual" })}>Custom</button></div>{draft.streaming.cacheMode === "auto" && !advancedCacheOverride && <div className="privacy-note"><ShieldCheck size={15} /><p>DS4 sizes the expert cache from this Mac's live memory budget; DSBox stops it if pressure or new swapout crosses the safety limit.</p></div>}{draft.streaming.cacheMode === "manual" && <Field label="Expert cache budget" hint="DS4 applies a safe cap"><div className="range-field"><input aria-label="Expert cache budget" type="range" min={8} max={manualCacheMaxGb} step={4} value={Math.min(draft.streaming.cacheSizeGb, manualCacheMaxGb)} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Expert cache budget in GB" type="number" min={1} max={manualCacheMaxGb} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}</div>}
+                  {draft.streaming.enabled && (
+                    <div className="nested-settings">
+                      {qwenManaged ? (
+                        <div className="managed-profile-row">
+                          <div><strong>Adaptive expert cache</strong><p>DSBox lets the Qwen runtime size its SSD-streaming cache from this Mac's live memory budget.</p></div>
+                          <span className="managed-setting-badge">Managed</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="segmented-control"><button className={draft.streaming.cacheMode === "auto" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "auto"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "auto" })}>Adaptive</button><button className={draft.streaming.cacheMode === "manual" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "manual"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "manual" })}>Custom</button></div>
+                          {draft.streaming.cacheMode === "auto" && !advancedCacheOverride && <div className="privacy-note"><ShieldCheck size={15} /><p>DS4 sizes the expert cache from this Mac's live memory budget; DSBox stops it if pressure or new swapout crosses the safety limit.</p></div>}
+                          {draft.streaming.cacheMode === "manual" && <Field label="Expert cache budget" hint="DS4 applies a safe cap"><div className="range-field"><input aria-label="Expert cache budget" type="range" min={8} max={manualCacheMaxGb} step={4} value={Math.min(draft.streaming.cacheSizeGb, manualCacheMaxGb)} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Expert cache budget in GB" type="number" min={1} max={manualCacheMaxGb} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="advanced-group">
                   <div className="advanced-group__head"><div><h3>DS4 engine</h3><p>The andreaborio/ds4 fork and its local checkout.</p></div><FolderGit2 size={16} /></div>
-                  <div className="form-grid">
-                    <Field label="Repository" hint="HTTPS only" className="form-grid--full"><input value={draft.repository.url} onChange={(event) => update("repository", { ...draft.repository, url: event.target.value })} /></Field>
-                    <Field label="Engine channel"><Select value={draft.repository.branch} onChange={(event) => update("repository", { ...draft.repository, branch: event.target.value })}>{!engineBranches.some((branch) => branch.value === draft.repository.branch) && <option value={draft.repository.branch}>Current · {draft.repository.branch}</option>}{engineBranches.map((branch) => <option key={branch.value} value={branch.value}>{branch.label}</option>)}</Select></Field>
-                    <Field label="Private port"><input type="number" min={1024} max={65535} value={draft.server.internalPort} onChange={(event) => update("server", { ...draft.server, internalPort: Number(event.target.value) })} /></Field>
-                    <Field label="Engine folder" className="form-grid--full"><input value={draft.repository.directory} onChange={(event) => update("repository", { ...draft.repository, directory: event.target.value })} /></Field>
-                  </div>
+                  {qwenManaged ? (
+                    <>
+                      <div className="managed-profile-row">
+                        <div><strong>Qwen-capable checkout</strong><p>DSBox selects and verifies the compatible DS4 checkout automatically when the model starts.</p></div>
+                        <span className="managed-setting-badge">Managed</span>
+                      </div>
+                      <Field label="Private port"><input type="number" min={1024} max={65535} value={draft.server.internalPort} onChange={(event) => update("server", { ...draft.server, internalPort: Number(event.target.value) })} /></Field>
+                    </>
+                  ) : (
+                    <div className="form-grid">
+                      <Field label="Repository" hint="HTTPS only" className="form-grid--full"><input value={draft.repository.url} onChange={(event) => update("repository", { ...draft.repository, url: event.target.value })} /></Field>
+                      <Field label="Engine channel"><Select value={draft.repository.branch} onChange={(event) => update("repository", { ...draft.repository, branch: event.target.value })}>{!engineBranches.some((branch) => branch.value === draft.repository.branch) && <option value={draft.repository.branch}>Current · {draft.repository.branch}</option>}{engineBranches.map((branch) => <option key={branch.value} value={branch.value}>{branch.label}</option>)}</Select></Field>
+                      <Field label="Private port"><input type="number" min={1024} max={65535} value={draft.server.internalPort} onChange={(event) => update("server", { ...draft.server, internalPort: Number(event.target.value) })} /></Field>
+                      <Field label="Engine folder" className="form-grid--full"><input value={draft.repository.directory} onChange={(event) => update("repository", { ...draft.repository, directory: event.target.value })} /></Field>
+                    </div>
+                  )}
                   <div className="privacy-note"><ShieldCheck size={15} /><p>The internal server remains bound to 127.0.0.1.</p></div>
                 </div>
 
@@ -167,8 +204,9 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
                     <Field label="CPU threads"><input type="number" min={1} max={256} value={draft.server.threads} onChange={(event) => update("server", { ...draft.server, threads: Number(event.target.value) })} /></Field>
                     <Field label="Prefill chunk" hint="Automatic"><input placeholder="Automatic" type="number" min={1} value={draft.server.prefillChunk ?? ""} onChange={(event) => update("server", { ...draft.server, prefillChunk: event.target.value ? Number(event.target.value) : null })} /></Field>
                   </div>
-                  <Field label="Metal power"><div className="range-field range-field--power"><input aria-label="Metal power percentage" type="range" min={1} max={100} value={draft.server.powerPercent} onChange={(event) => update("server", { ...draft.server, powerPercent: Number(event.target.value) })} /><span>{draft.server.powerPercent}%</span></div></Field>
-                  <div className="inline-toggles"><div><span>Prepare model at startup</span><Toggle checked={draft.server.warmWeights} onChange={(warmWeights) => update("server", { ...draft.server, warmWeights })} label="Prepare model at startup" /></div><div><span>Cold start</span><Toggle checked={draft.streaming.coldStart} onChange={(coldStart) => update("streaming", { ...draft.streaming, coldStart })} label="Cold start" /></div></div>
+                  <Field label="Metal power" hint={qwenManaged ? "Managed for Qwen" : undefined}><div className={`range-field range-field--power ${qwenManaged ? "range-field--managed" : ""}`}><input aria-label={qwenManaged ? "Metal power locked at 100 percent for Qwen" : "Metal power percentage"} type="range" min={1} max={100} value={qwenManaged ? 100 : draft.server.powerPercent} disabled={qwenManaged} onChange={(event) => update("server", { ...draft.server, powerPercent: Number(event.target.value) })} /><span>{qwenManaged ? 100 : draft.server.powerPercent}%</span></div></Field>
+                  <div className="inline-toggles"><div><span>Prepare model at startup</span>{qwenManaged ? <span className="managed-setting-badge" aria-label="Model preparation is managed by DSBox and off">Managed · off</span> : <Toggle checked={draft.server.warmWeights} onChange={(warmWeights) => update("server", { ...draft.server, warmWeights })} label="Prepare model at startup" />}</div><div><span>Cold start</span><Toggle checked={draft.streaming.coldStart} onChange={(coldStart) => update("streaming", { ...draft.streaming, coldStart })} label="Cold start" /></div></div>
+                  {qwenManaged && <div className="qwen-settings-note"><ShieldCheck size={15} /><p>Qwen's validated profile locks Metal power at 100% and omits generic quality and warm-up flags when DSBox launches the engine.</p></div>}
                   {draft.repository.branch.includes("glm52") && <div className="branch-warning"><AlertTriangle size={15} /><p>For GLM 5.2, keep Metal power at 100% and prefill on automatic unless you are running a controlled experiment.</p></div>}
                 </div>
 
@@ -182,20 +220,20 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
                   <div className="advanced-group__head"><div><h3>Diagnostics</h3><p>Disabled by default. Full traces may contain sensitive prompt data.</p></div><Eye size={16} /></div>
                   <div className="setting-row"><div><strong>Capture full diagnostics</strong><p>Saves requests, responses, and model decisions locally.</p></div><Toggle checked={draft.observability.traceEnabled} onChange={(traceEnabled) => update("observability", { ...draft.observability, traceEnabled })} label="Capture full diagnostics" /></div>
                   {draft.observability.traceEnabled && <Field label="Diagnostics file"><input value={draft.observability.tracePath} onChange={(event) => update("observability", { ...draft.observability, tracePath: event.target.value })} /></Field>}
-                  <div className="setting-row"><div><strong>Model statistics</strong><p>Collects aggregate expert data for local optimization work.</p></div><Toggle checked={draft.observability.imatrixEnabled} onChange={(imatrixEnabled) => update("observability", { ...draft.observability, imatrixEnabled })} label="Model statistics" /></div>
-                  {draft.observability.imatrixEnabled && <div className="form-grid"><Field label="Statistics file"><input value={draft.observability.imatrixPath} onChange={(event) => update("observability", { ...draft.observability, imatrixPath: event.target.value })} /></Field><Field label="Save every N requests"><input type="number" min={0} value={draft.observability.imatrixEvery} onChange={(event) => update("observability", { ...draft.observability, imatrixEvery: Number(event.target.value) })} /></Field></div>}
+                  <div className={`setting-row ${qwenManaged ? "setting-row--managed" : ""}`}><div><strong>Model statistics</strong><p>{qwenManaged ? "Expert-statistics collection is not available on the current Qwen path." : "Collects aggregate expert data for local optimization work."}</p></div>{qwenManaged ? <span className="managed-setting-badge" aria-label="Model statistics are unavailable and off">Unavailable · off</span> : <Toggle checked={draft.observability.imatrixEnabled} onChange={(imatrixEnabled) => update("observability", { ...draft.observability, imatrixEnabled })} label="Model statistics" />}</div>
+                  {!qwenManaged && draft.observability.imatrixEnabled && <div className="form-grid"><Field label="Statistics file"><input value={draft.observability.imatrixPath} onChange={(event) => update("observability", { ...draft.observability, imatrixPath: event.target.value })} /></Field><Field label="Save every N requests"><input type="number" min={0} value={draft.observability.imatrixEvery} onChange={(event) => update("observability", { ...draft.observability, imatrixEvery: Number(event.target.value) })} /></Field></div>}
                   {draft.observability.traceEnabled && <div className="danger-note"><AlertTriangle size={15} /><p>Full diagnostics contain sensitive data in plain text. Review the file before sharing it.</p></div>}
                 </div>
 
                 <div className="advanced-group">
-                  <div className="advanced-group__head"><div><h3>Additional DS4 flags</h3><p>Passed directly to the engine without invoking a shell.</p></div><Terminal size={16} /></div>
+                  <div className="advanced-group__head"><div><h3>Additional DS4 flags</h3><p>{qwenManaged ? "Supported options are passed directly; DSBox removes flags that conflict with Qwen's validated profile." : "Passed directly to the engine without invoking a shell."}</p></div><Terminal size={16} /></div>
                   <Field label="Additional arguments" hint="e.g. --ssd-streaming-full-layers 0"><textarea rows={3} value={draft.advanced.extraArgs} onChange={(event) => update("advanced", { ...draft.advanced, extraArgs: event.target.value })} placeholder="--flag value" /></Field>
                   <Field label="Environment variables" hint="one KEY=value per line"><textarea rows={5} value={draft.advanced.environment} onChange={(event) => update("advanced", { ...draft.advanced, environment: event.target.value })} placeholder={"DS4_METAL_MEMORY_REPORT=1\n# other diagnostic variables"} /></Field>
-                  <div className="labs-note"><AlertTriangle size={15} /><p>Experimental flags remain off unless you enable them explicitly.</p></div>
+                  <div className="labs-note"><AlertTriangle size={15} /><p>{qwenManaged ? "Incompatible backend, power, cache, statistics, and steering overrides are ignored for Qwen." : "Experimental flags remain off unless you enable them explicitly."}</p></div>
                 </div>
 
                 <div className="advanced-group command-preview-card">
-                  <div className="advanced-group__head"><div><h3>Launch command</h3><p>The exact command DSBox will run.</p></div><CopyButton value={commandPreview} /></div>
+                  <div className="advanced-group__head"><div><h3>{qwenManaged ? "Launch profile" : "Launch command"}</h3><p>{qwenManaged ? "DSBox resolves the verified Qwen checkout at startup; the flags below are the effective profile." : "The exact command DSBox will run."}</p></div><CopyButton value={commandPreview} /></div>
                   <pre><code>{commandPreview}</code></pre>
                 </div>
               </motion.div>

@@ -4,12 +4,15 @@ import { createDefaultConfig } from "../server/config.js";
 import type { ConfigStore } from "../server/config.js";
 import { EventBus } from "../server/event-bus.js";
 import { shellDisplayArgument } from "../src/lib/arguments.js";
+import type { DsboxConfig, LocalModelCandidate } from "../src/types.js";
 import {
   buildEngineArguments,
+  ds4BuildInfoMatchesHead,
   orderedLocalModelScanRoots,
   parseEnvironment,
   parseFallbackModelFilename,
   parseVmStatSwapoutPages,
+  qwen35LaunchEnvironment,
   remainingDownloadBytes,
   RuntimeManager,
   tokenizeArguments
@@ -68,6 +71,34 @@ describe("environment parser", () => {
 
   it("rejects invalid names", () => {
     expect(() => parseEnvironment("BAD-NAME=1")).toThrow(/variable name/);
+  });
+
+  it("forces the Qwen Metal gate and removes unsupported inherited tuning", () => {
+    expect(qwen35LaunchEnvironment({
+      PATH: "/usr/bin",
+      DS4_EXPERT_PROFILE: "/tmp/profile.json",
+      DS4_METAL_STREAMING_PIN_NON_ROUTED: "1",
+      DS4_QWEN_EXPERIMENTAL_METAL: "0"
+    }, {
+      DS4_EXPERT_HOTLIST: "1,2,3",
+      CUSTOM_VALUE: "kept"
+    })).toMatchObject({
+      PATH: "/usr/bin",
+      CUSTOM_VALUE: "kept",
+      DS4_QWEN_EXPERIMENTAL_METAL: "1"
+    });
+    const environment = qwen35LaunchEnvironment({ DS4_EXPERT_PROFILE: "x" }, { DS4_EXPERT_HOTLIST: "y" });
+    expect(environment.DS4_EXPERT_PROFILE).toBeUndefined();
+    expect(environment.DS4_EXPERT_HOTLIST).toBeUndefined();
+  });
+});
+
+describe("DS4 build identity", () => {
+  it("accepts only a binary revision that prefixes the current checkout HEAD", () => {
+    const head = "91d311d580b0ddb4e1b68c86dea6f0232a12f485";
+    expect(ds4BuildInfoMatchesHead("ds4 build\ngit:     91d311d580b0\nbackend: metal\n", head)).toBe(true);
+    expect(ds4BuildInfoMatchesHead("git: 1523b2681eef\n", head)).toBe(false);
+    expect(ds4BuildInfoMatchesHead("git: unknown\n", head)).toBe(false);
   });
 });
 
@@ -149,6 +180,100 @@ describe("engine arguments", () => {
     expect(args).toContain("--trace");
     expect(args).toContain("--imatrix-out");
     expect(args).toContain("--imatrix-every");
+  });
+
+  it("applies the exact Qwen Metal and SSD compatibility profile", () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.model.id = "qwen3.6-35b-a3b";
+    config.model.path = "/models/Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf";
+    config.server.powerPercent = 48;
+    config.server.quality = true;
+    config.server.warmWeights = true;
+    config.streaming.cacheMode = "manual";
+    config.streaming.cacheSizeGb = 24;
+    config.streaming.preloadExperts = 512;
+    config.observability.imatrixEnabled = true;
+    config.advanced.extraArgs = [
+      "--power 12",
+      "--quality",
+      "--ssd-streaming-cache-experts 700",
+      "--ssd-streaming-preload-experts 200",
+      "--mtp /models/draft.gguf",
+      "--role coordinator",
+      "--listen 127.0.0.1 9000",
+      "--dir-steering-file /tmp/steer.bin",
+      "--kv-disk-dir /tmp/custom-kv",
+      "--trace /tmp/qwen.trace"
+    ].join(" ");
+
+    const args = buildEngineArguments(config);
+    expect(args.slice(args.indexOf("--power"), args.indexOf("--power") + 2)).toEqual(["--power", "100"]);
+    expect(args).toContain("--metal");
+    expect(args).toContain("--ssd-streaming");
+    expect(args).toContain("--trace");
+    expect(args).not.toContain("--quality");
+    expect(args).not.toContain("--warm-weights");
+    expect(args).not.toContain("--ssd-streaming-cache-experts");
+    expect(args).not.toContain("--ssd-streaming-preload-experts");
+    expect(args).not.toContain("--imatrix-out");
+    expect(args).not.toContain("--mtp");
+    expect(args).not.toContain("--role");
+    expect(args).not.toContain("--listen");
+    expect(args).not.toContain("--dir-steering-file");
+    expect(args).not.toContain("--kv-disk-dir");
+    expect(args).not.toContain("/tmp/custom-kv");
+    expect(args).not.toContain("/models/draft.gguf");
+    expect(args.filter((value) => value === "127.0.0.1")).toHaveLength(1);
+  });
+
+  it("uses verified architecture instead of a misleading configured model id", () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.model.id = "qwen3.6-35b-a3b";
+    config.server.quality = true;
+
+    expect(buildEngineArguments(config, "deepseek4")).toContain("--quality");
+    expect(buildEngineArguments(config, "qwen35moe")).not.toContain("--quality");
+  });
+});
+
+describe("Qwen one-click preparation", () => {
+  it("selects the Qwen-capable checkout before considering the default runtime install", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.model = {
+      path: "/models/Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf",
+      id: "qwen3.6-35b-a3b"
+    };
+    const store = {
+      get: vi.fn(() => structuredClone(config))
+    } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const initial = { ...runtime.getState(), phase: "uninstalled" as const, modelPresent: true, installed: false, built: false };
+    const ready = { ...initial, phase: "idle" as const, installed: true, built: true };
+    const candidate: LocalModelCandidate = {
+      path: config.model.path,
+      name: "Qwen3.6-35B-A3B-ds4-Q4_K_S",
+      sizeBytes: 20_808_563_424,
+      modelId: config.model.id,
+      selected: true,
+      compatibility: { status: "compatible", code: "ds4_native", reason: null },
+      architecture: "qwen35moe"
+    };
+    vi.spyOn(runtime, "refresh").mockResolvedValueOnce(initial).mockResolvedValue(ready);
+    vi.spyOn(runtime, "validateLocalModel").mockResolvedValue(candidate);
+    const internal = runtime as unknown as {
+      ensureQwenRuntimeCheckout(config: DsboxConfig): Promise<DsboxConfig>;
+    };
+    const prepareQwen = vi.spyOn(internal, "ensureQwenRuntimeCheckout").mockResolvedValue(config);
+    const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
+    const build = vi.spyOn(runtime, "build").mockResolvedValue();
+    const start = vi.spyOn(runtime, "start").mockResolvedValue();
+
+    await runtime.oneClickStart();
+
+    expect(prepareQwen).toHaveBeenCalledWith(config);
+    expect(install).not.toHaveBeenCalled();
+    expect(build).not.toHaveBeenCalled();
+    expect(start).toHaveBeenCalledOnce();
   });
 });
 

@@ -37,13 +37,13 @@ const navigation: Array<{ id: ViewId; label: string; icon: typeof MessageSquareT
   { id: "monitor", label: "Activity", icon: Gauge }
 ];
 
-const titles: Record<ViewId, { title: string; subtitle: string }> = {
-  chat: { title: "Chat", subtitle: "Private local session" },
-  models: { title: "Models", subtitle: "Catalog and models on this Mac" },
-  runtime: { title: "Server", subtitle: "Power and status" },
-  agents: { title: "Agents", subtitle: "Connect your coding tools" },
-  monitor: { title: "Activity", subtitle: "Real resources, no estimates" },
-  settings: { title: "Settings", subtitle: "Simple by default, deep when needed" }
+const viewLabels: Record<ViewId, string> = {
+  chat: "Chat",
+  models: "Models",
+  runtime: "Server",
+  agents: "Agents",
+  monitor: "Activity",
+  settings: "Settings"
 };
 
 export default function App() {
@@ -52,7 +52,7 @@ export default function App() {
   const chatTitle = useActiveChatTitle();
   const [view, setView] = useState<ViewId>("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [modelsInitialFilter, setModelsInitialFilter] = useState<"all" | "catalog" | "other" | "local">("all");
+  const [modelsInitialFilter, setModelsInitialFilter] = useState<"library" | "discover">("library");
   const [onboardingComplete, setOnboardingComplete] = useState(() => window.localStorage.getItem("dsbox:onboarding-complete") === "1");
   const snapshot = controller.snapshot;
 
@@ -63,7 +63,7 @@ export default function App() {
   }, [onboardingComplete, snapshot?.runtime.modelPresent]);
 
   useEffect(() => {
-    const title = view === "chat" ? chatTitle : titles[view].title;
+    const title = view === "chat" ? chatTitle : viewLabels[view];
     document.title = `${title} · DSBox`;
   }, [chatTitle, view]);
 
@@ -92,7 +92,7 @@ export default function App() {
     );
   }
 
-  const activeTitle = view === "chat" ? { title: chatTitle, subtitle: "" } : titles[view];
+  const activeTitle = view === "chat" ? chatTitle : viewLabels[view];
   const latest = snapshot.metrics.at(-1);
   const activeDownload = currentDownload(snapshot.downloads);
   const interruptedDownload = activeDownload ? null : resumableDownload(snapshot.downloads);
@@ -176,16 +176,12 @@ export default function App() {
       </aside>
 
       <main className="main-area">
-        <header className="topbar">
-          <div className="topbar__title">
-            <h1>{activeTitle.title}</h1>
-            {activeTitle.subtitle && <span>{activeTitle.subtitle}</span>}
-          </div>
-          {chatStreaming && (
+        <header className={`topbar ${view === "settings" ? "topbar--settings" : ""}`}>
+          <h1 className="sr-only">{activeTitle}</h1>
+          {chatStreaming && view !== "chat" && (
             <div className="topbar__actions">
-              <button className="topbar__generation-stop" onClick={chatSessionStore.stop} aria-label="Stop the active chat generation">
+              <button className="topbar__generation-stop" onClick={chatSessionStore.stop} aria-label="Stop the active chat generation" title="Stop generation">
                 <CircleStop size={15} />
-                <span>Stop generation</span>
               </button>
             </div>
           )}
@@ -236,13 +232,13 @@ export default function App() {
             onChooseLocal={() => {
               window.localStorage.setItem("dsbox:onboarding-complete", "1");
               setOnboardingComplete(true);
-              setModelsInitialFilter("local");
+              setModelsInitialFilter("library");
               setView("models");
             }}
             onChooseCatalog={() => {
               window.localStorage.setItem("dsbox:onboarding-complete", "1");
               setOnboardingComplete(true);
-              setModelsInitialFilter("catalog");
+              setModelsInitialFilter("discover");
               setView("models");
             }}
           />

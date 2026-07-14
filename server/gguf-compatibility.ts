@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { open, type FileHandle } from "node:fs/promises";
 
 const GGUF_HEADER_BYTES = 24;
@@ -39,7 +40,7 @@ const FIXED_VALUE_BYTES = new Map<number, number>([
   [GGUF_TYPE.float64, 8]
 ]);
 
-type MetadataExpectation = "u32" | "f32" | "bool" | "string-array" | "int-array" | "float-array";
+type MetadataExpectation = "u32" | "f32" | "bool" | "string" | "string-array" | "i32-array" | "int-array" | "float-array";
 
 const DEEPSEEK4_METADATA = new Map<string, MetadataExpectation>([
   ["deepseek4.block_count", "u32"],
@@ -76,6 +77,82 @@ const DEEPSEEK4_METADATA = new Map<string, MetadataExpectation>([
   ["tokenizer.ggml.merges", "string-array"]
 ]);
 
+const QWEN35MOE_METADATA = new Map<string, MetadataExpectation>([
+  ["qwen35moe.block_count", "u32"],
+  ["qwen35moe.context_length", "u32"],
+  ["qwen35moe.embedding_length", "u32"],
+  ["qwen35moe.attention.head_count", "u32"],
+  ["qwen35moe.attention.head_count_kv", "u32"],
+  ["qwen35moe.attention.key_length", "u32"],
+  ["qwen35moe.attention.value_length", "u32"],
+  ["qwen35moe.rope.dimension_count", "u32"],
+  ["qwen35moe.rope.dimension_sections", "i32-array"],
+  ["qwen35moe.rope.freq_base", "f32"],
+  ["qwen35moe.attention.layer_norm_rms_epsilon", "f32"],
+  ["qwen35moe.expert_count", "u32"],
+  ["qwen35moe.expert_used_count", "u32"],
+  ["qwen35moe.expert_feed_forward_length", "u32"],
+  ["qwen35moe.expert_shared_feed_forward_length", "u32"],
+  ["qwen35moe.ssm.conv_kernel", "u32"],
+  ["qwen35moe.ssm.state_size", "u32"],
+  ["qwen35moe.ssm.group_count", "u32"],
+  ["qwen35moe.ssm.time_step_rank", "u32"],
+  ["qwen35moe.ssm.inner_size", "u32"],
+  ["qwen35moe.full_attention_interval", "u32"],
+  ["tokenizer.ggml.model", "string"],
+  ["tokenizer.ggml.pre", "string"],
+  ["tokenizer.ggml.tokens", "string-array"],
+  ["tokenizer.ggml.token_type", "i32-array"],
+  ["tokenizer.ggml.merges", "string-array"],
+  ["tokenizer.ggml.bos_token_id", "u32"],
+  ["tokenizer.ggml.padding_token_id", "u32"],
+  ["tokenizer.ggml.eos_token_id", "u32"],
+  ["tokenizer.ggml.add_bos_token", "bool"],
+  ["tokenizer.chat_template", "string"]
+]);
+
+const QWEN35MOE_EXACT_VALUES = new Map<string, string | number | boolean>([
+  ["qwen35moe.block_count", 40],
+  ["qwen35moe.context_length", 262_144],
+  ["qwen35moe.embedding_length", 2048],
+  ["qwen35moe.attention.head_count", 16],
+  ["qwen35moe.attention.head_count_kv", 2],
+  ["qwen35moe.attention.key_length", 256],
+  ["qwen35moe.attention.value_length", 256],
+  ["qwen35moe.rope.dimension_count", 64],
+  ["qwen35moe.rope.freq_base", 10_000_000],
+  ["qwen35moe.attention.layer_norm_rms_epsilon", 1e-6],
+  ["qwen35moe.expert_count", 256],
+  ["qwen35moe.expert_used_count", 8],
+  ["qwen35moe.expert_feed_forward_length", 512],
+  ["qwen35moe.expert_shared_feed_forward_length", 512],
+  ["qwen35moe.ssm.conv_kernel", 4],
+  ["qwen35moe.ssm.state_size", 128],
+  ["qwen35moe.ssm.group_count", 16],
+  ["qwen35moe.ssm.time_step_rank", 32],
+  ["qwen35moe.ssm.inner_size", 4096],
+  ["qwen35moe.full_attention_interval", 4],
+  ["qwen35moe.nextn_predict_layers", 0],
+  ["tokenizer.ggml.model", "gpt2"],
+  ["tokenizer.ggml.pre", "qwen35"],
+  ["tokenizer.ggml.bos_token_id", 248_044],
+  ["tokenizer.ggml.padding_token_id", 248_044],
+  ["tokenizer.ggml.eos_token_id", 248_046],
+  ["tokenizer.ggml.add_bos_token", false]
+]);
+
+const QWEN35MOE_ARRAY_LENGTHS = new Map<string, number>([
+  ["qwen35moe.rope.dimension_sections", 4],
+  ["tokenizer.ggml.tokens", 248_320],
+  ["tokenizer.ggml.token_type", 248_320],
+  ["tokenizer.ggml.merges", 247_587]
+]);
+
+const QWEN35MOE_ROPE_SECTIONS = [11, 11, 10, 0] as const;
+const QWEN35MOE_CHAT_TEMPLATE_BYTES = 7764;
+const QWEN35MOE_CHAT_TEMPLATE_SHA256 = "e84f32a23fdda27689f868aa4a1a5621f41133e51a48d7f3efcbea2839574259";
+const QWEN35MOE_RECURRENT_LAYERS_KEY = "qwen35moe.attention.recurrent_layers";
+
 export const DS4_DEEPSEEK4_TENSOR_SIGNATURE = [
   "token_embd.weight",
   "output.weight",
@@ -84,6 +161,77 @@ export const DS4_DEEPSEEK4_TENSOR_SIGNATURE = [
   "blk.0.ffn_gate_inp.weight",
   "blk.0.ffn_gate_exps.weight"
 ] as const;
+
+const GGML_TYPE = {
+  f32: 0,
+  f16: 1,
+  q8_0: 8,
+  q4_k: 12
+} as const;
+
+interface TensorLayoutExpectation {
+  dimensions: readonly number[];
+  types: readonly number[];
+}
+
+interface TensorDescriptor {
+  dimensions: number[];
+  type: number;
+}
+
+function createQwen35MoeTensorLayout(): Map<string, TensorLayoutExpectation> {
+  const layout = new Map<string, TensorLayoutExpectation>();
+  const exact = (name: string, type: number, ...dimensions: number[]) => {
+    layout.set(name, { dimensions, types: [type] });
+  };
+  const dense = (name: string, ...dimensions: number[]) => {
+    layout.set(name, { dimensions, types: [GGML_TYPE.f16, GGML_TYPE.q8_0] });
+  };
+
+  dense("token_embd.weight", 2048, 248_320);
+  exact("output_norm.weight", GGML_TYPE.f32, 2048);
+  dense("output.weight", 2048, 248_320);
+
+  for (let layer = 0; layer < 40; layer += 1) {
+    const prefix = `blk.${layer}`;
+    exact(`${prefix}.attn_norm.weight`, GGML_TYPE.f32, 2048);
+    exact(`${prefix}.post_attention_norm.weight`, GGML_TYPE.f32, 2048);
+
+    if ((layer + 1) % 4 === 0) {
+      dense(`${prefix}.attn_q.weight`, 2048, 8192);
+      dense(`${prefix}.attn_k.weight`, 2048, 512);
+      dense(`${prefix}.attn_v.weight`, 2048, 512);
+      dense(`${prefix}.attn_output.weight`, 4096, 2048);
+      exact(`${prefix}.attn_q_norm.weight`, GGML_TYPE.f32, 256);
+      exact(`${prefix}.attn_k_norm.weight`, GGML_TYPE.f32, 256);
+    } else {
+      dense(`${prefix}.attn_gate.weight`, 2048, 4096);
+      dense(`${prefix}.attn_qkv.weight`, 2048, 8192);
+      exact(`${prefix}.ssm_a`, GGML_TYPE.f32, 32);
+      exact(`${prefix}.ssm_alpha.weight`, GGML_TYPE.f32, 2048, 32);
+      exact(`${prefix}.ssm_beta.weight`, GGML_TYPE.f32, 2048, 32);
+      exact(`${prefix}.ssm_conv1d.weight`, GGML_TYPE.f32, 4, 8192);
+      exact(`${prefix}.ssm_dt.bias`, GGML_TYPE.f32, 32);
+      exact(`${prefix}.ssm_norm.weight`, GGML_TYPE.f32, 128);
+      dense(`${prefix}.ssm_out.weight`, 4096, 2048);
+    }
+
+    exact(`${prefix}.ffn_gate_inp.weight`, GGML_TYPE.f32, 2048, 256);
+    exact(`${prefix}.ffn_gate_exps.weight`, GGML_TYPE.q4_k, 2048, 512, 256);
+    exact(`${prefix}.ffn_up_exps.weight`, GGML_TYPE.q4_k, 2048, 512, 256);
+    exact(`${prefix}.ffn_down_exps.weight`, GGML_TYPE.q4_k, 512, 2048, 256);
+    exact(`${prefix}.ffn_gate_inp_shexp.weight`, GGML_TYPE.f32, 2048);
+    dense(`${prefix}.ffn_gate_shexp.weight`, 2048, 512);
+    dense(`${prefix}.ffn_up_shexp.weight`, 2048, 512);
+    dense(`${prefix}.ffn_down_shexp.weight`, 512, 2048);
+  }
+
+  return layout;
+}
+
+const QWEN35MOE_TENSOR_LAYOUT = createQwen35MoeTensorLayout();
+
+export const DS4_QWEN35MOE_TENSOR_SIGNATURE = [...QWEN35MOE_TENSOR_LAYOUT.keys()] as readonly string[];
 
 export type Ds4GgufCompatibilityReasonCode =
   | "not_gguf"
@@ -118,7 +266,12 @@ export interface Ds4GgufCompatibility {
 interface MetadataEntry {
   type: number;
   arrayType: number | null;
-  value: string | number | null;
+  value: string | number | boolean | null;
+  arrayLength?: number;
+  arrayValues?: number[];
+  contractMatches?: boolean;
+  byteLength?: number;
+  sha256?: string;
 }
 
 class GgufParseError extends Error {}
@@ -200,13 +353,18 @@ function fixedValueBytes(type: number): number {
   return length;
 }
 
-async function readString(cursor: GgufCursor, maximum: number, safeTail: number, capture: boolean): Promise<string | null> {
+async function readStringBytes(cursor: GgufCursor, maximum: number, safeTail: number, capture: boolean): Promise<Buffer | null> {
   const length = safeNumber(await cursor.u64(8 + safeTail), "GGUF string", maximum);
   if (!capture) {
     cursor.skip(length);
     return null;
   }
-  return (await cursor.bytes(length, length + safeTail)).toString("utf8");
+  return cursor.bytes(length, length + safeTail);
+}
+
+async function readString(cursor: GgufCursor, maximum: number, safeTail: number, capture: boolean): Promise<string | null> {
+  const bytes = await readStringBytes(cursor, maximum, safeTail, capture);
+  return bytes?.toString("utf8") ?? null;
 }
 
 async function readInteger(cursor: GgufCursor, type: number, safeTail: number): Promise<number> {
@@ -229,8 +387,46 @@ async function readInteger(cursor: GgufCursor, type: number, safeTail: number): 
   }
 }
 
+async function readScalar(cursor: GgufCursor, type: number, safeTail: number): Promise<number | boolean> {
+  if (type === GGUF_TYPE.float32) {
+    return (await cursor.bytes(4, 4 + safeTail)).readFloatLE(0);
+  }
+  if (type === GGUF_TYPE.float64) {
+    return (await cursor.bytes(8, 8 + safeTail)).readDoubleLE(0);
+  }
+  if (type === GGUF_TYPE.bool) {
+    return (await cursor.bytes(1, 1 + safeTail)).readUInt8(0) !== 0;
+  }
+  return readInteger(cursor, type, safeTail);
+}
+
 function minimumMetadataTail(remainingEntries: number, tensorCount: number): number {
   return remainingEntries * 13 + tensorCount * 24;
+}
+
+function qwenExpectedTokenType(token: number): number {
+  if (token <= 248_043) return 1;
+  if (token <= 248_057) return 3;
+  if (token <= 248_059) return 4;
+  if (token <= 248_065) return 3;
+  if (token <= 248_069) return 4;
+  if (token <= 248_076) return 3;
+  return 5;
+}
+
+function qwenTokenTypesMatch(bytes: Buffer): boolean {
+  for (let token = 0; token < 248_320; token += 1) {
+    if (bytes.readInt32LE(token * 4) !== qwenExpectedTokenType(token)) return false;
+  }
+  return true;
+}
+
+function qwenRecurrentLayersMatch(bytes: Buffer): boolean {
+  for (let layer = 0; layer < 40; layer += 1) {
+    const expected = (layer + 1) % 4 !== 0;
+    if ((bytes.readUInt8(layer) !== 0) !== expected) return false;
+  }
+  return true;
 }
 
 async function readMetadataValue(
@@ -240,16 +436,27 @@ async function readMetadataValue(
   tailMinimum: number
 ): Promise<MetadataEntry> {
   if (type === GGUF_TYPE.string) {
+    const captureText = key === "general.architecture" ||
+      key === "tokenizer.ggml.model" ||
+      key === "tokenizer.ggml.pre";
+    const captureBytes = captureText || key === "tokenizer.chat_template";
+    const bytes = await readStringBytes(cursor, MAX_NAME_BYTES, tailMinimum, captureBytes);
     return {
       type,
       arrayType: null,
-      value: await readString(cursor, MAX_NAME_BYTES, tailMinimum, key === "general.architecture")
+      value: captureText ? bytes?.toString("utf8") ?? null : null,
+      byteLength: bytes?.length,
+      sha256: key === "tokenizer.chat_template" && bytes
+        ? createHash("sha256").update(bytes).digest("hex")
+        : undefined
     };
   }
   if (type === GGUF_TYPE.array) {
     const arrayType = await cursor.u32(12 + tailMinimum);
     if (arrayType === GGUF_TYPE.array) throw new GgufParseError("Nested GGUF metadata arrays are not supported");
     const count = safeNumber(await cursor.u64(8 + tailMinimum), "GGUF metadata array", MAX_ARRAY_ITEMS);
+    let arrayValues: number[] | undefined;
+    let contractMatches: boolean | undefined;
     if (arrayType === GGUF_TYPE.string) {
       for (let index = 0; index < count; index += 1) {
         const remainingStrings = count - index - 1;
@@ -257,12 +464,31 @@ async function readMetadataValue(
         await readString(cursor, MAX_NAME_BYTES, stringTail, false);
       }
     } else {
-      cursor.skip(count * fixedValueBytes(arrayType));
+      const byteLength = count * fixedValueBytes(arrayType);
+      if (key === "qwen35moe.rope.dimension_sections" &&
+          arrayType === GGUF_TYPE.int32 && count === QWEN35MOE_ROPE_SECTIONS.length) {
+        const bytes = await cursor.bytes(byteLength, byteLength + tailMinimum);
+        arrayValues = Array.from({ length: count }, (_, index) => bytes.readInt32LE(index * 4));
+      } else if (key === "tokenizer.ggml.token_type" &&
+          arrayType === GGUF_TYPE.int32 && count === 248_320) {
+        const bytes = await cursor.bytes(byteLength, byteLength + tailMinimum);
+        contractMatches = qwenTokenTypesMatch(bytes);
+      } else if (key === QWEN35MOE_RECURRENT_LAYERS_KEY &&
+          arrayType === GGUF_TYPE.bool && count === 40) {
+        const bytes = await cursor.bytes(byteLength, byteLength + tailMinimum);
+        contractMatches = qwenRecurrentLayersMatch(bytes);
+      } else {
+        cursor.skip(byteLength);
+      }
     }
-    return { type, arrayType, value: null };
+    return { type, arrayType, value: null, arrayLength: count, arrayValues, contractMatches };
   }
   if (key === "split.count") {
     return { type, arrayType: null, value: await readInteger(cursor, type, tailMinimum) };
+  }
+  const expectedQwenValue = QWEN35MOE_EXACT_VALUES.get(key);
+  if (expectedQwenValue !== undefined && typeof expectedQwenValue !== "string") {
+    return { type, arrayType: null, value: await readScalar(cursor, type, tailMinimum) };
   }
   cursor.skip(fixedValueBytes(type));
   return { type, arrayType: null, value: null };
@@ -273,10 +499,72 @@ function expectationMatches(entry: MetadataEntry, expectation: MetadataExpectati
     case "u32": return entry.type === GGUF_TYPE.uint32;
     case "f32": return ([GGUF_TYPE.float32, GGUF_TYPE.float64, GGUF_TYPE.uint32, GGUF_TYPE.int32] as number[]).includes(entry.type);
     case "bool": return entry.type === GGUF_TYPE.bool;
+    case "string": return entry.type === GGUF_TYPE.string;
     case "string-array": return entry.type === GGUF_TYPE.array && entry.arrayType === GGUF_TYPE.string;
+    case "i32-array": return entry.type === GGUF_TYPE.array && entry.arrayType === GGUF_TYPE.int32;
     case "int-array": return entry.type === GGUF_TYPE.array && ([GGUF_TYPE.uint32, GGUF_TYPE.int32] as number[]).includes(entry.arrayType ?? -1);
     case "float-array": return entry.type === GGUF_TYPE.array && ([GGUF_TYPE.float32, GGUF_TYPE.float64] as number[]).includes(entry.arrayType ?? -1);
   }
+}
+
+function metadataValueMatches(actual: MetadataEntry["value"], expected: string | number | boolean): boolean {
+  if (typeof expected === "number") {
+    if (typeof actual !== "number" || !Number.isFinite(actual)) return false;
+    const tolerance = Math.max(1e-12, Math.abs(expected) * 1e-7);
+    return Math.abs(actual - expected) <= tolerance;
+  }
+  return actual === expected;
+}
+
+function qwenMetadataContractInvalidKeys(metadata: ReadonlyMap<string, MetadataEntry>): string[] {
+  const invalid = new Set<string>();
+
+  for (const [key, expected] of QWEN35MOE_EXACT_VALUES) {
+    const entry = metadata.get(key);
+    if (!entry) {
+      if (key !== "qwen35moe.nextn_predict_layers") invalid.add(key);
+      continue;
+    }
+    if (!metadataValueMatches(entry.value, expected)) invalid.add(key);
+  }
+
+  for (const [key, expectedLength] of QWEN35MOE_ARRAY_LENGTHS) {
+    if (metadata.get(key)?.arrayLength !== expectedLength) invalid.add(key);
+  }
+
+  const ropeSections = metadata.get("qwen35moe.rope.dimension_sections")?.arrayValues;
+  if (!ropeSections ||
+      ropeSections.length !== QWEN35MOE_ROPE_SECTIONS.length ||
+      ropeSections.some((value, index) => value !== QWEN35MOE_ROPE_SECTIONS[index])) {
+    invalid.add("qwen35moe.rope.dimension_sections");
+  }
+
+  if (metadata.get("tokenizer.ggml.token_type")?.contractMatches !== true) {
+    invalid.add("tokenizer.ggml.token_type");
+  }
+
+  const chatTemplate = metadata.get("tokenizer.chat_template");
+  if (chatTemplate?.byteLength !== QWEN35MOE_CHAT_TEMPLATE_BYTES ||
+      chatTemplate.sha256 !== QWEN35MOE_CHAT_TEMPLATE_SHA256) {
+    invalid.add("tokenizer.chat_template");
+  }
+
+  const recurrentLayers = metadata.get(QWEN35MOE_RECURRENT_LAYERS_KEY);
+  if (recurrentLayers &&
+      (recurrentLayers.type !== GGUF_TYPE.array ||
+       recurrentLayers.arrayType !== GGUF_TYPE.bool ||
+       recurrentLayers.arrayLength !== 40 ||
+       recurrentLayers.contractMatches !== true)) {
+    invalid.add(QWEN35MOE_RECURRENT_LAYERS_KEY);
+  }
+
+  return [...invalid];
+}
+
+function tensorLayoutMatches(descriptor: TensorDescriptor, expectation: TensorLayoutExpectation): boolean {
+  return expectation.types.includes(descriptor.type) &&
+    descriptor.dimensions.length === expectation.dimensions.length &&
+    descriptor.dimensions.every((dimension, index) => dimension === expectation.dimensions[index]);
 }
 
 function result(
@@ -346,18 +634,21 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     const splitEntry = metadata.get("split.count");
     header.splitCount = typeof splitEntry?.value === "number" ? splitEntry.value : null;
 
-    const tensorNames = new Set<string>();
+    const tensors = new Map<string, TensorDescriptor>();
     for (let index = 0; index < tensorCount; index += 1) {
       const remainingTensors = tensorCount - index - 1;
       const tensorTail = remainingTensors * 24;
       const name = await readString(cursor, MAX_NAME_BYTES, 16 + tensorTail, true);
-      if (name === null || tensorNames.has(name)) throw new GgufParseError("GGUF tensor names are invalid or duplicated");
-      const dimensions = await cursor.u32(12 + tensorTail);
-      if (dimensions < 1 || dimensions > 4) throw new GgufParseError(`GGUF tensor ${name} has an invalid dimension count`);
-      cursor.skip(dimensions * 8);
-      await cursor.u32(8 + tensorTail);
+      if (name === null || tensors.has(name)) throw new GgufParseError("GGUF tensor names are invalid or duplicated");
+      const dimensionCount = await cursor.u32(12 + tensorTail);
+      if (dimensionCount < 1 || dimensionCount > 4) throw new GgufParseError(`GGUF tensor ${name} has an invalid dimension count`);
+      const dimensions: number[] = [];
+      for (let dimension = 0; dimension < dimensionCount; dimension += 1) {
+        dimensions.push(safeNumber(await cursor.u64((dimensionCount - dimension - 1) * 8 + 12 + tensorTail), `GGUF tensor ${name} dimension`));
+      }
+      const type = await cursor.u32(8 + tensorTail);
       await cursor.u64(tensorTail + 8);
-      tensorNames.add(name);
+      tensors.set(name, { dimensions, type });
     }
 
     if ((header.splitCount ?? 1) > 1) {
@@ -385,34 +676,78 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         invalidKeys: ["general.architecture"]
       });
     }
-    if (header.architecture !== "deepseek4") {
+    if (header.architecture !== "deepseek4" && header.architecture !== "qwen35moe") {
       return result(header, {
         code: "unsupported_architecture",
         message: `The current DS4 runtime does not support the ${header.architecture} GGUF architecture.`
       });
     }
 
-    const missingMetadata = [...DEEPSEEK4_METADATA.keys()].filter((key) => !metadata.has(key));
+    const isQwen35Moe = header.architecture === "qwen35moe";
+    const metadataContract = isQwen35Moe ? QWEN35MOE_METADATA : DEEPSEEK4_METADATA;
+    const modelName = isQwen35Moe ? "Qwen3.6 35B A3B" : "DeepSeek 4";
+    const missingMetadata = [...metadataContract.keys()].filter((key) => !metadata.has(key));
     if (missingMetadata.length > 0) {
       return result(header, {
         code: "missing_metadata",
-        message: `This DeepSeek 4 GGUF is missing metadata required by DS4: ${missingMetadata.join(", ")}.`,
+        message: `This ${modelName} GGUF is missing metadata required by DS4: ${missingMetadata.join(", ")}.`,
         missingKeys: missingMetadata
       });
     }
-    const invalidMetadata = [...DEEPSEEK4_METADATA].flatMap(([key, expectation]) => {
+    const invalidMetadata = [...metadataContract].flatMap(([key, expectation]) => {
       const entry = metadata.get(key);
       return entry && !expectationMatches(entry, expectation) ? [key] : [];
     });
     if (invalidMetadata.length > 0) {
       return result(header, {
         code: "invalid_metadata_type",
-        message: `This DeepSeek 4 GGUF has DS4 metadata with an incompatible type: ${invalidMetadata.join(", ")}.`,
+        message: `This ${modelName} GGUF has DS4 metadata with an incompatible type: ${invalidMetadata.join(", ")}.`,
         invalidKeys: invalidMetadata
       });
     }
 
-    const missingTensors = DS4_DEEPSEEK4_TENSOR_SIGNATURE.filter((name) => !tensorNames.has(name));
+    if (isQwen35Moe) {
+      const invalidValues = qwenMetadataContractInvalidKeys(metadata);
+      if (invalidValues.length > 0) {
+        return result(header, {
+          code: "invalid_metadata_type",
+          message: `This Qwen3.6 35B A3B GGUF does not match DS4's pinned metadata contract: ${invalidValues.join(", ")}.`,
+          invalidKeys: invalidValues
+        });
+      }
+
+      const missingTensors = DS4_QWEN35MOE_TENSOR_SIGNATURE.filter((name) => !tensors.has(name));
+      if (missingTensors.length > 0) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: `This GGUF does not contain the DS4 Qwen3.6 35B A3B text-model tensor layout: ${missingTensors.join(", ")}.`,
+          missingKeys: [...missingTensors]
+        });
+      }
+
+      const invalidTensors = [...QWEN35MOE_TENSOR_LAYOUT].flatMap(([name, expectation]) => {
+        const descriptor = tensors.get(name);
+        return descriptor && !tensorLayoutMatches(descriptor, expectation) ? [name] : [];
+      });
+      if (invalidTensors.length > 0) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: `This Qwen GGUF is not normalized for the DS4 Qwen3.6 35B A3B tensor layout: ${invalidTensors.join(", ")}.`,
+          invalidKeys: invalidTensors
+        });
+      }
+
+      if (tensorCount !== QWEN35MOE_TENSOR_LAYOUT.size) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: `DS4 requires the 733-tensor Qwen3.6 35B A3B text-only, no-MTP layout; this GGUF contains ${tensorCount} tensors.`
+        });
+      }
+
+      return result(header, null);
+    }
+
+    const missingTensors = DS4_DEEPSEEK4_TENSOR_SIGNATURE.filter((name) => !tensors.has(name));
     if (missingTensors.length > 0) {
       return result(header, {
         code: "missing_tensor_signature",

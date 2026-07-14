@@ -4,8 +4,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   DS4_DEEPSEEK4_TENSOR_SIGNATURE,
+  DS4_QWEN35MOE_TENSOR_SIGNATURE,
   inspectDs4Gguf
 } from "../server/gguf-compatibility.js";
+import { createDs4QwenGgufFixture } from "./helpers/gguf.js";
 
 const U32 = 4;
 const F32 = 6;
@@ -163,6 +165,58 @@ describe("DS4 GGUF compatibility inspection", () => {
       splitCount: null,
       reason: null
     });
+  });
+
+  it("accepts the normalized Qwen3.6 35B A3B text-only tensor contract", async () => {
+    const result = await inspect(createDs4QwenGgufFixture());
+
+    expect(result).toMatchObject({
+      compatible: true,
+      ggufVersion: 3,
+      tensorCount: 733,
+      architecture: "qwen35moe",
+      splitCount: null,
+      reason: null
+    });
+    expect(DS4_QWEN35MOE_TENSOR_SIGNATURE).toHaveLength(733);
+  });
+
+  it("rejects the raw Unsloth Qwen artifact until its four tensors are normalized for DS4", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ rawUnslothLayout: true }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "missing_tensor_signature",
+      invalidKeys: [
+        "output.weight",
+        "blk.34.ffn_down_exps.weight",
+        "blk.38.ffn_down_exps.weight",
+        "blk.39.ffn_down_exps.weight"
+      ]
+    });
+    expect(result.reason?.message).toContain("not normalized");
+  });
+
+  it("rejects the raw Unsloth Qwen padding token metadata", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ paddingTokenId: 248_055 }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "invalid_metadata_type",
+      invalidKeys: ["tokenizer.ggml.padding_token_id"]
+    });
+    expect(result.reason?.message).toContain("pinned metadata contract");
+  });
+
+  it("rejects a Qwen chat template with the correct length but the wrong digest", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ invalidChatTemplate: true }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "invalid_metadata_type",
+      invalidKeys: ["tokenizer.chat_template"]
+    });
+    expect(result.reason?.message).toContain("pinned metadata contract");
   });
 
   it("rejects a standard multipart shard before its empty tensor directory", async () => {

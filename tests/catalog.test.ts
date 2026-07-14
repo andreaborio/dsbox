@@ -242,8 +242,8 @@ describe("Hugging Face model catalog", () => {
   });
 
   it("keeps standard Unsloth GGUF repositories visible but prevents incompatible DS4 downloads", async () => {
-    const repositories = ["unsloth/DeepSeek-V4-Flash-GGUF", "unsloth/GLM-5.2-GGUF"];
-    const revisions = ["1".repeat(40), "2".repeat(40)];
+    const repositories = ["unsloth/DeepSeek-V4-Flash-GGUF", "unsloth/GLM-5.2-GGUF", "unsloth/Qwen3.6-35B-A3B-GGUF"];
+    const revisions = ["1".repeat(40), "2".repeat(40), "3".repeat(40)];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = requestedUrl(input);
       if (url.includes("author=andreaborio")) return jsonResponse([]);
@@ -253,7 +253,7 @@ describe("Hugging Face model catalog", () => {
         const model = {
           id: repository,
           sha: revision,
-          tags: index === 0 ? ["gguf", "deepseek_v4"] : ["gguf", "glm-5.2"],
+          tags: index === 0 ? ["gguf", "deepseek_v4"] : index === 1 ? ["gguf", "glm-5.2"] : ["gguf", "qwen3.6", "moe"],
           siblings: index === 0
             ? [
                 { rfilename: "UD-IQ1_M/model-00001-of-00002.gguf", lfs: { size: 10, sha256: "a".repeat(64) } },
@@ -261,9 +261,12 @@ describe("Hugging Face model catalog", () => {
                 { rfilename: "UD-IQ2_XXS/model-00001-of-00002.gguf", lfs: { size: 11, sha256: "c".repeat(64) } },
                 { rfilename: "UD-IQ2_XXS/model-00002-of-00002.gguf", lfs: { size: 21, sha256: "d".repeat(64) } }
               ]
-            : [
+            : index === 1 ? [
                 { rfilename: "UD-IQ1_S/model-00001-of-00002.gguf", lfs: { size: 30, sha256: "e".repeat(64) } },
                 { rfilename: "UD-IQ1_S/model-00002-of-00002.gguf", lfs: { size: 40, sha256: "f".repeat(64) } }
+              ]
+            : [
+                { rfilename: "Qwen3.6-35B-A3B-UD-Q4_K_S.gguf", lfs: { size: 20_893_015_008, sha256: "a8138f183e3993f12cdc23afd2babb8cdb084e64088ce4a256d49101d47b949c" } }
               ]
         };
         if (url === `https://huggingface.co/api/models/${repository}?blobs=true`
@@ -284,7 +287,7 @@ describe("Hugging Face model catalog", () => {
       label: "Unsloth",
       url: "https://huggingface.co/unsloth/models"
     });
-    expect(catalog.models).toHaveLength(2);
+    expect(catalog.models).toHaveLength(3);
     expect(catalog.models.find((model) => model.repository === repositories[0])).toMatchObject({
       publisher: "unsloth",
       label: "DeepSeek V4 Flash",
@@ -309,6 +312,15 @@ describe("Hugging Face model catalog", () => {
       totalBytes: 70,
       outputFile: "UD-IQ1_S/model-00001-of-00002.gguf",
       unavailableReason: "DS4 does not support standard multi-file GGUF sets"
+    });
+    expect(catalog.models.find((model) => model.repository === repositories[2])).toMatchObject({
+      publisher: "unsloth",
+      label: "Qwen3.6 35B A3B",
+      modelId: "qwen3.6-35b-a3b",
+      installable: false,
+      recommended: false,
+      architecture: "moe",
+      unavailableReason: "DS4 requires the normalized Qwen3.6 DS4 artifact; these source GGUF files are not directly runnable"
     });
     expect(catalog.recommended).toBeNull();
   });

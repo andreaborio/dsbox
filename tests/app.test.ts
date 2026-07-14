@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, createServices, type AppServices } from "../server/app.js";
 import { TaskCancelledError } from "../server/runtime.js";
 import type { CatalogModel, CatalogModelVariant, CatalogResponse, ModelDownloadSnapshot, RuntimeState } from "../src/types.js";
-import { createDs4GgufFixture } from "./helpers/gguf.js";
+import { createDs4GgufFixture, createDs4QwenGgufFixture } from "./helpers/gguf.js";
 
 describe("DSBox API", () => {
   let home: string;
@@ -44,6 +44,19 @@ describe("DSBox API", () => {
 
     expect(services.runtime.getState()).toMatchObject({ modelPresent: false, modelSizeBytes: 0 });
     expect(services.store.get().model).toEqual({ path: incompatiblePath, id: "legacy-model" });
+  });
+
+  it("repairs a legacy Qwen model alias during startup refresh", async () => {
+    const qwenPath = path.join(home, "Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf");
+    await writeFile(qwenPath, createDs4QwenGgufFixture());
+    const config = services.store.get();
+    config.model = { path: qwenPath, id: "legacy-qwen-alias" };
+    await services.store.set(config);
+
+    await services.runtime.refresh();
+
+    expect(services.runtime.getState()).toMatchObject({ modelPresent: true });
+    expect(services.store.get().model).toEqual({ path: qwenPath, id: "qwen3.6-35b-a3b" });
   });
 
   it("validates config writes", async () => {
@@ -115,6 +128,25 @@ describe("DSBox API", () => {
     expect(local.body.models).toContainEqual(expect.objectContaining({ path: modelPath, selected: true }));
     expect(services.runtime.getState()).toMatchObject({ modelPresent: true, pid: null });
     expect(services.runtime.hasTask()).toBe(false);
+  });
+
+  it("pins a verified Qwen artifact to the model ID required by DS4", async () => {
+    const modelPath = path.join(home, "Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf");
+    await writeFile(modelPath, createDs4QwenGgufFixture());
+
+    const selected = await request(createApp(services))
+      .post("/api/models/local/select")
+      .set("x-dsbox-control", "1")
+      .send({ path: modelPath, modelId: "user-alias-that-ds4-would-reject" })
+      .expect(200);
+
+    expect(selected.body).toMatchObject({
+      path: modelPath,
+      modelId: "qwen3.6-35b-a3b",
+      architecture: "qwen35moe",
+      selected: true
+    });
+    expect(services.store.get().model).toEqual({ path: modelPath, id: "qwen3.6-35b-a3b" });
   });
 
   it("refreshes the saved model ID when a known GGUF gets authoritative metadata", async () => {
@@ -339,6 +371,70 @@ describe("DSBox API", () => {
     expect(JSON.parse(await readFile(inventoryPath, "utf8"))).toMatchObject({ version: 1, models: [] });
   });
 
+  it("keeps unsupported GGUF findings in the local library with their exact reason", async () => {
+    const modelDirectory = path.join(home, "future-models");
+    const modelPath = path.join(modelDirectory, "future-architecture.gguf");
+    await mkdir(modelDirectory, { recursive: true });
+    await writeFile(modelPath, createDs4GgufFixture({ includeVocabSize: false }));
+    const app = createApp(services);
+
+    await request(app)
+      .post("/api/models/local/scan")
+      .set("x-dsbox-control", "1")
+      .expect(202);
+    await vi.waitFor(async () => {
+      const scan = await request(app).get("/api/models/local/scan").expect(200);
+      expect(scan.body.status).toBe("complete");
+    });
+
+    const completed = await request(app).get("/api/models/local/scan").expect(200);
+    expect(completed.body).toMatchObject({
+      status: "complete",
+      warning: null,
+      progress: { modelsFound: 1 }
+    });
+    expect(completed.body.models).toContainEqual(expect.objectContaining({
+      path: modelPath,
+      selected: false,
+      compatibility: {
+        status: "unsupported",
+        code: "missing_ds4_metadata",
+        reason: "This DeepSeek 4 GGUF is missing metadata required by DS4: deepseek4.vocab_size."
+      },
+      architecture: "deepseek4"
+    }));
+
+    const inventoryPath = path.join(home, "local-models.json");
+    expect(JSON.parse(await readFile(inventoryPath, "utf8"))).toMatchObject({
+      version: 1,
+      models: [expect.objectContaining({ path: modelPath, modelId: "future-architecture" })]
+    });
+
+    services.metrics.stop();
+    services = await createServices(4242);
+    const restored = await request(createApp(services)).get("/api/models/local").expect(200);
+    expect(restored.body.models).toContainEqual(expect.objectContaining({
+      path: modelPath,
+      compatibility: expect.objectContaining({
+        status: "unsupported",
+        reason: "This DeepSeek 4 GGUF is missing metadata required by DS4: deepseek4.vocab_size."
+      })
+    }));
+    expect(services.runtime.getState()).toMatchObject({ modelPresent: false, modelSizeBytes: 0 });
+
+    const restartedApp = createApp(services);
+    await request(restartedApp)
+      .post("/api/models/local/select")
+      .set("x-dsbox-control", "1")
+      .send({ path: modelPath })
+      .expect(400);
+    const stillListed = await request(restartedApp).get("/api/models/local").expect(200);
+    expect(stillListed.body.models).toContainEqual(expect.objectContaining({
+      path: modelPath,
+      compatibility: expect.objectContaining({ status: "unsupported" })
+    }));
+  });
+
   it("keeps validated findings when a local-model scan is cancelled", async () => {
     const modelDirectory = path.join(home, "cancelled-scan");
     const foundPath = path.join(modelDirectory, "found-before-cancel.gguf");
@@ -418,23 +514,39 @@ describe("DSBox API", () => {
     expect(services.runtime.hasTask()).toBe(false);
   });
 
-  it("selects a Finder-picked GGUF through the existing validation path", async () => {
+  it("adds Finder-picked GGUF files to the library without changing the active model", async () => {
     const modelPath = path.join(home, "finder-model.gguf");
+    const unsupportedPath = path.join(home, "finder-future-model.gguf");
     const invalidPath = path.join(home, "finder-invalid.gguf");
     await writeFile(modelPath, createDs4GgufFixture());
+    await writeFile(unsupportedPath, createDs4GgufFixture({ includeVocabSize: false }));
     await writeFile(invalidPath, "not a GGUF");
+    const previousModel = services.store.get().model;
 
     await expect(services.runtime.chooseLocalModelFromFinder(async () => modelPath)).resolves.toMatchObject({
       cancelled: false,
-      model: { path: modelPath, selected: true }
+      model: { path: modelPath, selected: false, compatibility: { status: "compatible" } }
     });
-    expect(services.store.get().model.path).toBe(modelPath);
+    await expect(services.runtime.chooseLocalModelFromFinder(async () => unsupportedPath)).resolves.toMatchObject({
+      cancelled: false,
+      model: { path: unsupportedPath, selected: false, compatibility: { status: "unsupported" } }
+    });
+    expect(services.store.get().model).toEqual(previousModel);
     await expect(services.runtime.chooseLocalModelFromFinder(async () => null)).resolves.toEqual({
       cancelled: true,
       model: null
     });
-    await expect(services.runtime.chooseLocalModelFromFinder(async () => invalidPath)).rejects.toThrow(/readable GGUF/);
-    expect(services.store.get().model.path).toBe(modelPath);
+    await expect(services.runtime.chooseLocalModelFromFinder(async () => invalidPath)).resolves.toMatchObject({
+      cancelled: false,
+      model: { path: invalidPath, selected: false, compatibility: { status: "unsupported", code: "invalid_gguf" } }
+    });
+    const library = await services.runtime.discoverLocalModels();
+    expect(library).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: modelPath, compatibility: expect.objectContaining({ status: "compatible" }) }),
+      expect.objectContaining({ path: unsupportedPath, compatibility: expect.objectContaining({ status: "unsupported" }) }),
+      expect.objectContaining({ path: invalidPath, compatibility: expect.objectContaining({ status: "unsupported" }) })
+    ]));
+    expect(services.store.get().model).toEqual(previousModel);
     expect(services.runtime.getState().pid).toBeNull();
   });
 
@@ -602,6 +714,7 @@ describe("DSBox API", () => {
       stage: "queued"
     } as ModelDownloadSnapshot;
     vi.spyOn(services.catalog, "list").mockResolvedValue(catalog);
+    const prepareRuntime = vi.spyOn(services.runtime, "prepareCatalogRuntime").mockResolvedValue();
     const start = vi.spyOn(services.downloads, "start").mockResolvedValue(download);
     vi.spyOn(services.downloads, "list").mockReturnValue([download]);
     const app = createApp(services);
@@ -611,10 +724,22 @@ describe("DSBox API", () => {
       .set("x-dsbox-control", "1")
       .send({ repository: model.repository, revision: model.revision, variantId: variant.id })
       .expect(202);
+    expect(prepareRuntime).toHaveBeenCalledWith(model);
     expect(start).toHaveBeenCalledWith(model, variant.id);
     expect(started.body).toEqual({ accepted: true, download });
     const listed = await request(app).get("/api/models/downloads").expect(200);
     expect(listed.body).toEqual({ downloads: [download] });
+
+    model.installable = false;
+    model.unavailableReason = "Source only";
+    const rejected = await request(app)
+      .post("/api/models/download")
+      .set("x-dsbox-control", "1")
+      .send({ repository: model.repository, revision: model.revision, variantId: variant.id })
+      .expect(409);
+    expect(rejected.body.error).toBe("Source only");
+    expect(prepareRuntime).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledTimes(1);
   });
 });
 

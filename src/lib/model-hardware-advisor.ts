@@ -37,6 +37,14 @@ const GIB = 1024 ** 3;
 const VALID_COMMIT = /^[a-f0-9]{40,64}$/i;
 const VALID_SHA256 = /^[a-f0-9]{64}$/i;
 
+function localArchitectureKind(architecture: string | null | undefined): ModelArchitecture {
+  const normalized = architecture?.trim().toLowerCase();
+  if (!normalized) return "unknown";
+  if (normalized === "deepseek4" || normalized.includes("moe")) return "moe";
+  if (/^(?:qwen|llama|mistral|gemma|phi)/.test(normalized) || normalized.includes("dense")) return "dense";
+  return "unknown";
+}
+
 function detectArchitecture(model: CatalogModel): ModelHardwareAssessment["architecture"] {
   if (model.architecture === "moe" || model.architecture === "dense") {
     return {
@@ -215,7 +223,7 @@ export function assessLocalModelHardware(
     unavailableReason: null,
     variantCount: 1,
     variants: [],
-    architecture: model.architecture === "deepseek4" ? "moe" : "unknown"
+    architecture: localArchitectureKind(model.architecture)
   };
   const assessment = assessModelHardware(projectedCatalogModel, hardware);
   if (model.compatibility?.status === "compatible") {

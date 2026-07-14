@@ -420,6 +420,10 @@ export function createApp(services: AppServices) {
     const model = catalog.models.find((candidate) => candidate.repository === repository
       && (!revision || candidate.revision === revision));
     if (!model) throw new ModelDownloadError("Model not found in the pinned DSBox catalog", 404);
+    if (!model.installable) {
+      throw new ModelDownloadError(model.unavailableReason ?? "This catalog source is not directly installable in DSBox", 409);
+    }
+    await services.runtime.prepareCatalogRuntime(model);
     const download = await services.downloads.start(model, variantId);
     response.status(202).json({ accepted: true, download });
   }));

@@ -128,4 +128,22 @@ describe("DS4 SSD-streaming hardware advisor", () => {
     expect(assessment.requiresAcknowledgement).toBe(true);
     expect(assessment.performance.explanation).toContain("DS4 can stream weights from SSD");
   });
+
+  it("classifies Qwen dense and MoE GGUF architecture names without family-specific UI code", () => {
+    const dense = assessLocalModelHardware({
+      name: "qwen3.gguf",
+      modelId: "qwen3-32b",
+      sizeBytes: 32 * GIB,
+      architecture: "qwen3"
+    }, { totalMemoryBytes: 32 * GIB });
+    const moe = assessLocalModelHardware({
+      name: "qwen3.6-moe.gguf",
+      modelId: "qwen3.6-35b-a3b",
+      sizeBytes: 35 * GIB,
+      architecture: "qwen35moe"
+    }, { totalMemoryBytes: 32 * GIB });
+
+    expect(dense.architecture.kind).toBe("dense");
+    expect(moe.architecture.kind).toBe("moe");
+  });
 });

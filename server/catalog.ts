@@ -46,7 +46,8 @@ const SOURCE_DEFINITIONS: CatalogSourceDefinition[] = [
     url: "https://huggingface.co/unsloth/models",
     repositories: [
       "unsloth/DeepSeek-V4-Flash-GGUF",
-      "unsloth/GLM-5.2-GGUF"
+      "unsloth/GLM-5.2-GGUF",
+      "unsloth/Qwen3.6-35B-A3B-GGUF"
     ]
   },
   {
@@ -108,6 +109,7 @@ interface DsboxManifest {
   runtime?: { branch?: string };
   launch?: { servedModelId?: string };
   requirements?: { minUnifiedMemoryBytes?: number };
+  architecture?: CatalogModel["architecture"];
   artifact?: {
     output?: string;
     sizeBytes?: number;
@@ -124,12 +126,14 @@ function cleanLabel(repository: string): string {
     .replace(/\bGlm52\b/g, "GLM 5.2")
     .replace(/\bDs4\b/g, "DS4")
     .replace(/\bDeepseek\b/g, "DeepSeek")
+    .replace(/\bQwen3\.6\b/g, "Qwen3.6")
     .replace(/\b(\d+)g\b/gi, "$1 GB")
     .replace(/\bQ(\d+)k\b/gi, "Q$1_K");
 }
 
 function inferredModelId(repository: string, tags: string[]): string {
   const identity = `${repository} ${tags.join(" ")}`.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  if (identity.includes("qwen3 6 35b a3b") || identity.includes("qwen 3 6 35b a3b")) return "qwen3.6-35b-a3b";
   if (identity.includes("glm 5 2")) return "glm-5.2";
   if (identity.includes("deepseek v4")) return "deepseek-v4-flash";
 
@@ -391,11 +395,14 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     ? [declaredAssembly, ...groupedVariants.filter((variant) => variant.outputFile !== declaredAssembly.outputFile)]
     : [...groupedVariants, ...inferredAssemblies];
   const unsupportedUnverifiedGguf = publisher === "unsloth" && !manifest;
+  const rawQwenSource = unsupportedUnverifiedGguf && /qwen3[._-]?6[-_. ]?35b[-_. ]?a3b/i.test(repository);
   const variants = unsupportedUnverifiedGguf
     ? discoveredVariants.map((variant) => ({
         ...variant,
         installable: false,
-        unavailableReason: variant.files.length > 1
+        unavailableReason: rawQwenSource
+          ? "DS4 requires the normalized Qwen3.6 DS4 artifact; these source GGUF files are not directly runnable"
+          : variant.files.length > 1
           ? "DS4 does not support standard multi-file GGUF sets"
           : "This repository does not declare a DS4-compatible model layout"
       }))
@@ -442,7 +449,9 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     label: manifest?.name?.trim() || cleanLabel(repository).replace(/\s+GGUF$/i, ""),
     description: manifest?.description?.trim()
       || (publisher === "unsloth"
-        ? "Unsloth GGUF repository. Standard multipart builds are visible for reference but cannot run in DS4."
+        ? rawQwenSource
+          ? "Upstream Qwen3.6 GGUF source. DSBox keeps it visible for provenance; DS4 runs only the normalized DS4 artifact."
+          : "Unsloth GGUF repository. Standard multipart builds are visible for reference but cannot run in DS4."
         : experimental
           ? "Experimental version available for advanced testing."
           : "DS4 model published on Hugging Face."),
@@ -461,7 +470,9 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     unavailableReason,
     variantCount,
     variants,
-    architecture: model.architecture ?? null
+    architecture: manifest?.architecture
+      ?? model.architecture
+      ?? (rawQwenSource ? "moe" : null)
   };
 }
 

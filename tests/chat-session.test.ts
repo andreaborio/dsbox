@@ -266,11 +266,15 @@ describe("persistent chat session", () => {
       return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: "Answer [1]" } }], usage: { prompt_tokens: 20, completion_tokens: 3, total_tokens: 23 } })}\n\ndata: [DONE]\n\n`, { status: 200 });
     });
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), now: () => currentTime, createId: ids() });
+    await store.send({ content: "Keep this earlier turn local", model: "test", maxTokens: 128 });
+    requests.length = 0;
     await store.send({ content: "Search the web for what changed", model: "test", maxTokens: 128 });
 
     const assistant = store.getSnapshot().messages.at(-1)!;
     expect(requests.map((request) => request.input)).toEqual(["/api/skills/web-search", "/api/chat"]);
-    expect(JSON.parse(String(requests[1].init.body)).messages).toContainEqual(expect.objectContaining({ role: "system", content: expect.stringContaining("https://example.com/current") }));
+    const outgoing = JSON.parse(String(requests[1].init.body)).messages as Array<{ role: string; content: string }>;
+    expect(outgoing[0]).toEqual(expect.objectContaining({ role: "system", content: expect.stringContaining("https://example.com/current") }));
+    expect(outgoing.slice(1).map((message) => message.role)).toEqual(["user", "assistant", "user"]);
     expect(assistant.sources).toEqual([{ title: "Current reference", url: "https://example.com/current", snippet: "Fresh context" }]);
     expect(assistant.stats?.webSearchMs).toBe(500);
   });

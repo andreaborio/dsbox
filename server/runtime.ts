@@ -21,7 +21,11 @@ import { ConfigStore } from "./config.js";
 import { EventBus } from "./event-bus.js";
 import { chooseGgufFileInFinder } from "./native-file-picker.js";
 import { argumentOptionName, shellDisplayArgument, tokenizeArguments } from "../src/lib/arguments.js";
-import { buildEngineArguments } from "../src/lib/engine-arguments.js";
+import {
+  buildEngineArguments,
+  QWEN35_ARCHITECTURE,
+  QWEN35_MODEL_ID
+} from "../src/lib/engine-arguments.js";
 import {
   inspectDs4Gguf,
   type Ds4GgufCompatibility
@@ -45,6 +49,13 @@ const fallbackModelVariables: Record<string, string> = {
 };
 
 const localModelInventoryVersion = 1;
+const qwenUnsupportedEnvironmentKeys = [
+  "DS4_EXPERT_PROFILE",
+  "DS4_EXPERT_HOTLIST",
+  "DS4_METAL_STREAMING_EXPERT_HOTLIST",
+  "DS4_METAL_STREAMING_EXPERT_HOTLIST_PROFILE",
+  "DS4_METAL_STREAMING_PIN_NON_ROUTED"
+] as const;
 
 interface LocalModelInventoryRecord {
   path: string;
@@ -77,6 +88,25 @@ function localCompatibilityMessage(inspection: Ds4GgufCompatibility): string {
   return "This file is not a readable GGUF model. Choose a complete .gguf file.";
 }
 
+function localCompatibilityCode(
+  inspection: Ds4GgufCompatibility
+): LocalModelCandidate["compatibility"]["code"] {
+  switch (inspection.reason?.code) {
+    case "multipart_unsupported":
+      return "standard_multipart";
+    case "unsupported_architecture":
+      return "unsupported_architecture";
+    case "empty_tensor_directory":
+    case "missing_architecture":
+    case "missing_metadata":
+    case "invalid_metadata_type":
+    case "missing_tensor_signature":
+      return "missing_ds4_metadata";
+    default:
+      return "invalid_gguf";
+  }
+}
+
 export function parseFallbackModelFilename(script: string, variant: string): string | null {
   const variable = fallbackModelVariables[variant];
   if (!variable) return null;
@@ -93,6 +123,23 @@ export function parseVmStatSwapoutPages(output: string): number | null {
   if (!match) return null;
   const pages = Number(match[1]);
   return Number.isSafeInteger(pages) && pages >= 0 ? pages : null;
+}
+
+export function qwen35LaunchEnvironment(
+  inherited: NodeJS.ProcessEnv,
+  configured: Record<string, string>
+): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = { ...inherited, ...configured };
+  for (const key of qwenUnsupportedEnvironmentKeys) delete environment[key];
+  environment.DS4_QWEN_EXPERIMENTAL_METAL = "1";
+  return environment;
+}
+
+export function ds4BuildInfoMatchesHead(output: string, head: string): boolean {
+  const match = output.match(/^git:\s+([a-f0-9]{7,64})\s*$/im);
+  if (!match || !/^[a-f0-9]{40,64}$/i.test(head)) return false;
+  const buildHead = match[1].toLowerCase();
+  return head.toLowerCase().startsWith(buildHead);
 }
 
 export function orderedLocalModelScanRoots(
@@ -555,7 +602,7 @@ export class RuntimeManager {
   }
 
   async refresh(): Promise<RuntimeState> {
-    const config = this.store.get();
+    let config = this.store.get();
     const gitDirectory = path.join(config.repository.directory, ".git");
     const binary = path.join(config.repository.directory, "ds4-server");
     const installed = await this.pathExists(gitDirectory);
@@ -566,8 +613,17 @@ export class RuntimeManager {
       const modelStat = await stat(config.model.path);
       if (modelStat.isFile()) {
         const inspection = await this.inspectLocalModelWithReason(config.model.path, config.model.path);
-        modelPresent = Boolean(inspection.candidate);
-        modelSizeBytes = inspection.candidate?.sizeBytes ?? 0;
+        modelPresent = inspection.candidate?.compatibility.status === "compatible";
+        modelSizeBytes = modelPresent ? inspection.candidate?.sizeBytes ?? 0 : 0;
+        if (modelPresent && inspection.candidate) {
+          const canonicalModelId = this.localModelId(inspection.candidate, config.model.id);
+          if (canonicalModelId !== config.model.id) {
+            const next = structuredClone(config);
+            next.model.id = canonicalModelId;
+            config = await this.store.set(next);
+            this.bus.publish({ type: "config", payload: config });
+          }
+        }
       }
     } catch {
       // Model may not have been selected yet.
@@ -885,11 +941,24 @@ export class RuntimeManager {
     this.log("success", "git", "DS4 engine updated and rebuilt for the selected model.");
   }
 
+  async prepareCatalogRuntime(model: CatalogModel): Promise<void> {
+    await this.ensureCatalogRuntime(model);
+  }
+
   private inferLocalModelId(filePath: string): string {
     const filename = path.basename(filePath, path.extname(filePath));
+    if (/qwen[-_. ]?3[._-]?6.*35b.*a3b/i.test(filename) || /qwen36.*35b.*a3b/i.test(filename)) {
+      return QWEN35_MODEL_ID;
+    }
     if (/glm[-_. ]?5[._-]?2/i.test(filename) || /glm52/i.test(filename)) return "glm-5.2";
     if (/deepseek[-_. ]?v?4/i.test(filename)) return "deepseek-v4-flash";
     return filename.slice(0, 160) || "local-model";
+  }
+
+  private localModelId(candidate: LocalModelCandidate, requestedModelId?: string): string {
+    return candidate.architecture === QWEN35_ARCHITECTURE
+      ? QWEN35_MODEL_ID
+      : requestedModelId?.trim() || candidate.modelId;
   }
 
   private get localModelInventoryPath(): string {
@@ -943,8 +1012,9 @@ export class RuntimeManager {
 
   /**
    * Reconcile known paths under one serialized transaction. Every entry is
-   * re-opened before it is written, so deleted, unreadable, corrupt, or
-   * incomplete multipart GGUF files are pruned instead of becoming stale UI.
+   * re-opened before it is written. Deleted or unreadable paths are pruned;
+   * GGUF files the current runtime cannot execute remain visible with a fresh
+   * compatibility reason so a later DS4 build can make them runnable in place.
    */
   private reconcileLocalModelInventory(incoming: LocalModelCandidate[]): Promise<LocalModelCandidate[]> {
     return this.queueLocalModelInventory(async () => {
@@ -964,12 +1034,16 @@ export class RuntimeManager {
         if (!candidate) continue;
         validated.push({
           ...candidate,
-          modelId: candidate.selected ? config.model.id : record.modelId
+          modelId: this.localModelId(candidate, candidate.selected ? config.model.id : record.modelId)
         });
       }
       if (!known.has(selectedPath)) {
         const selected = await this.inspectLocalModel(selectedPath, selectedPath);
-        if (selected) validated.push({ ...selected, modelId: config.model.id, selected: true });
+        if (selected) validated.push({
+          ...selected,
+          modelId: this.localModelId(selected, config.model.id),
+          selected: selected.compatibility.status === "compatible"
+        });
       }
 
       const unique = new Map<string, LocalModelCandidate>();
@@ -989,23 +1063,40 @@ export class RuntimeManager {
       return { candidate: null, message: "Choose a complete .gguf model file." };
     }
     const filename = path.basename(absolutePath);
-    if (/\.(?:head(?:er)?\w*|partial|part)\.gguf$/i.test(filename)) {
-      return { candidate: null, message: "This looks like a partial GGUF download. Choose the complete model file instead." };
-    }
     try {
       const info = await stat(absolutePath);
       if (!info.isFile()) {
         return { candidate: null, message: "The selected path is not a GGUF model file." };
       }
+      const unsupportedCandidate = (
+        code: LocalModelCandidate["compatibility"]["code"],
+        reason: string,
+        architecture: string | null = null
+      ): LocalModelCandidate => ({
+        path: absolutePath,
+        name: path.basename(absolutePath, ".gguf"),
+        sizeBytes: info.size,
+        modelId: this.inferLocalModelId(absolutePath),
+        selected: false,
+        compatibility: { status: "unsupported", code, reason },
+        architecture
+      });
+      if (/\.(?:head(?:er)?\w*|partial|part)\.gguf$/i.test(filename)) {
+        const message = "This looks like a partial GGUF download. Choose the complete model file instead.";
+        return { candidate: unsupportedCandidate("invalid_gguf", message), message };
+      }
       if (/^.*-\d{5}-of-\d{5}\.gguf$/i.test(filename)) {
-        return {
-          candidate: null,
-          message: "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead."
-        };
+        const message = "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead.";
+        return { candidate: unsupportedCandidate("standard_multipart", message), message };
       }
       const compatibility = await inspectDs4Gguf(absolutePath);
       if (!compatibility.compatible) {
-        return { candidate: null, message: localCompatibilityMessage(compatibility) };
+        const message = localCompatibilityMessage(compatibility);
+        const reason = compatibility.reason?.message ?? message;
+        return {
+          candidate: unsupportedCandidate(localCompatibilityCode(compatibility), reason, compatibility.architecture),
+          message
+        };
       }
       return {
         candidate: {
@@ -1015,7 +1106,7 @@ export class RuntimeManager {
           modelId: this.inferLocalModelId(absolutePath),
           selected: absolutePath === path.resolve(selectedPath),
           compatibility: { status: "compatible", code: "ds4_native", reason: null },
-          architecture: compatibility.architecture === "deepseek4" ? "deepseek4" : null
+          architecture: compatibility.architecture
         },
         message: null
       };
@@ -1031,7 +1122,7 @@ export class RuntimeManager {
   async validateLocalModel(filePath: string, selectedPath = filePath): Promise<LocalModelCandidate> {
     if (!path.isAbsolute(filePath)) throw new ModelSelectionError("DSBox did not receive a valid model location");
     const inspection = await this.inspectLocalModelWithReason(filePath, selectedPath);
-    if (!inspection.candidate) {
+    if (!inspection.candidate || inspection.candidate.compatibility.status !== "compatible") {
       throw new ModelSelectionError(inspection.message ?? "This file is not compatible with DS4");
     }
     return inspection.candidate;
@@ -1253,21 +1344,20 @@ export class RuntimeManager {
     const models: LocalModelCandidate[] = [];
     const seenModels = new Set<string>();
     const inspectedPaths = new Set<string>();
-    let incompatibleFiles = 0;
     const addModel = (candidate: LocalModelCandidate) => {
       if (seenModels.has(candidate.path)) return;
       seenModels.add(candidate.path);
       models.push(candidate);
     };
     const sortedModels = () => [...models].sort(
-      (left, right) => Number(right.selected) - Number(left.selected) || right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name)
+      (left, right) => Number(right.selected) - Number(left.selected)
+        || Number(right.compatibility.status === "compatible") - Number(left.compatibility.status === "compatible")
+        || right.sizeBytes - left.sizeBytes
+        || left.name.localeCompare(right.name)
     );
-    const incompatibilityWarning = () => incompatibleFiles > 0
-      ? `${incompatibleFiles === 1 ? "1 GGUF file was" : `${incompatibleFiles} GGUF files were`} skipped because ${incompatibleFiles === 1 ? "it is" : "they are"} not compatible with the current DS4 runtime. Choose a file in Finder to see the exact reason.`
-      : null;
     const combineWarnings = (...messages: Array<string | null>) => messages.filter(Boolean).join(" ") || null;
     const validatePaths = async (paths: string[]): Promise<number> => {
-      let usable = 0;
+      let discovered = 0;
       let inspected = 0;
       for (const filePath of paths) {
         if (signal.aborted) throw scanAbortError();
@@ -1278,10 +1368,8 @@ export class RuntimeManager {
         const candidate = await this.inspectLocalModel(absolutePath, config.model.path);
         if (signal.aborted) throw scanAbortError();
         if (candidate) {
-          usable += 1;
+          discovered += 1;
           addModel(candidate);
-        } else {
-          incompatibleFiles += 1;
         }
         if (inspected % 10 === 0 || inspected === paths.length) {
           this.updateLocalModelScan(scanId, {
@@ -1290,7 +1378,7 @@ export class RuntimeManager {
           });
         }
       }
-      return usable;
+      return discovered;
     };
 
     try {
@@ -1312,13 +1400,12 @@ export class RuntimeManager {
           strategy: "spotlight",
           progress: { candidateFiles: spotlight.paths.length }
         });
-        const usable = await validatePaths(spotlight.paths);
-        if (usable > 0) {
+        const discovered = await validatePaths(spotlight.paths);
+        if (discovered > 0) {
           if (signal.aborted) throw scanAbortError();
           await this.reconcileLocalModelInventory(models);
           warning = combineWarnings(
-            spotlight.truncated ? "Spotlight returned more than 1,000 GGUF paths. Use Finder if your model is not listed." : null,
-            incompatibilityWarning()
+            spotlight.truncated ? "Spotlight returned more than 1,000 GGUF paths. Use Finder if your model is not listed." : null
           );
           this.updateLocalModelScan(scanId, {
             status: "complete",
@@ -1350,8 +1437,7 @@ export class RuntimeManager {
       if (signal.aborted) throw scanAbortError();
       await this.reconcileLocalModelInventory(models);
       warning = combineWarnings(
-        fallback.truncated ? "The disk scan reached its safety limit; use Finder if your model is not listed." : null,
-        incompatibilityWarning()
+        fallback.truncated ? "The disk scan reached its safety limit; use Finder if your model is not listed." : null
       );
       this.updateLocalModelScan(scanId, {
         status: "complete",
@@ -1426,9 +1512,6 @@ export class RuntimeManager {
   async chooseLocalModelFromFinder(
     chooser: () => Promise<string | null> = chooseGgufFileInFinder
   ): Promise<NativeModelSelectionResult> {
-    if (this.modelChangeBlocked() || this.modelSelectionPending) {
-      throw new ModelSelectionError("Cancel the download or turn off DSBox before changing models", 409);
-    }
     if (this.modelPickerPending) throw new ModelSelectionError("The Finder file chooser is already open", 409);
     this.modelPickerPending = true;
     let selectedPath: string | null;
@@ -1438,7 +1521,15 @@ export class RuntimeManager {
       this.modelPickerPending = false;
     }
     if (!selectedPath) return { cancelled: true, model: null };
-    return { cancelled: false, model: await this.selectLocalModel(selectedPath) };
+    const inspection = await this.inspectLocalModelWithReason(selectedPath, this.store.get().model.path);
+    if (!inspection.candidate) {
+      throw new ModelSelectionError(inspection.message ?? "This file could not be added to the model library");
+    }
+    const remembered = await this.reconcileLocalModelInventory([inspection.candidate]);
+    return {
+      cancelled: false,
+      model: remembered.find((model) => model.path === inspection.candidate!.path) ?? inspection.candidate
+    };
   }
 
   async selectLocalModel(filePath: string, modelId?: string): Promise<LocalModelCandidate> {
@@ -1452,7 +1543,7 @@ export class RuntimeManager {
       if (this.modelChangeBlocked()) {
         throw new ModelSelectionError("DSBox started another operation; try again after it is turned off", 409);
       }
-      const saved = await this.persistLocalModel(candidate, modelId?.trim() || candidate.modelId);
+      const saved = await this.persistLocalModel(candidate, this.localModelId(candidate, modelId));
       this.log("success", "dsbox", `${candidate.name} selected from this Mac. No download required.`);
       this.setState({ phase: this.state.installed ? "idle" : "uninstalled", currentTask: null, lastError: null, readiness: "offline" });
       await this.refresh();
@@ -1482,7 +1573,7 @@ export class RuntimeManager {
     if (!candidate) return null;
     const models = await this.reconcileLocalModelInventory([{
       ...candidate,
-      modelId: modelId?.trim() || candidate.modelId
+      modelId: this.localModelId(candidate, modelId)
     }]);
     return models.find((model) => model.path === candidate.path) ?? null;
   }
@@ -1511,7 +1602,7 @@ export class RuntimeManager {
       if (requestedModelId && requestedModelId.length > 160) {
         throw new ModelSelectionError("The model ID must be 160 characters or fewer");
       }
-      const nextModelId = requestedModelId || candidate.modelId;
+      const nextModelId = this.localModelId(candidate, requestedModelId);
       if (candidate.path === path.resolve(previous.model.path) && nextModelId === previous.model.id) {
         return { model: { ...candidate, modelId: nextModelId, selected: true }, changed: false, restarted: false };
       }
@@ -1681,9 +1772,105 @@ export class RuntimeManager {
     await this.startManaged();
   }
 
+  private async checkoutHasQwenSource(directory: string): Promise<boolean> {
+    try {
+      const [header, implementation] = await Promise.all([
+        readFile(path.join(directory, "ds4_qwen.h"), "utf8"),
+        readFile(path.join(directory, "ds4.c"), "utf8")
+      ]);
+      return header.includes("QWEN35_MODEL_ID")
+        && implementation.includes("DS4_QWEN_EXPERIMENTAL_METAL")
+        && implementation.includes(QWEN35_ARCHITECTURE);
+    } catch {
+      return false;
+    }
+  }
+
+  private async binaryHasQwenRuntime(directory: string): Promise<boolean> {
+    try {
+      const binary = await readFile(path.join(directory, "ds4-server"));
+      return binary.includes(Buffer.from(QWEN35_MODEL_ID))
+        && binary.includes(Buffer.from("DS4_QWEN_EXPERIMENTAL_METAL"));
+    } catch {
+      return false;
+    }
+  }
+
+  private async binaryMatchesCheckoutHead(directory: string): Promise<boolean> {
+    if (await this.buildMatchesHead(directory)) return true;
+    const checkoutClean = await execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
+      .then((result) => !result.stdout.trim())
+      .catch(() => false);
+    if (!checkoutClean) return false;
+    const head = await this.fullGitHead(directory);
+    if (!head) return false;
+    try {
+      const binary = path.join(directory, "ds4-server");
+      const result = await execFileAsync(binary, ["--build-info"], {
+        cwd: directory,
+        maxBuffer: 1024 * 1024,
+        timeout: 15_000
+      });
+      return ds4BuildInfoMatchesHead(`${result.stdout}\n${result.stderr}`, head);
+    } catch {
+      return false;
+    }
+  }
+
+  private async ensureQwenRuntimeCheckout(config: ReturnType<ConfigStore["get"]>): Promise<ReturnType<ConfigStore["get"]>> {
+    let selected = config;
+    if (!(await this.checkoutHasQwenSource(selected.repository.directory))) {
+      let checkout: { path: string; branch: string | null; head: string | null } | null = null;
+      for (const candidate of await this.discoveredCheckouts()) {
+        if (candidate.path === selected.repository.directory) continue;
+        if (await this.checkoutHasQwenSource(candidate.path)) {
+          checkout = candidate;
+          break;
+        }
+      }
+      if (checkout) {
+        const next = structuredClone(selected);
+        next.repository.directory = checkout.path;
+        if (checkout.branch) next.repository.branch = checkout.branch;
+        selected = await this.store.set(next);
+        this.bus.publish({ type: "config", payload: selected });
+        this.log("info", "dsbox", `Using the Qwen-capable DS4 checkout at ${checkout.path}.`);
+        await this.refresh();
+      } else {
+        this.log("info", "git", "Checking the configured DS4 channel for the Qwen3.6 runtime.");
+        await this.installOrUpdate();
+        selected = this.store.get();
+        if (!(await this.checkoutHasQwenSource(selected.repository.directory))) {
+          throw new Error("The configured DS4 channel does not include the Qwen3.6 runtime yet. Select a Qwen-capable checkout or update the DS4 channel.");
+        }
+      }
+    }
+
+    const qwenBinaryIsCurrent = async () =>
+      await this.binaryHasQwenRuntime(selected.repository.directory)
+      && await this.binaryMatchesCheckoutHead(selected.repository.directory);
+    if (!(await qwenBinaryIsCurrent())) {
+      this.log("info", "build", "Building the Qwen-capable Metal runtime for this Mac.");
+      await this.build();
+    }
+    if (!(await qwenBinaryIsCurrent())) {
+      throw new Error("The selected DS4 binary does not match this clean Qwen-capable checkout");
+    }
+    return this.store.get();
+  }
+
   private async startEngine(): Promise<void> {
-    const config = this.store.get();
-    await this.validateLocalModel(config.model.path, config.model.path);
+    let config = this.store.get();
+    const selectedModel = await this.validateLocalModel(config.model.path, config.model.path);
+    const modelId = this.localModelId(selectedModel, config.model.id);
+    if (modelId !== config.model.id) {
+      const next = structuredClone(config);
+      next.model.id = modelId;
+      config = await this.store.set(next);
+      this.bus.publish({ type: "config", payload: config });
+    }
+    const qwen35 = selectedModel.architecture === QWEN35_ARCHITECTURE;
+    if (qwen35) config = await this.ensureQwenRuntimeCheckout(config);
     await this.ensureAppleMetalToolchain();
     const binary = path.join(config.repository.directory, "ds4-server");
     if (!(await this.pathExists(binary, true))) throw new Error("ds4-server has not been built");
@@ -1698,9 +1885,9 @@ export class RuntimeManager {
     const hasAdvancedCacheOverride = tokenizeArguments(config.advanced.extraArgs)
       .some((value) => optionName(value) === "--ssd-streaming-cache-experts");
     const usesAdaptiveCache = config.streaming.enabled
-      && config.streaming.cacheMode === "auto"
-      && !hasAdvancedCacheOverride;
-    const args = buildEngineArguments(config);
+      && (qwen35 || config.streaming.cacheMode === "auto")
+      && (qwen35 || !hasAdvancedCacheOverride);
+    const args = buildEngineArguments(config, selectedModel.architecture);
     const help = await this.detectHelp(binary, config.repository.directory);
     this.validateCapabilities(args, help);
     await this.ensurePortAvailable(config.server.internalHost, config.server.internalPort);
@@ -1708,6 +1895,9 @@ export class RuntimeManager {
     if (config.observability.traceEnabled) await mkdir(path.dirname(config.observability.tracePath), { recursive: true, mode: 0o700 });
     if (config.observability.imatrixEnabled) await mkdir(path.dirname(config.observability.imatrixPath), { recursive: true, mode: 0o700 });
     const extraEnvironment = parseEnvironment(config.advanced.environment);
+    const environment = qwen35
+      ? qwen35LaunchEnvironment(process.env, extraEnvironment)
+      : { ...process.env, ...extraEnvironment };
 
     this.clearAutomaticMemoryWatchdog();
     this.automaticMemoryGuard = null;
@@ -1732,19 +1922,25 @@ export class RuntimeManager {
       );
     }
 
-    this.log("info", "dsbox", `$ ${[binary, ...args].map(shellDisplayArgument).join(" ")}`);
+    const command = [
+      ...(qwen35 ? ["DS4_QWEN_EXPERIMENTAL_METAL=1"] : []),
+      binary,
+      ...args
+    ];
+    if (qwen35) this.log("info", "dsbox", "Qwen3.6 compatibility profile applied: Metal, SSD AUTO cache, power 100, and tool-free chat.");
+    this.log("info", "dsbox", `$ ${command.map(shellDisplayArgument).join(" ")}`);
     this.setState({
       phase: "starting",
       readiness: "loading",
       currentTask: "Loading the model and Metal graph",
       lastError: null,
-      command: [binary, ...args],
+      command,
       startedAt: new Date().toISOString()
     });
 
     const child = spawn(binary, args, {
       cwd: config.repository.directory,
-      env: { ...process.env, ...extraEnvironment },
+      env: environment,
       stdio: ["ignore", "pipe", "pipe"]
     });
     this.engine = child;
@@ -1790,7 +1986,13 @@ export class RuntimeManager {
         if (modelId && modelId !== config.model.id) {
           this.log("info", "dsbox", `Model exposed by the runtime: ${modelId}`);
         }
-        this.log("success", "dsbox", "ds4-server is ready for chat and coding agents.");
+        this.log(
+          "success",
+          "dsbox",
+          qwen35
+            ? "ds4-server is ready for Qwen chat and tool-free Chat Completions."
+            : "ds4-server is ready for chat and coding agents."
+        );
         this.setState({ phase: "running", readiness: "ready", currentTask: null });
         if (this.readinessTimer) clearInterval(this.readinessTimer);
         this.readinessTimer = null;
@@ -1852,6 +2054,12 @@ export class RuntimeManager {
       if (!state.modelPresent) {
         throw new Error("No model is ready. Choose a GGUF file already on this Mac or explicitly start a download from the DSBox catalog.");
       }
+      const configured = this.store.get();
+      const selectedModel = await this.validateLocalModel(configured.model.path, configured.model.path);
+      if (selectedModel.architecture === QWEN35_ARCHITECTURE) {
+        await this.ensureQwenRuntimeCheckout(configured);
+        state = await this.refresh();
+      }
       if (!state.installed) {
         await this.installOrUpdate();
         state = await this.refresh();
@@ -1892,7 +2100,15 @@ export class RuntimeManager {
 
   async commandPreview(): Promise<string[]> {
     const config = this.store.get();
-    return [path.join(config.repository.directory, "ds4-server"), ...buildEngineArguments(config)];
+    const selectedModel = await this.inspectLocalModel(config.model.path, config.model.path);
+    const qwenPrefix = selectedModel?.architecture === QWEN35_ARCHITECTURE
+      ? ["DS4_QWEN_EXPERIMENTAL_METAL=1"]
+      : [];
+    return [
+      ...qwenPrefix,
+      path.join(config.repository.directory, "ds4-server"),
+      ...buildEngineArguments(config, selectedModel?.architecture)
+    ];
   }
 
   async discoveredCheckouts(): Promise<Array<{ path: string; branch: string | null; head: string | null }>> {
@@ -1901,6 +2117,7 @@ export class RuntimeManager {
     const candidates = [...new Set([
       configured,
       path.join(home, "Beep", "ds4"),
+      path.join(home, "Beep", "ds4-qwen-support"),
       path.join(home, "Beep", "ds4-glm52-gold"),
       path.join(home, "BEEP", "ds4")
     ])];

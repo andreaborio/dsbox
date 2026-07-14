@@ -171,7 +171,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
     setModelsLoading(true);
     try {
       const response = await apiRequest<{ models: LocalModelCandidate[] }>("/api/models/local");
-      setLocalModels(response.models);
+      setLocalModels(response.models.filter((model) => model.compatibility.status === "compatible"));
       setModelError(null);
     } catch (reason) {
       setModelError(reason instanceof Error ? reason.message : "Installed models could not be loaded");
@@ -430,6 +430,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                   aria-label={message.role === "user" ? "You" : "DSBox"}
                   initial={reduceMotion ? false : { opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
+                  transition={reduceMotion ? { duration: 0 } : { duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
                 >
                   {message.role === "assistant" && (
                     <AssistantAvatar state={liveInferenceStage(message, chat.skillStage)} />
@@ -450,7 +451,18 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                           {message.pending && <span className="reasoning__live">live</span>}
                           <ChevronDown className="reasoning__chevron" size={13} />
                         </button>
-                        {reasoningOpen[message.id] && <p>{message.reasoning}</p>}
+                        <AnimatePresence initial={false}>
+                          {reasoningOpen[message.id] && (
+                            <motion.p
+                              initial={reduceMotion ? false : { opacity: 0, y: -2 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: -2 }}
+                              transition={reduceMotion ? { duration: 0 } : { duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                            >
+                              {message.reasoning}
+                            </motion.p>
+                          )}
+                        </AnimatePresence>
                       </div>
                     )}
                     {message.skillNotice && <div className="message-skill-notice"><Globe2 size={12} /><span>{message.skillNotice}</span></div>}
@@ -531,7 +543,20 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
         </AnimatePresence>
       </div>
 
-      {showJump && !empty && <button className="chat-jump" onClick={() => scrollToLatest(true)}><ChevronDown size={15} /> Jump to latest</button>}
+      <AnimatePresence>
+        {showJump && !empty && (
+          <motion.button
+            className="chat-jump"
+            onClick={() => scrollToLatest(true)}
+            initial={reduceMotion ? false : { opacity: 0, y: 4, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduceMotion ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 3, scale: 0.98 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.13, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <ChevronDown size={15} /> Jump to latest
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       <div className="composer-wrap">
         {!ready && (

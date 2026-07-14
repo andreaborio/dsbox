@@ -152,7 +152,7 @@ export interface CatalogModelVariant {
   assembly: CatalogModelAssembly | null;
 }
 
-export type CatalogPublisher = "andreaborio" | "antirez" | "unsloth";
+export type CatalogPublisher = string;
 
 export interface CatalogSource {
   id: CatalogPublisher;
@@ -259,7 +259,7 @@ export interface LocalModelCandidate {
   modelId: string;
   selected: boolean;
   compatibility: LocalModelCompatibility;
-  architecture: "deepseek4" | null;
+  architecture: string | null;
 }
 
 export type LocalModelScanStatus = "idle" | "scanning" | "complete" | "cancelled" | "error";

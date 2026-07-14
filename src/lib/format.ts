@@ -19,12 +19,29 @@ export function formatDuration(startedAt: string | null): string {
 }
 
 export function formatModelName(modelId: string): string {
-  const normalized = modelId.toLowerCase();
+  const trimmed = modelId.trim();
+  const normalized = trimmed.toLowerCase();
   if (normalized === "deepseek-v4-flash") return "DeepSeek V4 Flash";
   if (normalized === "glm-5.2") return "GLM 5.2";
   if (normalized === "glm-5.2-chat") return "GLM 5.2 Chat";
   if (normalized === "glm-5.2-reasoner") return "GLM 5.2 Reasoner";
-  return modelId;
+
+  const qwenIdentity = trimmed.replace(/^qwen(\d+)-(\d)(?=[-_.]|$)/i, "qwen$1.$2");
+  const qwen = qwenIdentity.match(/^qwen[-_.]?(\d+(?:[._]\d+)?)(.*)$/i);
+  if (qwen) {
+    const version = qwen[1].replace("_", ".");
+    const suffix = qwen[2]
+      .replace(/^[-_.]+/, "")
+      .split(/[-_.]+/)
+      .filter(Boolean)
+      .map((token) => /^(?:a?\d+(?:\.\d+)?[bmk]|vl)$/i.test(token)
+        ? token.toUpperCase()
+        : token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+      .join(" ");
+    return `Qwen${version}${suffix ? ` ${suffix}` : ""}`;
+  }
+
+  return trimmed || modelId;
 }
 
 export function compactNumber(value: number): string {

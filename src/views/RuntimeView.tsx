@@ -112,7 +112,13 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   const activeDownloadPercent = activeDownload
     ? Math.round((activeDownload.downloadedBytes / Math.max(activeDownload.totalBytes, 1)) * 100)
     : null;
-  const phaseCopy = copyByPhase[runtime.phase];
+  const qwenChatOnly = config.model.id === "qwen3.6-35b-a3b";
+  const checkoutChangeAllowed = ["uninstalled", "idle", "error"].includes(runtime.phase) && !activeDownload;
+  const phaseCopy = qwenChatOnly && runtime.phase === "running"
+    ? { ...copyByPhase.running, description: "Qwen is ready for private chat and tool-free Chat Completions." }
+    : qwenChatOnly && runtime.phase === "stopping"
+      ? { ...copyByPhase.stopping, description: "Finishing active work before shutting down Qwen." }
+      : copyByPhase[runtime.phase];
   const busy = Boolean(activeDownload) || busyPhases.includes(runtime.phase);
   const modelMissing = !runtime.modelPresent && runtime.phase !== "running" && !busy;
   const visibleCopy = activeDownload
@@ -172,17 +178,21 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   };
 
   const useCheckout = async (checkout: DiscoveredCheckout) => {
-    const glm = checkout.branch?.includes("glm52") ?? false;
+    if (!checkoutChangeAllowed) return;
     const next: DsboxConfig = {
       ...config,
       repository: { ...config.repository, directory: checkout.path, branch: checkout.branch ?? config.repository.branch },
-      model: { path: `${checkout.path}/ds4flash.gguf`, id: glm ? "glm-5.2" : "deepseek-v4-flash" },
       streaming: { ...config.streaming, enabled: true }
     };
     await controller.saveConfig(next);
   };
 
   const recentLogs = snapshot.logs.slice(-8);
+  const displayedCommand = useMemo(() => {
+    if (!qwenChatOnly || ["starting", "running", "stopping"].includes(runtime.phase) || command.length < 2) return command;
+    const binaryIndex = command[0] === "DS4_QWEN_EXPERIMENTAL_METAL=1" ? 1 : 0;
+    return command.map((value, index) => index === binaryIndex ? "<Qwen-capable DS4 checkout>/ds4-server" : value);
+  }, [command, qwenChatOnly, runtime.phase]);
   const progress = activeDownload
     ? activeDownloadPercent!
     : runtime.phase === "preparing" ? 6
@@ -258,7 +268,9 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
       {runtime.phase === "running" && (
         <section className="ready-actions">
           <button className="ready-action panel" onClick={() => onNavigate("chat")}><span><MessageSquareText size={19} /></span><div><strong>Open chat</strong><p>Start a private conversation.</p></div><ExternalLink size={14} /></button>
-          <button className="ready-action panel" onClick={() => onNavigate("agents")}><span><Bot size={19} /></span><div><strong>Connect an agent</strong><p>Codex, Claude Code, and others.</p></div><ExternalLink size={14} /></button>
+          {qwenChatOnly
+            ? <button className="ready-action panel" onClick={() => onNavigate("agents")}><span><Bot size={19} /></span><div><strong>Connect an app</strong><p>Tool-free Chat Completions.</p></div><ExternalLink size={14} /></button>
+            : <button className="ready-action panel" onClick={() => onNavigate("agents")}><span><Bot size={19} /></span><div><strong>Connect an agent</strong><p>Codex, Claude Code, and others.</p></div><ExternalLink size={14} /></button>}
         </section>
       )}
 
@@ -282,18 +294,21 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           {checkouts.length > 0 && (
             <div className="technical-block">
               <h4><FolderGit2 size={14} /> DS4 installations found</h4>
+              {!checkoutChangeAllowed && <p className="technical-empty">Turn off DSBox before changing the engine checkout.</p>}
               {checkouts.map((checkout) => (
                 <div className="technical-checkout" key={checkout.path}>
                   <div><code>{checkout.path}</code><small>{checkout.branch} · {checkout.head}</small></div>
-                  {checkout.path === config.repository.directory ? <span><Check size={12} /> In use</span> : <button onClick={() => void useCheckout(checkout).catch(() => undefined)}>Use</button>}
+                  {checkout.path === config.repository.directory
+                    ? <span><Check size={12} /> {checkoutChangeAllowed ? "Selected" : "In use"}</span>
+                    : <button disabled={!checkoutChangeAllowed} title={checkoutChangeAllowed ? "Use this checkout" : "Turn off DSBox before changing checkout"} onClick={() => void useCheckout(checkout).catch(() => undefined)}>Use</button>}
                 </div>
               ))}
             </div>
           )}
 
           <div className="technical-block">
-            <div className="technical-block__head"><h4><Terminal size={14} /> Startup command</h4><CopyButton value={command.map(shellDisplayArgument).join(" ")} /></div>
-            <pre><code>{command.length ? command.map(shellDisplayArgument).join(" ") : "Available after setup"}</code></pre>
+            <div className="technical-block__head"><h4><Terminal size={14} /> {qwenChatOnly && !["starting", "running", "stopping"].includes(runtime.phase) ? "Startup profile" : "Startup command"}</h4><CopyButton value={displayedCommand.map(shellDisplayArgument).join(" ")} /></div>
+            <pre><code>{displayedCommand.length ? displayedCommand.map(shellDisplayArgument).join(" ") : "Available after setup"}</code></pre>
           </div>
 
           <div className="technical-block">
