@@ -1,22 +1,22 @@
-## DSBox 0.2.2
+## DSBox 0.2.3
 
-This release prevents generic GGUF files from being presented as DS4-compatible
-models and adds a verified DS4-native one-click download.
+This release makes the model library immediately clear: models DS4 can run stay
+prominent, while incompatible Hugging Face sources remain available as quiet,
+read-only references.
 
 ### What changed
 
-- Added a lightweight GGUF v3 preflight that reads metadata and the tensor
-  directory without loading model weights or using the GPU.
-- Applied the same compatibility gate to disk scans, Finder selection, model
-  switching, completed downloads, persisted download resumes, and server start.
-- Added specific errors for unsupported standard multipart GGUF files, missing
-  DS4 metadata, unsupported architectures, and malformed containers.
-- Kept current Unsloth repositories visible for provenance while disabling
-  downloads for their unsupported standard multipart layout.
-- Added the checksum-pinned DS4-native Q2 Imatrix model from the DwarfStar
-  repository as an in-app download.
-- Kept hardware guidance advisory: models larger than unified memory remain
-  selectable, with an honest warning that SSD-streamed generation may be slow.
+- Split the catalog into a prominent DS4-ready group and a secondary reference
+  group for unsupported repositories.
+- Made the `DS4 ready` filter capability-based, so incomplete or unsupported
+  non-Unsloth entries cannot appear as runnable models.
+- Replaced full-size incompatible cards with compact neutral rows that show the
+  exact compatibility reason and a source link, without misleading performance
+  estimates or download controls.
+- Added a dedicated `Other sources` view for provenance without mixing those
+  repositories into the installable catalog.
+- Kept local GGUF scanning, Finder selection, downloads, and runtime behavior
+  unchanged.
 
 ### macOS community build
 

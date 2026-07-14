@@ -52,7 +52,7 @@ export default function App() {
   const chatTitle = useActiveChatTitle();
   const [view, setView] = useState<ViewId>("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [modelsInitialFilter, setModelsInitialFilter] = useState<"all" | "catalog" | "unsloth" | "local">("all");
+  const [modelsInitialFilter, setModelsInitialFilter] = useState<"all" | "catalog" | "other" | "local">("all");
   const [onboardingComplete, setOnboardingComplete] = useState(() => window.localStorage.getItem("dsbox:onboarding-complete") === "1");
   const snapshot = controller.snapshot;
 

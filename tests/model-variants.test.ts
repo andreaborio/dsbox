@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseDefaultCatalogVariant, installableCatalogVariants } from "../src/lib/model-variants.js";
+import { catalogModelIsReady, chooseDefaultCatalogVariant, installableCatalogVariants } from "../src/lib/model-variants.js";
 import type { CatalogModel, CatalogModelVariant } from "../src/types.js";
 
 const GIB = 1024 ** 3;
@@ -62,5 +62,11 @@ describe("catalog variant defaults", () => {
 
     expect(selected?.id).toBe("smallest");
     expect(installableCatalogVariants(model([variant("bad", 4, false)]))).toEqual([]);
+  });
+
+  it("marks only catalog entries with an enabled complete variant as ready", () => {
+    expect(catalogModelIsReady(model([variant("ready", 70)]), 16 * GIB)).toBe(true);
+    expect(catalogModelIsReady(model([variant("incomplete", 70, false)]), 16 * GIB)).toBe(false);
+    expect(catalogModelIsReady({ ...model([variant("complete", 70)]), installable: false }, 16 * GIB)).toBe(false);
   });
 });

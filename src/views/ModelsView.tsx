@@ -5,6 +5,7 @@ import {
   Check,
   CircleStop,
   Download,
+  ExternalLink,
   FileBox,
   FolderOpen,
   HardDrive,
@@ -24,7 +25,7 @@ import { apiRequest } from "../lib/api";
 import { formatBytes, formatModelName } from "../lib/format";
 import { currentDownload, downloadStageLabel, formatDownloadEta, resumableDownload } from "../lib/model-download-state";
 import { assessLocalModelHardware, assessModelHardware } from "../lib/model-hardware-advisor";
-import { catalogModelForVariant, chooseDefaultCatalogVariant } from "../lib/model-variants";
+import { catalogModelForVariant, catalogModelIsReady, chooseDefaultCatalogVariant } from "../lib/model-variants";
 import type {
   AppSnapshot,
   CatalogModel,
@@ -43,13 +44,13 @@ interface Props {
   initialFilter?: ModelFilter;
 }
 
-type ModelFilter = "all" | "catalog" | "unsloth" | "local";
+type ModelFilter = "all" | "catalog" | "other" | "local";
 
 const filters: Array<{ id: ModelFilter; label: string }> = [
   { id: "all", label: "All" },
-  { id: "catalog", label: "DS4 models" },
-  { id: "unsloth", label: "Unsloth" },
-  { id: "local", label: "On this Mac" }
+  { id: "catalog", label: "DS4 ready" },
+  { id: "local", label: "On this Mac" },
+  { id: "other", label: "Other sources" }
 ];
 
 function modelPublisher(model: CatalogModel): CatalogPublisher {
@@ -174,12 +175,15 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
   const visibleCatalogModels = useMemo(() => [...(catalog?.models ?? [])]
     .sort((left, right) => Number(right.recommended) - Number(left.recommended) || left.label.localeCompare(right.label))
     .filter((model) => {
+      const ready = catalogModelIsReady(model, snapshot.system.totalMemoryBytes);
       const publisher = modelPublisher(model);
-      if (filter === "catalog" && publisher === "unsloth") return false;
-      if (filter === "unsloth" && publisher !== "unsloth") return false;
+      if (filter === "catalog" && !ready) return false;
+      if (filter === "other" && ready) return false;
       if (!normalizedQuery) return true;
       return [model.label, model.modelId, model.description, model.repository, publisher].some((value) => value.toLowerCase().includes(normalizedQuery));
-    }), [catalog, filter, normalizedQuery]);
+    }), [catalog, filter, normalizedQuery, snapshot.system.totalMemoryBytes]);
+  const readyCatalogModels = visibleCatalogModels.filter((model) => catalogModelIsReady(model, snapshot.system.totalMemoryBytes));
+  const unsupportedCatalogModels = visibleCatalogModels.filter((model) => !catalogModelIsReady(model, snapshot.system.totalMemoryBytes));
 
   const startScan = async () => {
     setLocalError(null);
@@ -270,6 +274,78 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
   };
 
   const diskFreeBytes = snapshot.metrics.at(-1)?.diskFreeBytes ?? 0;
+  const catalogHeader = filter === "catalog"
+    ? {
+        eyebrow: "Verified for the DS4 engine",
+        title: "DS4-ready models",
+        description: "Download inside DSBox and switch models without leaving the app."
+      }
+    : filter === "other"
+      ? {
+          eyebrow: "Reference sources",
+          title: "Other Hugging Face models",
+          description: "Shown for provenance. Their current GGUF files cannot be used with this DS4 build."
+        }
+      : {
+          eyebrow: "Model library",
+          title: "Choose a model",
+          description: "Models ready for DS4 come first. Files this engine cannot load stay below as muted references."
+        };
+
+  const renderCatalogModel = (model: CatalogModel, unsupported = false) => {
+    const publisher = modelPublisher(model);
+    const repositoryName = model.repository.split("/").at(-1) ?? "";
+    const active = snapshot.config.model.id === model.modelId && snapshot.config.model.path.includes(`/models/${repositoryName}/`);
+    const defaultVariant = chooseDefaultCatalogVariant(model, snapshot.system.totalMemoryBytes);
+
+    if (unsupported) {
+      const reason = model.unavailableReason ?? (!defaultVariant ? "No complete DS4-compatible GGUF version is available." : "This model layout has not been verified for DS4.");
+      return (
+        <article className="catalog-card catalog-card--unsupported" key={model.repository} aria-disabled="true">
+          <div className="catalog-card__head">
+            <span className="catalog-card__tile"><Box size={18} /></span>
+            <div>
+              <div><h3>{model.label}</h3><span className="source-chip">{publisherLabel(publisher)}</span></div>
+              <p>Hugging Face · {model.repository}</p>
+            </div>
+          </div>
+          <div className="catalog-card__unsupported-copy">
+            <strong>Not supported by DS4</strong>
+            <p>{reason}</p>
+          </div>
+          <a className="catalog-card__source-link" href={model.sourceUrl} target="_blank" rel="noreferrer">View source <ExternalLink size={12} /></a>
+        </article>
+      );
+    }
+
+    const branchCompatible = !model.runtimeBranch || snapshot.config.repository.branch === model.runtimeBranch;
+    const memoryGb = snapshot.system.totalMemoryBytes / 1024 ** 3;
+    const assessedModel = defaultVariant ? catalogModelForVariant(model, defaultVariant) : model;
+    const assessment = assessModelHardware(assessedModel, {
+      totalMemoryBytes: snapshot.system.totalMemoryBytes,
+      diskFreeBytes
+    });
+    const selectable = model.installable && branchCompatible && Boolean(defaultVariant) && !runtimeBusy;
+    const unavailable = (!branchCompatible ? `Requires the ${model.runtimeBranch} engine channel` : null)
+      ?? (!defaultVariant ? "No complete GGUF version is available" : null)
+      ?? (runtimeBusy ? "Turn off DSBox before changing models" : null);
+
+    return (
+      <article className={active ? "catalog-card catalog-card--active" : "catalog-card"} key={model.repository}>
+        <div className="catalog-card__head"><span className={`catalog-card__tile ${model.experimental ? "catalog-card__tile--experimental" : ""}`}><Box size={22} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by DSBox</span>}{publisher !== "andreaborio" && <span className="source-chip">{publisherLabel(publisher)}</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
+        <p className="catalog-card__description">{model.description}</p>
+        <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB publisher guidance</span>}<span>{defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF"}</span>{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
+        <div className={`catalog-card__advisor catalog-card__advisor--${assessment.performance.level}`} title={assessment.performance.explanation}>
+          <span className="catalog-card__advisor-icon" aria-hidden="true">{assessment.performance.level === "very-slow" || assessment.performance.level === "may-be-slow" ? <AlertTriangle size={15} /> : <HardDrive size={15} />}</span>
+          <div><span>On this {Math.round(memoryGb)} GB Mac</span><strong>{assessment.performance.label}</strong></div>
+          <Badge tone="neutral" icon={assessment.compatibility.status === "verified" ? <ShieldCheck size={12} /> : undefined}>{assessment.compatibility.label}</Badge>
+        </div>
+        <div className="catalog-card__footer">
+          {active ? <span className="catalog-card__active-label"><Check size={14} /> Ready on this Mac</span> : selectable ? <Button variant="primary" icon={<Download size={14} />} onClick={() => setDownloadModel(model)}>{model.variantCount > 1 ? "Choose & download" : assessment.requiresAcknowledgement ? "Review download" : "Download & use"}</Button> : <span className="catalog-card__unavailable">{unavailable ?? "No downloadable version"}</span>}
+        </div>
+      </article>
+    );
+  };
 
   return (
     <div className="models-page page-scroll">
@@ -280,7 +356,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
             <Search size={16} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search model sources and this Mac…" />
           </label>
-          <div className="models-filter" role="group" aria-label="Model source">
+          <div className="models-filter" role="group" aria-label="Model view">
             {filters.map((item) => <button key={item.id} className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}>{item.label}</button>)}
           </div>
         </div>
@@ -342,7 +418,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
           </section>
         )}
 
-        {filter !== "catalog" && filter !== "unsloth" && (
+        {filter !== "catalog" && filter !== "other" && (
           <section className={`local-discovery-card ${scan?.status === "scanning" ? "local-discovery-card--scanning" : ""}`} aria-labelledby="local-models-title">
             <div className="local-discovery-card__head">
               <span className="local-discovery-card__icon"><HardDrive size={20} />{scan?.status === "scanning" && <i />}</span>
@@ -405,47 +481,26 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
 
         {filter !== "local" && (
           <section className="catalog-section" aria-labelledby="catalog-title">
-            <div className="catalog-section__head"><div><span className="eyebrow">{filter === "unsloth" ? "External Hugging Face source" : filter === "catalog" ? "Verified for the DS4 engine" : "Curated Hugging Face sources"}</span><h2 id="catalog-title">{filter === "unsloth" ? "Unsloth models" : filter === "catalog" ? "DS4 models" : "Model sources"}</h2><p>{filter === "unsloth" ? "Models remain visible for provenance, but downloads are disabled until their layout is verified for DS4." : "Compatible files download inside DSBox, resume after interruptions, and stay pinned to a specific revision."}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
+            <div className="catalog-section__head"><div><span className="eyebrow">{catalogHeader.eyebrow}</span><h2 id="catalog-title">{catalogHeader.title}</h2><p>{catalogHeader.description}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
 
             {catalogLoading ? (
               <div className="models-empty models-empty--panel"><RefreshCw className="spin" size={17} /><div><strong>Loading the DSBox catalog</strong><p>{downloadActive ? "Your current download continues while the catalog refreshes." : "No download has started."}</p></div></div>
             ) : catalogError ? (
               <div className="models-empty models-empty--panel models-empty--error"><AlertTriangle size={17} /><div><strong>Catalog unavailable</strong><p>{catalogError}</p></div><Button variant="secondary" onClick={() => void refreshCatalog(true)}>Try again</Button></div>
             ) : visibleCatalogModels.length ? (
-              <div className="catalog-grid">
-                {visibleCatalogModels.map((model) => {
-                  const publisher = modelPublisher(model);
-                  const repositoryName = model.repository.split("/").at(-1) ?? "";
-                  const active = snapshot.config.model.id === model.modelId && snapshot.config.model.path.includes(`/models/${repositoryName}/`);
-                  const branchCompatible = !model.runtimeBranch || snapshot.config.repository.branch === model.runtimeBranch;
-                  const memoryGb = snapshot.system.totalMemoryBytes / 1024 ** 3;
-                  const defaultVariant = chooseDefaultCatalogVariant(model, snapshot.system.totalMemoryBytes);
-                  const assessedModel = defaultVariant ? catalogModelForVariant(model, defaultVariant) : model;
-                  const assessment = assessModelHardware(assessedModel, {
-                    totalMemoryBytes: snapshot.system.totalMemoryBytes,
-                    diskFreeBytes
-                  });
-                  const selectable = model.installable && branchCompatible && Boolean(defaultVariant) && !runtimeBusy;
-                  const unavailable = (!model.installable ? model.unavailableReason : null)
-                    ?? (!branchCompatible ? `Requires the ${model.runtimeBranch} engine channel` : null)
-                    ?? (!defaultVariant ? "No complete GGUF version is available" : null)
-                    ?? (runtimeBusy ? "Turn off DSBox before changing models" : null);
-                  return (
-                    <article className={`${active ? "catalog-card catalog-card--active" : "catalog-card"} ${publisher === "unsloth" ? "catalog-card--unsloth" : ""}`} key={model.repository}>
-                      <div className="catalog-card__head"><span className={`catalog-card__tile ${model.experimental ? "catalog-card__tile--experimental" : ""} ${publisher === "unsloth" ? "catalog-card__tile--unsloth" : ""}`}><Box size={22} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by DSBox</span>}{publisher !== "andreaborio" && <span className="source-chip">{publisherLabel(publisher)}</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
-                      <p className="catalog-card__description">{model.description}</p>
-                      <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB publisher guidance</span>}<span>{defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF"}</span>{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
-                      <div className={`catalog-card__advisor catalog-card__advisor--${assessment.performance.level}`} title={assessment.performance.explanation}>
-                        <span className="catalog-card__advisor-icon" aria-hidden="true">{assessment.performance.level === "very-slow" || assessment.performance.level === "may-be-slow" ? <AlertTriangle size={15} /> : <HardDrive size={15} />}</span>
-                        <div><span>On this {Math.round(memoryGb)} GB Mac</span><strong>{assessment.performance.label}</strong></div>
-                        <Badge tone="neutral" icon={assessment.compatibility.status === "verified" ? <ShieldCheck size={12} /> : undefined}>{assessment.compatibility.label}</Badge>
-                      </div>
-                      <div className="catalog-card__footer">
-                        {active ? <span className="catalog-card__active-label"><Check size={14} /> Ready on this Mac</span> : selectable ? <Button variant="primary" icon={<Download size={14} />} onClick={() => setDownloadModel(model)}>{model.variantCount > 1 ? "Choose & download" : assessment.requiresAcknowledgement ? "Review download" : "Download & use"}</Button> : <span className="catalog-card__unavailable">{unavailable ?? "No downloadable version"}</span>}
-                      </div>
-                    </article>
-                  );
-                })}
+              <div className="catalog-groups">
+                {readyCatalogModels.length > 0 && (
+                  <div className="catalog-group">
+                    {filter === "all" && <div className="catalog-group__head"><div><h3>Ready to run</h3><p>Verified model layouts that DSBox can download and use.</p></div><span>{readyCatalogModels.length} {readyCatalogModels.length === 1 ? "model" : "models"}</span></div>}
+                    <div className="catalog-grid">{readyCatalogModels.map((model) => renderCatalogModel(model))}</div>
+                  </div>
+                )}
+                {unsupportedCatalogModels.length > 0 && (
+                  <div className={`catalog-group catalog-group--unsupported ${readyCatalogModels.length === 0 ? "catalog-group--standalone" : ""}`}>
+                    {filter === "all" && <div className="catalog-group__head"><div><h3>Not supported by this DS4 build</h3><p>Kept for provenance. These files cannot be selected or downloaded in DSBox.</p></div><span>{unsupportedCatalogModels.length} {unsupportedCatalogModels.length === 1 ? "source" : "sources"}</span></div>}
+                    <div className="catalog-grid catalog-grid--unsupported">{unsupportedCatalogModels.map((model) => renderCatalogModel(model, true))}</div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="models-empty models-empty--panel"><Box size={17} /><div><strong>{normalizedQuery ? "No source models match your search" : "No models are available from this source"}</strong><p>You can continue using a GGUF already on this Mac.</p></div></div>

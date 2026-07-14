@@ -38,6 +38,10 @@ export function chooseDefaultCatalogVariant(
   return withinTarget.at(-1) ?? variants[0];
 }
 
+export function catalogModelIsReady(model: CatalogModel, totalMemoryBytes: number): boolean {
+  return model.installable && Boolean(chooseDefaultCatalogVariant(model, totalMemoryBytes));
+}
+
 export function catalogModelForVariant(
   model: CatalogModel,
   variant: CatalogModelVariant
