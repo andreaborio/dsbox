@@ -241,7 +241,7 @@ describe("Hugging Face model catalog", () => {
     });
   });
 
-  it("adds pinned Unsloth GGUF repositories as a distinct non-endorsed source", async () => {
+  it("keeps standard Unsloth GGUF repositories visible but prevents incompatible DS4 downloads", async () => {
     const repositories = ["unsloth/DeepSeek-V4-Flash-GGUF", "unsloth/GLM-5.2-GGUF"];
     const revisions = ["1".repeat(40), "2".repeat(40)];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
@@ -290,26 +290,113 @@ describe("Hugging Face model catalog", () => {
       label: "DeepSeek V4 Flash",
       modelId: "deepseek-v4-flash",
       variantCount: 2,
-      installable: true,
+      installable: false,
       recommended: false,
       sourceUrl: `https://huggingface.co/${repositories[0]}/tree/${revisions[0]}`,
-      unavailableReason: "Choose a quantization in DSBox"
+      unavailableReason: "DS4 does not support standard multi-file GGUF sets"
     });
     expect(catalog.models.find((model) => model.repository === repositories[0])?.variants).toMatchObject([
-      { label: "UD IQ1 M", totalBytes: 30, installable: true, files: [{ sizeBytes: 10 }, { sizeBytes: 20 }] },
-      { label: "UD IQ2 XXS", totalBytes: 32, installable: true, files: [{ sizeBytes: 11 }, { sizeBytes: 21 }] }
+      { label: "UD IQ1 M", totalBytes: 30, installable: false, unavailableReason: "DS4 does not support standard multi-file GGUF sets", files: [{ sizeBytes: 10 }, { sizeBytes: 20 }] },
+      { label: "UD IQ2 XXS", totalBytes: 32, installable: false, unavailableReason: "DS4 does not support standard multi-file GGUF sets", files: [{ sizeBytes: 11 }, { sizeBytes: 21 }] }
     ]);
     expect(catalog.models.find((model) => model.repository === repositories[1])).toMatchObject({
       publisher: "unsloth",
       label: "GLM 5.2",
       modelId: "glm-5.2",
       variantCount: 1,
-      installable: true,
+      installable: false,
       recommended: false,
       totalBytes: 70,
       outputFile: "UD-IQ1_S/model-00001-of-00002.gguf",
-      unavailableReason: null
+      unavailableReason: "DS4 does not support standard multi-file GGUF sets"
     });
     expect(catalog.recommended).toBeNull();
+  });
+
+  it("offers only the checksum-pinned DS4-native DwarfStar model for one-click download", async () => {
+    const repository = "antirez/deepseek-v4-gguf";
+    const revision = "9170bf42beb77f38006e016503ecace31f2bd9a0";
+    const modelFile = "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf";
+    const modelSha256 = "efc7ed607ff27076e3e501fc3fefefa33c0ed8cf1eff483a2b7fdc0c2e616668";
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestedUrl(input);
+      urls.push(url);
+      if (url.includes("author=andreaborio")) return jsonResponse([]);
+      if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
+        return jsonResponse({
+          id: repository,
+          sha: revision,
+          lastModified: "2026-05-31T11:28:43.000Z",
+          siblings: [
+            { rfilename: modelFile, lfs: { size: 86_720_111_488, sha256: modelSha256 } },
+            { rfilename: "unverified-alternative.gguf", lfs: { size: 12, sha256: "a".repeat(64) } }
+          ]
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+
+    expect(catalog.sources).toContainEqual({
+      id: "antirez",
+      label: "DwarfStar",
+      url: "https://huggingface.co/antirez/deepseek-v4-gguf"
+    });
+    expect(catalog.recommended).toMatchObject({
+      publisher: "antirez",
+      repository,
+      revision,
+      label: "DeepSeek V4 Flash Q2 Imatrix",
+      modelId: "deepseek-v4-flash",
+      runtimeBranch: "main",
+      runtimeCommit: "1523b2681eefaf2688fc98be3fe629641ac314b0",
+      minimumMemoryGb: 64,
+      architecture: "moe",
+      installable: true,
+      recommended: true,
+      outputFile: modelFile,
+      totalBytes: 86_720_111_488,
+      variantCount: 1,
+      unavailableReason: null,
+      sourceUrl: `https://huggingface.co/${repository}/tree/${revision}`
+    });
+    expect(catalog.recommended?.files).toEqual([{
+      name: modelFile,
+      sizeBytes: 86_720_111_488,
+      sha256: modelSha256
+    }]);
+    expect(catalog.recommended?.variants).toHaveLength(1);
+    expect(catalog.recommended?.variants[0]?.files).toHaveLength(1);
+    expect(urls.filter((url) => url.includes(repository))).toEqual([
+      `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`
+    ]);
+  });
+
+  it("does not expose the trusted model if Hugging Face metadata differs from its pin", async () => {
+    const repository = "antirez/deepseek-v4-gguf";
+    const revision = "9170bf42beb77f38006e016503ecace31f2bd9a0";
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestedUrl(input);
+      if (url.includes("author=andreaborio")) return jsonResponse([]);
+      if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
+        return jsonResponse({
+          id: repository,
+          sha: revision,
+          siblings: [{
+            rfilename: "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf",
+            lfs: { size: 86_720_111_488, sha256: "0".repeat(64) }
+          }]
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+
+    expect(catalog.models).toEqual([]);
+    expect(catalog.recommended).toBeNull();
+    expect(catalog.stale).toBe(false);
   });
 });

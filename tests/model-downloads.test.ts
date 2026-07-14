@@ -140,11 +140,17 @@ describe("transparent Hugging Face downloads", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  async function manager(options: { diskFreeBytes?: number } = {}): Promise<ModelDownloadManager> {
+  async function manager(options: {
+    diskFreeBytes?: number;
+    validateReadyModel?: (modelPath: string, modelId: string) => Promise<void>;
+    onReady?: (modelPath: string, modelId: string) => Promise<void>;
+  } = {}): Promise<ModelDownloadManager> {
     const downloads = await ModelDownloadManager.open(store, bus, {
       hubBaseUrl: baseUrl,
       retryDelayMs: 1,
-      getDiskFreeBytes: async () => options.diskFreeBytes ?? 100 * 1024 ** 3
+      getDiskFreeBytes: async () => options.diskFreeBytes ?? 100 * 1024 ** 3,
+      validateReadyModel: options.validateReadyModel,
+      onReady: options.onReady
     });
     managers.push(downloads);
     return downloads;
@@ -263,6 +269,82 @@ describe("transparent Hugging Face downloads", () => {
     expect(await readFile(path.join(ready.destinationDirectory, "model.gguf"))).toEqual(Buffer.concat([first, second]));
     await expect(readFile(path.join(ready.destinationDirectory, "model.gguf.part-01"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(ready.totalBytes).toBe(first.length + second.length);
+  });
+
+  it("rejects an incompatible installed artifact before selecting it or announcing readiness", async () => {
+    const data = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(96, 4)]);
+    files.set("incompatible.gguf", data);
+    const variant: CatalogModelVariant = {
+      id: "variant-incompatible",
+      label: "Unsupported layout",
+      files: [{ name: "incompatible.gguf", sizeBytes: data.length, sha256: sha256(data) }],
+      outputFile: "incompatible.gguf",
+      totalBytes: data.length,
+      installable: true,
+      unavailableReason: null,
+      assembly: null
+    };
+    const initialModel = structuredClone(store.get().model);
+    const validationCalls: Array<{ modelPath: string; modelId: string }> = [];
+    const readyCalls: Array<{ modelPath: string; modelId: string }> = [];
+    const downloads = await manager({
+      validateReadyModel: async (modelPath, modelId) => {
+        validationCalls.push({ modelPath, modelId });
+        throw new Error("This GGUF uses a layout DS4 cannot load. Choose a DS4-native model instead.");
+      },
+      onReady: async (modelPath, modelId) => {
+        readyCalls.push({ modelPath, modelId });
+      }
+    });
+    const started = await downloads.start(catalogModel(variant), variant.id);
+    const failed = await waitForDownload(downloads, started.id, (snapshot) => snapshot.stage === "error");
+    const installedPath = path.join(failed.destinationDirectory, variant.outputFile);
+
+    expect(failed.error).toBe("This GGUF uses a layout DS4 cannot load. Choose a DS4-native model instead.");
+    expect(await readFile(installedPath)).toEqual(data);
+    expect(store.get().model).toEqual(initialModel);
+    expect(validationCalls).toEqual([{ modelPath: installedPath, modelId: "test-model" }]);
+    expect(readyCalls).toEqual([]);
+  });
+
+  it("revalidates an incompatible persisted artifact on resume instead of marking it ready", async () => {
+    const data = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(112, 5)]);
+    files.set("persisted-incompatible.gguf", data);
+    const variant: CatalogModelVariant = {
+      id: "variant-persisted-incompatible",
+      label: "Unsupported persisted layout",
+      files: [{ name: "persisted-incompatible.gguf", sizeBytes: data.length, sha256: sha256(data) }],
+      outputFile: "persisted-incompatible.gguf",
+      totalBytes: data.length,
+      installable: true,
+      unavailableReason: null,
+      assembly: null
+    };
+    const initialModel = structuredClone(store.get().model);
+    let validationCalls = 0;
+    const rejectIncompatible = async () => {
+      validationCalls += 1;
+      throw new Error("Downloaded GGUF is incompatible with DS4");
+    };
+    const firstManager = await manager({ validateReadyModel: rejectIncompatible });
+    const started = await firstManager.start(catalogModel(variant), variant.id);
+    const firstFailure = await waitForDownload(firstManager, started.id, (snapshot) => snapshot.stage === "error");
+    const installedPath = path.join(firstFailure.destinationDirectory, variant.outputFile);
+    expect(await readFile(installedPath)).toEqual(data);
+
+    const restoredManager = await manager({ validateReadyModel: rejectIncompatible });
+    await restoredManager.resume(started.id);
+    const resumedFailure = await waitForDownload(
+      restoredManager,
+      started.id,
+      (snapshot) => snapshot.stage === "error" && validationCalls === 2
+    );
+
+    expect(resumedFailure.error).toBe("Downloaded GGUF is incompatible with DS4");
+    expect(validationCalls).toBe(2);
+    expect(store.get().model).toEqual(initialModel);
+    expect(await readFile(installedPath)).toEqual(data);
+    expect(requestedRanges).toEqual([""]);
   });
 
   it("reports disk preflight failure without issuing a model GET", async () => {

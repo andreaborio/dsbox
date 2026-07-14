@@ -52,6 +52,7 @@ export interface ModelDownloadManagerOptions {
   hubBaseUrl?: string;
   getDiskFreeBytes?: (target: string) => Promise<number>;
   canStart?: () => boolean;
+  validateReadyModel?: (modelPath: string, modelId: string) => Promise<void>;
   onReady?: (modelPath: string, modelId: string) => Promise<void>;
   retryDelayMs?: number;
 }
@@ -189,6 +190,7 @@ export class ModelDownloadManager {
   private readonly hubBaseUrl: string;
   private readonly getDiskFreeBytes: (target: string) => Promise<number>;
   private readonly canStart: () => boolean;
+  private readonly validateReadyModel: ((modelPath: string, modelId: string) => Promise<void>) | null;
   private readonly onReady: ((modelPath: string, modelId: string) => Promise<void>) | null;
   private readonly retryDelayMs: number;
   private readonly stateDirectory: string;
@@ -207,6 +209,7 @@ export class ModelDownloadManager {
       return Number(filesystem.bavail) * Number(filesystem.bsize);
     });
     this.canStart = options.canStart ?? (() => true);
+    this.validateReadyModel = options.validateReadyModel ?? null;
     this.onReady = options.onReady ?? null;
     this.retryDelayMs = Math.max(0, options.retryDelayMs ?? 500);
     this.stateDirectory = path.join(store.homeDirectory, "downloads");
@@ -780,6 +783,9 @@ export class ModelDownloadManager {
 
   private async markReady(record: DownloadRecord): Promise<void> {
     const modelPath = path.join(record.snapshot.destinationDirectory, ...record.snapshot.outputFile.split("/"));
+    if (this.validateReadyModel) {
+      await this.validateReadyModel(modelPath, record.snapshot.modelId);
+    }
     const next = this.store.get();
     next.model.path = modelPath;
     next.model.id = record.snapshot.modelId;

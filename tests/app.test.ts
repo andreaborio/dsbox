@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, createServices, type AppServices } from "../server/app.js";
 import { TaskCancelledError } from "../server/runtime.js";
 import type { CatalogModel, CatalogModelVariant, CatalogResponse, ModelDownloadSnapshot, RuntimeState } from "../src/types.js";
+import { createDs4GgufFixture } from "./helpers/gguf.js";
 
 describe("DSBox API", () => {
   let home: string;
@@ -30,6 +31,19 @@ describe("DSBox API", () => {
     expect(response.body.config.repository.url).toBe("https://github.com/andreaborio/ds4.git");
     expect(response.body.system.openAiBaseUrl).toBe("http://127.0.0.1:4242/v1");
     expect(response.body.system.appleSilicon).toBe(process.platform === "darwin" && process.arch === "arm64");
+  });
+
+  it("does not present an incompatible model saved by an older DSBox version as ready", async () => {
+    const incompatiblePath = path.join(home, "legacy-incompatible.gguf");
+    await writeFile(incompatiblePath, createDs4GgufFixture({ includeVocabSize: false }));
+    const config = services.store.get();
+    config.model = { path: incompatiblePath, id: "legacy-model" };
+    await services.store.set(config);
+
+    await services.runtime.refresh();
+
+    expect(services.runtime.getState()).toMatchObject({ modelPresent: false, modelSizeBytes: 0 });
+    expect(services.store.get().model).toEqual({ path: incompatiblePath, id: "legacy-model" });
   });
 
   it("validates config writes", async () => {
@@ -57,7 +71,7 @@ describe("DSBox API", () => {
 
   it("starts the selected local model through the power endpoint without implicit downloads", async () => {
     const modelPath = path.join(home, "my-local-model.gguf");
-    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(modelPath, createDs4GgufFixture());
     await services.runtime.selectLocalModel(modelPath);
     const oneClickStart = vi.spyOn(services.runtime, "oneClickStart").mockResolvedValue();
 
@@ -88,15 +102,15 @@ describe("DSBox API", () => {
   });
 
   it("discovers and selects a valid GGUF without starting a download", async () => {
-    const modelPath = path.join(home, "glm52-local.gguf");
-    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    const modelPath = path.join(home, "deepseek-v4-local.gguf");
+    await writeFile(modelPath, createDs4GgufFixture());
     const app = createApp(services);
     const selected = await request(app)
       .post("/api/models/local/select")
       .set("x-dsbox-control", "1")
       .send({ path: modelPath })
       .expect(200);
-    expect(selected.body).toMatchObject({ path: modelPath, modelId: "glm-5.2", selected: true });
+    expect(selected.body).toMatchObject({ path: modelPath, modelId: "deepseek-v4-flash", selected: true });
     const local = await request(app).get("/api/models/local").expect(200);
     expect(local.body.models).toContainEqual(expect.objectContaining({ path: modelPath, selected: true }));
     expect(services.runtime.getState()).toMatchObject({ modelPresent: true, pid: null });
@@ -106,7 +120,7 @@ describe("DSBox API", () => {
   it("refreshes the saved model ID when a known GGUF gets authoritative metadata", async () => {
     const selectedPath = path.join(home, "selected-local.gguf");
     const rememberedPath = path.join(home, "remembered-local.gguf");
-    const gguf = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    const gguf = createDs4GgufFixture();
     await writeFile(selectedPath, gguf);
     await writeFile(rememberedPath, gguf);
     await services.runtime.selectLocalModel(selectedPath, "selected-model");
@@ -126,7 +140,7 @@ describe("DSBox API", () => {
   it("switches to an installed GGUF without starting DS4 when it is off", async () => {
     const firstPath = path.join(home, "first-local.gguf");
     const secondPath = path.join(home, "second-local.gguf");
-    const gguf = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    const gguf = createDs4GgufFixture();
     await writeFile(firstPath, gguf);
     await writeFile(secondPath, gguf);
     await services.runtime.selectLocalModel(firstPath, "first-model");
@@ -157,7 +171,7 @@ describe("DSBox API", () => {
   it("validates a replacement GGUF before stopping a running DS4 process", async () => {
     const currentPath = path.join(home, "current-local.gguf");
     const invalidPath = path.join(home, "invalid-local.gguf");
-    await writeFile(currentPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(currentPath, createDs4GgufFixture());
     await writeFile(invalidPath, "not a GGUF");
     await services.runtime.selectLocalModel(currentPath, "current-model");
     const internal = services.runtime as unknown as {
@@ -184,7 +198,7 @@ describe("DSBox API", () => {
   it("restarts a running DS4 process exactly once after an installed model is selected", async () => {
     const currentPath = path.join(home, "running-current.gguf");
     const nextPath = path.join(home, "running-next.gguf");
-    const gguf = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    const gguf = createDs4GgufFixture();
     await writeFile(currentPath, gguf);
     await writeFile(nextPath, gguf);
     await services.runtime.selectLocalModel(currentPath, "running-current");
@@ -226,7 +240,7 @@ describe("DSBox API", () => {
   it("rolls back the model and restores the previous runtime when a hot switch fails", async () => {
     const previousPath = path.join(home, "previous-local.gguf");
     const nextPath = path.join(home, "next-local.gguf");
-    const gguf = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    const gguf = createDs4GgufFixture();
     await writeFile(previousPath, gguf);
     await writeFile(nextPath, gguf);
     await services.runtime.selectLocalModel(previousPath, "previous-model");
@@ -271,7 +285,7 @@ describe("DSBox API", () => {
     const nestedDirectory = path.join(home, "nested", "models");
     const modelPath = path.join(nestedDirectory, "local-scan.gguf");
     await mkdir(nestedDirectory, { recursive: true });
-    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(modelPath, createDs4GgufFixture());
     const app = createApp(services);
 
     const started = await request(app)
@@ -330,8 +344,8 @@ describe("DSBox API", () => {
     const foundPath = path.join(modelDirectory, "found-before-cancel.gguf");
     const blockedPath = path.join(modelDirectory, "blocked-during-cancel.gguf");
     await mkdir(modelDirectory, { recursive: true });
-    await writeFile(foundPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
-    await writeFile(blockedPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(foundPath, createDs4GgufFixture());
+    await writeFile(blockedPath, createDs4GgufFixture());
 
     const internal = services.runtime as unknown as {
       spotlightGgufPaths(
@@ -407,7 +421,7 @@ describe("DSBox API", () => {
   it("selects a Finder-picked GGUF through the existing validation path", async () => {
     const modelPath = path.join(home, "finder-model.gguf");
     const invalidPath = path.join(home, "finder-invalid.gguf");
-    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(modelPath, createDs4GgufFixture());
     await writeFile(invalidPath, "not a GGUF");
 
     await expect(services.runtime.chooseLocalModelFromFinder(async () => modelPath)).resolves.toMatchObject({
@@ -433,33 +447,58 @@ describe("DSBox API", () => {
     expect(response.body).toEqual({ cancelled: true, model: null });
   });
 
-  it("does not present incomplete GGUF shards as usable models", async () => {
+  it("rejects incomplete multipart GGUF sets with a DS4-specific explanation", async () => {
     const shardPath = path.join(home, "split-00001-of-00003.gguf");
-    await writeFile(shardPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(shardPath, createDs4GgufFixture());
     const app = createApp(services);
-    await request(app)
+    const rejected = await request(app)
       .post("/api/models/local/select")
       .set("x-dsbox-control", "1")
       .send({ path: shardPath })
       .expect(400);
+    expect(rejected.body.error).toBe(
+      "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead."
+    );
     const local = await request(app).get("/api/models/local").expect(200);
     expect(local.body.models).not.toContainEqual(expect.objectContaining({ path: shardPath }));
   });
 
-  it("accepts a complete multipart GGUF once and reports its aggregate size", async () => {
-    const bytes = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+  it("rejects complete standard multipart GGUF sets instead of presenting them as runnable", async () => {
+    const bytes = createDs4GgufFixture();
     const firstShard = path.join(home, "complete-00001-of-00002.gguf");
     await writeFile(firstShard, bytes);
     await writeFile(path.join(home, "complete-00002-of-00002.gguf"), bytes);
     const app = createApp(services);
-    const selected = await request(app)
+    const rejected = await request(app)
       .post("/api/models/local/select")
       .set("x-dsbox-control", "1")
       .send({ path: firstShard })
-      .expect(200);
-    expect(selected.body).toMatchObject({ path: firstShard, name: "complete", sizeBytes: bytes.length * 2, selected: true });
+      .expect(400);
+    expect(rejected.body.error).toBe(
+      "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead."
+    );
     const local = await request(app).get("/api/models/local").expect(200);
-    expect(local.body.models.filter((model: { path: string }) => model.path.includes("complete-0000"))).toHaveLength(1);
+    expect(local.body.models.filter((model: { path: string }) => model.path.includes("complete-0000"))).toHaveLength(0);
+  });
+
+  it("rejects GGUF files that are missing required DS4 metadata", async () => {
+    const modelPath = path.join(home, "missing-ds4-vocab.gguf");
+    await writeFile(modelPath, createDs4GgufFixture({ includeVocabSize: false }));
+    const previousModel = services.store.get().model;
+    const app = createApp(services);
+
+    const rejected = await request(app)
+      .post("/api/models/local/select")
+      .set("x-dsbox-control", "1")
+      .send({ path: modelPath })
+      .expect(400);
+
+    expect(rejected.body.error).toBe(
+      "This GGUF is not compatible with DS4. It is missing the DS4 model metadata required to run (deepseek4.vocab_size)."
+    );
+    expect(services.store.get().model).toEqual(previousModel);
+    const local = await request(app).get("/api/models/local").expect(200);
+    expect(local.body.models).not.toContainEqual(expect.objectContaining({ path: modelPath }));
   });
 
   it("rejects invalid local files and treats repeated cancellation as safe", async () => {
@@ -494,7 +533,7 @@ describe("DSBox API", () => {
 
   it("keeps cancellation and model selection races out of the error state", async () => {
     const modelPath = path.join(home, "safe-local.gguf");
-    await writeFile(modelPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(modelPath, createDs4GgufFixture());
     await services.runtime.selectLocalModel(modelPath);
     services.runtime.prepareOneClickStart();
     vi.spyOn(services.runtime, "installOrUpdate").mockRejectedValue(new TaskCancelledError());
@@ -505,8 +544,8 @@ describe("DSBox API", () => {
   it("does not switch models while one-click startup is preparing", async () => {
     const firstPath = path.join(home, "first.gguf");
     const secondPath = path.join(home, "second.gguf");
-    await writeFile(firstPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
-    await writeFile(secondPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(firstPath, createDs4GgufFixture());
+    await writeFile(secondPath, createDs4GgufFixture());
     await services.runtime.selectLocalModel(firstPath);
     services.runtime.prepareOneClickStart();
     await expect(services.runtime.selectLocalModel(secondPath)).rejects.toThrow(/Cancel the download|turn off DSBox/);

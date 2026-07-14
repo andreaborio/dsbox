@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
-import { access, lstat, mkdir, open, readFile, readdir, rename, stat, statfs, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, readdir, rename, stat, statfs, writeFile } from "node:fs/promises";
 import { constants as fsConstants, createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { cpus, homedir } from "node:os";
@@ -22,6 +22,10 @@ import { EventBus } from "./event-bus.js";
 import { chooseGgufFileInFinder } from "./native-file-picker.js";
 import { argumentOptionName, shellDisplayArgument, tokenizeArguments } from "../src/lib/arguments.js";
 import { buildEngineArguments } from "../src/lib/engine-arguments.js";
+import {
+  inspectDs4Gguf,
+  type Ds4GgufCompatibility
+} from "./gguf-compatibility.js";
 
 export { tokenizeArguments } from "../src/lib/arguments.js";
 export { buildEngineArguments } from "../src/lib/engine-arguments.js";
@@ -50,6 +54,27 @@ interface LocalModelInventoryRecord {
 interface LocalModelInventoryDocument {
   version: typeof localModelInventoryVersion;
   models: LocalModelInventoryRecord[];
+}
+
+interface LocalModelInspection {
+  candidate: LocalModelCandidate | null;
+  message: string | null;
+}
+
+function localCompatibilityMessage(inspection: Ds4GgufCompatibility): string {
+  const reason = inspection.reason;
+  if (!reason) return "This GGUF is compatible with DS4.";
+  if (reason.code === "multipart_unsupported") return reason.message;
+  if (reason.code === "unsupported_architecture") return reason.message;
+  if (reason.code === "missing_metadata") {
+    const firstMissing = reason.missingKeys?.[0];
+    return `This GGUF is not compatible with DS4. It is missing the DS4 model metadata required to run${firstMissing ? ` (${firstMissing})` : ""}.`;
+  }
+  if (["missing_architecture", "invalid_metadata_type", "missing_tensor_signature", "empty_tensor_directory"].includes(reason.code)) {
+    return "This GGUF is not compatible with DS4. It uses a different model metadata or tensor layout.";
+  }
+  if (reason.code === "unsupported_gguf_version") return reason.message;
+  return "This file is not a readable GGUF model. Choose a complete .gguf file.";
 }
 
 export function parseFallbackModelFilename(script: string, variant: string): string | null {
@@ -539,8 +564,11 @@ export class RuntimeManager {
     let modelSizeBytes = 0;
     try {
       const modelStat = await stat(config.model.path);
-      modelPresent = modelStat.isFile();
-      modelSizeBytes = modelStat.size;
+      if (modelStat.isFile()) {
+        const inspection = await this.inspectLocalModelWithReason(config.model.path, config.model.path);
+        modelPresent = Boolean(inspection.candidate);
+        modelSizeBytes = inspection.candidate?.sizeBytes ?? 0;
+      }
     } catch {
       // Model may not have been selected yet.
     }
@@ -955,53 +983,58 @@ export class RuntimeManager {
     });
   }
 
-  private async inspectLocalModel(filePath: string, selectedPath: string): Promise<LocalModelCandidate | null> {
+  private async inspectLocalModelWithReason(filePath: string, selectedPath: string): Promise<LocalModelInspection> {
     const absolutePath = path.resolve(filePath);
-    if (!absolutePath.toLowerCase().endsWith(".gguf")) return null;
+    if (!absolutePath.toLowerCase().endsWith(".gguf")) {
+      return { candidate: null, message: "Choose a complete .gguf model file." };
+    }
     const filename = path.basename(absolutePath);
-    if (/\.(?:head(?:er)?\w*|partial|part)\.gguf$/i.test(filename)) return null;
+    if (/\.(?:head(?:er)?\w*|partial|part)\.gguf$/i.test(filename)) {
+      return { candidate: null, message: "This looks like a partial GGUF download. Choose the complete model file instead." };
+    }
     try {
       const info = await stat(absolutePath);
-      if (!info.isFile() || info.size < 8) return null;
-      const hasGgufMagic = async (target: string) => {
-        const handle = await open(target, "r");
-        const magic = Buffer.alloc(4);
-        try {
-          await handle.read(magic, 0, magic.length, 0);
-        } finally {
-          await handle.close();
-        }
-        return magic.toString("ascii") === "GGUF";
-      };
-      if (!(await hasGgufMagic(absolutePath))) return null;
-
-      const shard = filename.match(/^(.*)-(\d{5})-of-(\d{5})\.gguf$/i);
-      let modelName = path.basename(absolutePath, ".gguf");
-      let sizeBytes = info.size;
-      if (shard) {
-        const shardIndex = Number(shard[2]);
-        const shardCount = Number(shard[3]);
-        if (shardIndex !== 1 || shardCount < 2 || shardCount > 999) return null;
-        sizeBytes = 0;
-        for (let index = 1; index <= shardCount; index += 1) {
-          const siblingName = `${shard[1]}-${String(index).padStart(5, "0")}-of-${shard[3]}.gguf`;
-          const siblingPath = path.join(path.dirname(absolutePath), siblingName);
-          const sibling = await stat(siblingPath);
-          if (!sibling.isFile() || sibling.size < 8 || !(await hasGgufMagic(siblingPath))) return null;
-          sizeBytes += sibling.size;
-        }
-        modelName = shard[1];
+      if (!info.isFile()) {
+        return { candidate: null, message: "The selected path is not a GGUF model file." };
+      }
+      if (/^.*-\d{5}-of-\d{5}\.gguf$/i.test(filename)) {
+        return {
+          candidate: null,
+          message: "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead."
+        };
+      }
+      const compatibility = await inspectDs4Gguf(absolutePath);
+      if (!compatibility.compatible) {
+        return { candidate: null, message: localCompatibilityMessage(compatibility) };
       }
       return {
-        path: absolutePath,
-        name: modelName,
-        sizeBytes,
-        modelId: this.inferLocalModelId(absolutePath),
-        selected: absolutePath === path.resolve(selectedPath)
+        candidate: {
+          path: absolutePath,
+          name: path.basename(absolutePath, ".gguf"),
+          sizeBytes: info.size,
+          modelId: this.inferLocalModelId(absolutePath),
+          selected: absolutePath === path.resolve(selectedPath),
+          compatibility: { status: "compatible", code: "ds4_native", reason: null },
+          architecture: compatibility.architecture === "deepseek4" ? "deepseek4" : null
+        },
+        message: null
       };
     } catch {
-      return null;
+      return { candidate: null, message: "This file does not exist or DSBox cannot read it." };
     }
+  }
+
+  private async inspectLocalModel(filePath: string, selectedPath: string): Promise<LocalModelCandidate | null> {
+    return (await this.inspectLocalModelWithReason(filePath, selectedPath)).candidate;
+  }
+
+  async validateLocalModel(filePath: string, selectedPath = filePath): Promise<LocalModelCandidate> {
+    if (!path.isAbsolute(filePath)) throw new ModelSelectionError("DSBox did not receive a valid model location");
+    const inspection = await this.inspectLocalModelWithReason(filePath, selectedPath);
+    if (!inspection.candidate) {
+      throw new ModelSelectionError(inspection.message ?? "This file is not compatible with DS4");
+    }
+    return inspection.candidate;
   }
 
   async discoverLocalModels(): Promise<LocalModelCandidate[]> {
@@ -1219,6 +1252,8 @@ export class RuntimeManager {
     const config = this.store.get();
     const models: LocalModelCandidate[] = [];
     const seenModels = new Set<string>();
+    const inspectedPaths = new Set<string>();
+    let incompatibleFiles = 0;
     const addModel = (candidate: LocalModelCandidate) => {
       if (seenModels.has(candidate.path)) return;
       seenModels.add(candidate.path);
@@ -1227,21 +1262,26 @@ export class RuntimeManager {
     const sortedModels = () => [...models].sort(
       (left, right) => Number(right.selected) - Number(left.selected) || right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name)
     );
+    const incompatibilityWarning = () => incompatibleFiles > 0
+      ? `${incompatibleFiles === 1 ? "1 GGUF file was" : `${incompatibleFiles} GGUF files were`} skipped because ${incompatibleFiles === 1 ? "it is" : "they are"} not compatible with the current DS4 runtime. Choose a file in Finder to see the exact reason.`
+      : null;
+    const combineWarnings = (...messages: Array<string | null>) => messages.filter(Boolean).join(" ") || null;
     const validatePaths = async (paths: string[]): Promise<number> => {
-      const seenPaths = new Set<string>();
       let usable = 0;
       let inspected = 0;
       for (const filePath of paths) {
         if (signal.aborted) throw scanAbortError();
         const absolutePath = path.resolve(filePath);
-        if (seenPaths.has(absolutePath)) continue;
-        seenPaths.add(absolutePath);
+        if (inspectedPaths.has(absolutePath)) continue;
+        inspectedPaths.add(absolutePath);
         inspected += 1;
         const candidate = await this.inspectLocalModel(absolutePath, config.model.path);
         if (signal.aborted) throw scanAbortError();
         if (candidate) {
           usable += 1;
           addModel(candidate);
+        } else {
+          incompatibleFiles += 1;
         }
         if (inspected % 10 === 0 || inspected === paths.length) {
           this.updateLocalModelScan(scanId, {
@@ -1276,7 +1316,10 @@ export class RuntimeManager {
         if (usable > 0) {
           if (signal.aborted) throw scanAbortError();
           await this.reconcileLocalModelInventory(models);
-          if (spotlight.truncated) warning = "Spotlight returned more than 1,000 GGUF paths. Use Finder if your model is not listed.";
+          warning = combineWarnings(
+            spotlight.truncated ? "Spotlight returned more than 1,000 GGUF paths. Use Finder if your model is not listed." : null,
+            incompatibilityWarning()
+          );
           this.updateLocalModelScan(scanId, {
             status: "complete",
             stage: "complete",
@@ -1306,9 +1349,10 @@ export class RuntimeManager {
       await validatePaths(fallback.paths);
       if (signal.aborted) throw scanAbortError();
       await this.reconcileLocalModelInventory(models);
-      if (fallback.truncated) {
-        warning = "The disk scan reached its safety limit; use Finder if your model is not listed.";
-      }
+      warning = combineWarnings(
+        fallback.truncated ? "The disk scan reached its safety limit; use Finder if your model is not listed." : null,
+        incompatibilityWarning()
+      );
       this.updateLocalModelScan(scanId, {
         status: "complete",
         stage: "complete",
@@ -1404,8 +1448,7 @@ export class RuntimeManager {
     if (!path.isAbsolute(filePath)) throw new ModelSelectionError("DSBox did not receive a valid model location");
     this.modelSelectionPending = true;
     try {
-      const candidate = await this.inspectLocalModel(filePath, filePath);
-      if (!candidate) throw new ModelSelectionError("This file does not exist or is not a readable GGUF");
+      const candidate = await this.validateLocalModel(filePath);
       if (this.modelChangeBlocked()) {
         throw new ModelSelectionError("DSBox started another operation; try again after it is turned off", 409);
       }
@@ -1463,8 +1506,7 @@ export class RuntimeManager {
     this.modelSwitchPending = true;
     const previous = this.store.get();
     try {
-      const candidate = await this.inspectLocalModel(filePath, filePath);
-      if (!candidate) throw new ModelSelectionError("This file does not exist or is not a readable GGUF");
+      const candidate = await this.validateLocalModel(filePath);
       const requestedModelId = modelId?.trim();
       if (requestedModelId && requestedModelId.length > 160) {
         throw new ModelSelectionError("The model ID must be 160 characters or fewer");
@@ -1640,8 +1682,9 @@ export class RuntimeManager {
   }
 
   private async startEngine(): Promise<void> {
-    await this.ensureAppleMetalToolchain();
     const config = this.store.get();
+    await this.validateLocalModel(config.model.path, config.model.path);
+    await this.ensureAppleMetalToolchain();
     const binary = path.join(config.repository.directory, "ds4-server");
     if (!(await this.pathExists(binary, true))) throw new Error("ds4-server has not been built");
     let modelStat;

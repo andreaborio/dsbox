@@ -114,15 +114,18 @@ describe("DS4 SSD-streaming hardware advisor", () => {
     expect(assessment.compatibility.status).toBe("verified");
   });
 
-  it("warns about a large local GGUF without claiming verified compatibility", () => {
+  it("keeps a verified local DS4 layout separate from its non-blocking performance warning", () => {
     const assessment = assessLocalModelHardware({
       name: "my-model.gguf",
       modelId: "my-model",
-      sizeBytes: 90 * GIB
+      sizeBytes: 90 * GIB,
+      architecture: "deepseek4",
+      compatibility: { status: "compatible", code: "ds4_native", reason: null }
     }, { totalMemoryBytes: 16 * GIB });
 
     expect(assessment.performance.label).toBe("Very slow likely");
-    expect(assessment.compatibility.label).toBe("Unverified");
+    expect(assessment.compatibility.label).toBe("Verified for DS4");
+    expect(assessment.requiresAcknowledgement).toBe(true);
     expect(assessment.performance.explanation).toContain("DS4 can stream weights from SSD");
   });
 });

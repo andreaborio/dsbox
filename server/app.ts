@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express, { type NextFunction, type Request, type Response } from "express";
@@ -26,6 +27,28 @@ export interface AppServices {
 }
 
 let nextInferenceRequestId = 1;
+
+function applicationVersion(): string {
+  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(moduleDirectory, "../package.json"),
+    path.resolve(moduleDirectory, "../../package.json"),
+    path.resolve(process.cwd(), "package.json")
+  ];
+  for (const candidate of candidates) {
+    try {
+      const manifest = JSON.parse(readFileSync(candidate, "utf8")) as { version?: unknown };
+      if (typeof manifest.version === "string" && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(manifest.version)) {
+        return manifest.version;
+      }
+    } catch {
+      // Try the next source/build layout.
+    }
+  }
+  return "unknown";
+}
+
+const APP_VERSION = applicationVersion();
 
 function setInferenceActivity(
   services: AppServices,
@@ -189,6 +212,9 @@ export async function createServices(port: number): Promise<AppServices> {
   const catalog = new ModelCatalog();
   const downloads = await ModelDownloadManager.open(store, bus, {
     canStart: () => !runtime.hasTask() && !runtime.isSwitchingModel() && runtime.getState().pid === null,
+    validateReadyModel: async (modelPath) => {
+      await runtime.validateLocalModel(modelPath);
+    },
     onReady: async (modelPath, modelId) => {
       try {
         await runtime.rememberLocalModel(modelPath, modelId);
@@ -256,7 +282,7 @@ export function createApp(services: AppServices) {
   });
 
   app.get("/api/health", (_request, response) => {
-    response.json({ ok: true, version: "0.1.0", runtime: services.runtime.getState().phase });
+    response.json({ ok: true, version: APP_VERSION, runtime: services.runtime.getState().phase });
   });
 
   app.get("/api/state", (_request, response) => {

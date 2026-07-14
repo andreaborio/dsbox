@@ -15,6 +15,22 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 interface CatalogSourceDefinition extends CatalogSource {
   filter?: string;
   repositories?: string[];
+  trustedModels?: TrustedCatalogModelDefinition[];
+}
+
+interface TrustedCatalogModelDefinition {
+  repository: string;
+  revision: string;
+  lastModified: string;
+  tags: string[];
+  file: Omit<CatalogModelFile, "sha256"> & { sha256: string };
+  label: string;
+  description: string;
+  modelId: string;
+  runtimeBranch: string;
+  runtimeCommit: string;
+  minimumMemoryGb: number;
+  architecture: NonNullable<CatalogModel["architecture"]>;
 }
 
 const SOURCE_DEFINITIONS: CatalogSourceDefinition[] = [
@@ -31,6 +47,31 @@ const SOURCE_DEFINITIONS: CatalogSourceDefinition[] = [
     repositories: [
       "unsloth/DeepSeek-V4-Flash-GGUF",
       "unsloth/GLM-5.2-GGUF"
+    ]
+  },
+  {
+    id: "antirez",
+    label: "DwarfStar",
+    url: "https://huggingface.co/antirez/deepseek-v4-gguf",
+    trustedModels: [
+      {
+        repository: "antirez/deepseek-v4-gguf",
+        revision: "9170bf42beb77f38006e016503ecace31f2bd9a0",
+        lastModified: "2026-05-31T11:28:43.000Z",
+        tags: ["ds4", "deepseek-v4", "deepseek-v4-flash", "moe"],
+        file: {
+          name: "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf",
+          sizeBytes: 86_720_111_488,
+          sha256: "efc7ed607ff27076e3e501fc3fefefa33c0ed8cf1eff483a2b7fdc0c2e616668"
+        },
+        label: "DeepSeek V4 Flash Q2 Imatrix",
+        description: "DS4-native Flash model verified for Metal and SSD streaming.",
+        modelId: "deepseek-v4-flash",
+        runtimeBranch: "main",
+        runtimeCommit: "1523b2681eefaf2688fc98be3fe629641ac314b0",
+        minimumMemoryGb: 64,
+        architecture: "moe"
+      }
     ]
   }
 ];
@@ -49,6 +90,8 @@ interface HubModel {
   lastModified?: string;
   tags?: string[];
   siblings?: HubSibling[];
+  trustedManifest?: DsboxManifest;
+  architecture?: CatalogModel["architecture"];
 }
 
 interface DsboxManifest {
@@ -266,6 +309,9 @@ async function optionalManifest(repository: string, revision: string): Promise<D
 }
 
 async function sourceSummaries(source: CatalogSourceDefinition): Promise<HubModel[]> {
+  if (source.trustedModels) {
+    return source.trustedModels.map((model) => ({ id: model.repository, sha: model.revision }));
+  }
   if (source.repositories) {
     return Promise.all(source.repositories.map((repository) =>
       fetchJson<HubModel>(`https://huggingface.co/api/models/${repository}?blobs=true`)
@@ -276,6 +322,46 @@ async function sourceSummaries(source: CatalogSourceDefinition): Promise<HubMode
 }
 
 async function pinnedDetails(source: CatalogSourceDefinition): Promise<HubModel[]> {
+  if (source.trustedModels) {
+    const details = await Promise.all(source.trustedModels.map(async (trusted) => {
+      const url = `https://huggingface.co/api/models/${trusted.repository}/revision/${trusted.revision}?blobs=true`;
+      const model = await fetchJson<HubModel>(url);
+      const file = model.siblings?.find((candidate) => candidate.rfilename === trusted.file.name);
+      const sizeBytes = Number(file?.lfs?.size ?? file?.size ?? 0);
+      const sha256 = file?.lfs?.sha256?.toLowerCase() ?? null;
+      if (model.id !== trusted.repository
+        || model.sha !== trusted.revision
+        || sizeBytes !== trusted.file.sizeBytes
+        || sha256 !== trusted.file.sha256) {
+        throw new Error(`Pinned DwarfStar artifact metadata does not match ${trusted.repository}@${trusted.revision}`);
+      }
+      return {
+        id: trusted.repository,
+        sha: trusted.revision,
+        lastModified: trusted.lastModified,
+        tags: trusted.tags,
+        siblings: [{
+          rfilename: trusted.file.name,
+          size: trusted.file.sizeBytes,
+          lfs: { size: trusted.file.sizeBytes, sha256: trusted.file.sha256 }
+        }],
+        trustedManifest: {
+          schemaVersion: 1,
+          name: trusted.label,
+          description: trusted.description,
+          status: "stable",
+          recommended: true,
+          minimumMemoryGb: trusted.minimumMemoryGb,
+          modelId: trusted.modelId,
+          runtimeBranch: trusted.runtimeBranch,
+          runtimeCommit: trusted.runtimeCommit,
+          file: trusted.file.name
+        },
+        architecture: trusted.architecture
+      } satisfies HubModel;
+    }));
+    return details;
+  }
   const summaries = await sourceSummaries(source);
   const details = await Promise.all(summaries.slice(0, 20).map(async (summary) => {
     if (!summary.id?.startsWith(`${source.id}/`) || !summary.sha) return null;
@@ -292,7 +378,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   const repository = model.id!;
   const revision = model.sha!;
   const tags = model.tags ?? [];
-  const manifest = await optionalManifest(repository, revision);
+  const manifest = model.trustedManifest ?? await optionalManifest(repository, revision);
   const experimental = tags.some((tag) => tag.toLowerCase() === "experimental")
     || manifest?.status?.toLowerCase() === "experimental"
     || repository.toLowerCase().includes("experimental");
@@ -301,9 +387,19 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   const groupedVariants = groupedGgufVariants(directGgufs);
   const declaredAssembly = manifest ? assemblyVariant(manifest, allFiles) : null;
   const inferredAssemblies = inferredMultipartVariants(allFiles);
-  const variants = declaredAssembly
+  const discoveredVariants = declaredAssembly
     ? [declaredAssembly, ...groupedVariants.filter((variant) => variant.outputFile !== declaredAssembly.outputFile)]
     : [...groupedVariants, ...inferredAssemblies];
+  const unsupportedUnverifiedGguf = publisher === "unsloth" && !manifest;
+  const variants = unsupportedUnverifiedGguf
+    ? discoveredVariants.map((variant) => ({
+        ...variant,
+        installable: false,
+        unavailableReason: variant.files.length > 1
+          ? "DS4 does not support standard multi-file GGUF sets"
+          : "This repository does not declare a DS4-compatible model layout"
+      }))
+    : discoveredVariants;
   const variantCount = variants.length || quantizationVariantCount(directGgufs);
   const requestedFile = manifest?.file || (manifest?.artifact?.assembly ? undefined : manifest?.artifact?.output);
   const selectedVariant = declaredAssembly
@@ -329,14 +425,16 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeCommit ?? "");
   const checksumAvailable = Boolean(files.length) && files.every((file) => /^[a-f0-9]{64}$/i.test(file.sha256 ?? ""));
   const recommended = manifest?.recommended === true && stable && Boolean(selectedVariant?.installable) && !experimental && memoryFits && compatibilityDeclared && checksumAvailable;
-  const unavailableReason = manifestFileMissing
-    ? `The manifest references a missing file: ${requestedFile}`
-    : selectedVariant?.unavailableReason
-      ?? (installable && !selectedVariant && variantCount > 1
-        ? "Choose a quantization in DSBox"
-        : installable
-          ? null
-          : "No complete installable GGUF bundle detected");
+  const unavailableReason = unsupportedUnverifiedGguf
+    ? variants[0]?.unavailableReason ?? "This repository does not declare a DS4-compatible model layout"
+    : manifestFileMissing
+      ? `The manifest references a missing file: ${requestedFile}`
+      : selectedVariant?.unavailableReason
+        ?? (installable && !selectedVariant && variantCount > 1
+          ? "Choose a quantization in DSBox"
+          : installable
+            ? null
+            : "No complete installable GGUF bundle detected");
   return {
     publisher,
     repository,
@@ -344,7 +442,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     label: manifest?.name?.trim() || cleanLabel(repository).replace(/\s+GGUF$/i, ""),
     description: manifest?.description?.trim()
       || (publisher === "unsloth"
-        ? "Official Unsloth GGUF repository with multiple quantizations. Choose the variant that fits this Mac."
+        ? "Unsloth GGUF repository. Standard multipart builds are visible for reference but cannot run in DS4."
         : experimental
           ? "Experimental version available for advanced testing."
           : "DS4 model published on Hugging Face."),
@@ -362,7 +460,8 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     sourceUrl: `https://huggingface.co/${repository}/tree/${revision}`,
     unavailableReason,
     variantCount,
-    variants
+    variants,
+    architecture: model.architecture ?? null
   };
 }
 

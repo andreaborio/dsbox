@@ -28,6 +28,7 @@ import { catalogModelForVariant, chooseDefaultCatalogVariant } from "../lib/mode
 import type {
   AppSnapshot,
   CatalogModel,
+  CatalogPublisher,
   CatalogResponse,
   LocalModelCandidate,
   LocalModelScanSnapshot,
@@ -46,13 +47,21 @@ type ModelFilter = "all" | "catalog" | "unsloth" | "local";
 
 const filters: Array<{ id: ModelFilter; label: string }> = [
   { id: "all", label: "All" },
-  { id: "catalog", label: "DSBox" },
+  { id: "catalog", label: "DS4 models" },
   { id: "unsloth", label: "Unsloth" },
   { id: "local", label: "On this Mac" }
 ];
 
-function modelPublisher(model: CatalogModel): "andreaborio" | "unsloth" {
-  return model.publisher === "unsloth" || model.repository.startsWith("unsloth/") ? "unsloth" : "andreaborio";
+function modelPublisher(model: CatalogModel): CatalogPublisher {
+  if (model.publisher === "unsloth" || model.repository.startsWith("unsloth/")) return "unsloth";
+  if (model.publisher === "antirez" || model.repository.startsWith("antirez/")) return "antirez";
+  return "andreaborio";
+}
+
+function publisherLabel(publisher: CatalogPublisher): string {
+  if (publisher === "antirez") return "DwarfStar";
+  if (publisher === "unsloth") return "Unsloth";
+  return "DSBox";
 }
 
 function mergeCandidates(...groups: LocalModelCandidate[][]): LocalModelCandidate[] {
@@ -74,7 +83,7 @@ function scanStageLabel(scan: LocalModelScanSnapshot): string {
   if (scan.status === "idle") return "Find GGUF models without moving, copying, or uploading them.";
   if (scan.status === "cancelled") return "Scan stopped";
   if (scan.status === "error") return "Scan could not finish";
-  if (scan.status === "complete") return scan.models.length === 1 ? "1 GGUF model found" : `${scan.models.length} GGUF models found`;
+  if (scan.status === "complete") return scan.models.length === 1 ? "1 compatible GGUF found" : `${scan.models.length} compatible GGUFs found`;
   if (scan.stage === "spotlight") return "Searching indexed folders and connected drives…";
   if (scan.stage === "filesystem") return "Searching common model folders…";
   if (scan.stage === "validating") return "Checking GGUF files…";
@@ -166,7 +175,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
     .sort((left, right) => Number(right.recommended) - Number(left.recommended) || left.label.localeCompare(right.label))
     .filter((model) => {
       const publisher = modelPublisher(model);
-      if (filter === "catalog" && publisher !== "andreaborio") return false;
+      if (filter === "catalog" && publisher === "unsloth") return false;
       if (filter === "unsloth" && publisher !== "unsloth") return false;
       if (!normalizedQuery) return true;
       return [model.label, model.modelId, model.description, model.repository, publisher].some((value) => value.toLowerCase().includes(normalizedQuery));
@@ -203,7 +212,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
         return;
       }
       setLocalModels((current) => mergeCandidates(current.map((model) => ({ ...model, selected: false })), [result.model!]));
-      setFinderMessage(`${result.model.name} is ready to use. No download was started.`);
+      setFinderMessage(`${result.model.name} is compatible with DS4 and ready to use.`);
       await controller.refresh();
     } catch (reason) {
       setLocalError(reason instanceof Error ? reason.message : "The selected file could not be used");
@@ -352,7 +361,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
             {scan?.status === "scanning" && (
               <div className="scan-progress" role="status" aria-live="polite">
                 <span className="scan-progress__track"><i /></span>
-                <div><span>{scan.progress.candidateFiles} candidate files</span><span>{scan.progress.modelsFound} valid GGUF models</span></div>
+                <div><span>{scan.progress.candidateFiles} candidate files</span><span>{scan.progress.modelsFound} DS4-compatible models</span></div>
               </div>
             )}
 
@@ -365,7 +374,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
             {runtimeBusy && !downloadActive && <div className="model-inline-note model-inline-note--warning"><AlertTriangle size={15} /><p>Turn off DSBox and wait for the current operation to finish before changing models.</p></div>}
 
             {localLoading ? (
-              <div className="models-empty"><RefreshCw className="spin" size={17} /><div><strong>Checking common model folders</strong><p>This quick check does not search the entire Mac.</p></div></div>
+              <div className="models-empty"><RefreshCw className="spin" size={17} /><div><strong>Checking model compatibility</strong><p>DSBox reads GGUF headers and tensor indexes without loading model weights.</p></div></div>
             ) : visibleLocalModels.length ? (
               <motion.div className="local-results" layout>
                 <AnimatePresence initial={false}>
@@ -387,16 +396,16 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
                 </AnimatePresence>
               </motion.div>
             ) : (
-              <div className="models-empty"><HardDrive size={17} /><div><strong>{normalizedQuery ? "No matching local models" : "No GGUF models found yet"}</strong><p>Scan this Mac or choose a GGUF file directly in Finder.</p></div></div>
+              <div className="models-empty"><HardDrive size={17} /><div><strong>{normalizedQuery ? "No matching local models" : "No compatible GGUF models found"}</strong><p>Scan this Mac or choose a DS4 model directly in Finder.</p></div></div>
             )}
 
-            <p className="local-discovery-card__privacy"><ShieldCheck size={13} /> Files stay where they are. DSBox reads only what it needs to validate and run the selected model.</p>
+            <p className="local-discovery-card__privacy"><ShieldCheck size={13} /> Files stay where they are. DSBox checks the GGUF header and tensor index before a model can be selected.</p>
           </section>
         )}
 
         {filter !== "local" && (
           <section className="catalog-section" aria-labelledby="catalog-title">
-            <div className="catalog-section__head"><div><span className="eyebrow">{filter === "unsloth" ? "Published by Unsloth · organized by DSBox" : filter === "catalog" ? "Published by andreaborio · selected by DSBox" : "Hugging Face sources · organized by DSBox"}</span><h2 id="catalog-title">{filter === "unsloth" ? "Unsloth models" : filter === "catalog" ? "DSBox catalog" : "Model sources"}</h2><p>{filter === "unsloth" ? "Choose and download complete GGUF variants without leaving DSBox." : "Downloads happen inside DSBox, resume after interruptions, and stay pinned to a specific revision."}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
+            <div className="catalog-section__head"><div><span className="eyebrow">{filter === "unsloth" ? "External Hugging Face source" : filter === "catalog" ? "Verified for the DS4 engine" : "Curated Hugging Face sources"}</span><h2 id="catalog-title">{filter === "unsloth" ? "Unsloth models" : filter === "catalog" ? "DS4 models" : "Model sources"}</h2><p>{filter === "unsloth" ? "Models remain visible for provenance, but downloads are disabled until their layout is verified for DS4." : "Compatible files download inside DSBox, resume after interruptions, and stay pinned to a specific revision."}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
 
             {catalogLoading ? (
               <div className="models-empty models-empty--panel"><RefreshCw className="spin" size={17} /><div><strong>Loading the DSBox catalog</strong><p>{downloadActive ? "Your current download continues while the catalog refreshes." : "No download has started."}</p></div></div>
@@ -423,7 +432,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
                     ?? (runtimeBusy ? "Turn off DSBox before changing models" : null);
                   return (
                     <article className={`${active ? "catalog-card catalog-card--active" : "catalog-card"} ${publisher === "unsloth" ? "catalog-card--unsloth" : ""}`} key={model.repository}>
-                      <div className="catalog-card__head"><span className={`catalog-card__tile ${model.experimental ? "catalog-card__tile--experimental" : ""} ${publisher === "unsloth" ? "catalog-card__tile--unsloth" : ""}`}><Box size={22} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by DSBox</span>}{publisher === "unsloth" && <span className="source-chip">Unsloth</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
+                      <div className="catalog-card__head"><span className={`catalog-card__tile ${model.experimental ? "catalog-card__tile--experimental" : ""} ${publisher === "unsloth" ? "catalog-card__tile--unsloth" : ""}`}><Box size={22} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by DSBox</span>}{publisher !== "andreaborio" && <span className="source-chip">{publisherLabel(publisher)}</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
                       <p className="catalog-card__description">{model.description}</p>
                       <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB publisher guidance</span>}<span>{defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF"}</span>{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
                       <div className={`catalog-card__advisor catalog-card__advisor--${assessment.performance.level}`} title={assessment.performance.explanation}>
@@ -441,7 +450,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
             ) : (
               <div className="models-empty models-empty--panel"><Box size={17} /><div><strong>{normalizedQuery ? "No source models match your search" : "No models are available from this source"}</strong><p>You can continue using a GGUF already on this Mac.</p></div></div>
             )}
-            <p className="catalog-provenance">Publisher labels identify where files are hosted. Only the “Recommended by DSBox” badge is a DSBox recommendation; publisher presence is never an endorsement.</p>
+            <p className="catalog-provenance">Publisher labels identify where files are hosted. DSBox enables downloads only for model layouts verified against the DS4 engine.</p>
           </section>
         )}
       </div>

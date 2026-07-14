@@ -152,7 +152,7 @@ export interface CatalogModelVariant {
   assembly: CatalogModelAssembly | null;
 }
 
-export type CatalogPublisher = "andreaborio" | "unsloth";
+export type CatalogPublisher = "andreaborio" | "antirez" | "unsloth";
 
 export interface CatalogSource {
   id: CatalogPublisher;
@@ -239,12 +239,27 @@ export interface CatalogResponse {
   stale: boolean;
 }
 
+export type LocalModelCompatibilityCode =
+  | "ds4_native"
+  | "standard_multipart"
+  | "missing_ds4_metadata"
+  | "unsupported_architecture"
+  | "invalid_gguf";
+
+export interface LocalModelCompatibility {
+  status: "compatible" | "unsupported";
+  code: LocalModelCompatibilityCode;
+  reason: string | null;
+}
+
 export interface LocalModelCandidate {
   path: string;
   name: string;
   sizeBytes: number;
   modelId: string;
   selected: boolean;
+  compatibility: LocalModelCompatibility;
+  architecture: "deepseek4" | null;
 }
 
 export type LocalModelScanStatus = "idle" | "scanning" | "complete" | "cancelled" | "error";

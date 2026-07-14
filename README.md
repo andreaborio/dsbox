@@ -54,15 +54,15 @@
 
 ### Use a GGUF already on the Mac
 
-**Scan this Mac** checks Spotlight first and falls back to a bounded filesystem scan. DSBox validates the GGUF header and complete standard shard sets before adding a result. Validated findings are stored in `~/.dsbox/local-models.json` with user-only permissions, so the chat model switcher opens immediately instead of scanning the disk again. Deleted, unreadable, corrupt, or incomplete entries are pruned automatically.
+**Scan this Mac** checks Spotlight first and falls back to a bounded filesystem scan. Before adding a result, DSBox reads the GGUF v3 header, architecture metadata, and tensor index to verify that the file uses a layout supported by DS4. It never reads the model-weight payload during this check, so validation stays lightweight even for very large files. Verified findings are stored in `~/.dsbox/local-models.json` with user-only permissions, so the chat model switcher opens immediately instead of scanning the disk again. Deleted, unreadable, corrupt, multipart, or incompatible entries are pruned automatically.
 
 **Choose GGUF file…** opens the native Finder picker. DSBox uses the selected model in place: it does not copy or upload it, and it never asks a non-technical user to type a path.
 
-A valid GGUF container is not a promise that every architecture is supported by the selected DS4 build. DSBox keeps the choice available while making uncertainty visible.
+A generic GGUF container is not enough: DS4 requires its own architecture metadata and tensor layout. Finder selection, disk scan, model switching, and server startup all use the same compatibility gate, with a specific explanation when a file cannot run.
 
 ### Download inside DSBox
 
-The catalog currently reads DS4-oriented sources from the Hugging Face `andreaborio` profile and official Unsloth GGUF repositories. The exact version, total size, shard count, free-space check, and hardware advisory are shown before any download begins.
+The catalog reads DS4-oriented sources from the Hugging Face `andreaborio` profile and includes a checksum-pinned, DS4-native DwarfStar model from `antirez/deepseek-v4-gguf`. Unsloth repositories remain visible for provenance, but their current standard multipart GGUF builds cannot be selected or downloaded because DS4 does not support that layout. The exact revision, total size, file count, free-space check, and hardware advisory are shown before any compatible download begins.
 
 Downloads are:
 
@@ -71,9 +71,9 @@ Downloads are:
 - resumable after interruption;
 - staged and committed atomically;
 - size-verified, with SHA-256 verification when the source publishes it;
-- capable of complete standard shard sets and declared multipart assembly.
+- enabled only when the model layout and runtime contract are explicitly verified for DS4.
 
-Recommendations are made by **DSBox**, never presented as an endorsement from Andrea Borio or Unsloth.
+Recommendations are made by **DSBox**, never presented as an endorsement from Andrea Borio, Antirez, or Unsloth.
 
 ### Switch models from chat
 

@@ -188,12 +188,10 @@ export function assessModelHardware(
   };
 }
 
-/**
- * Local GGUF files do not carry a DSBox compatibility declaration. We can still
- * estimate streaming pressure from their real size without blocking selection.
- */
+/** Local files reach this surface only after the runtime-level GGUF preflight. */
 export function assessLocalModelHardware(
-  model: Pick<LocalModelCandidate, "name" | "modelId" | "sizeBytes">,
+  model: Pick<LocalModelCandidate, "name" | "modelId" | "sizeBytes"> &
+    Partial<Pick<LocalModelCandidate, "compatibility" | "architecture">>,
   hardware: ModelHardwareContext
 ): ModelHardwareAssessment {
   const projectedCatalogModel: CatalogModel = {
@@ -216,7 +214,18 @@ export function assessLocalModelHardware(
     sourceUrl: "",
     unavailableReason: null,
     variantCount: 1,
-    variants: []
+    variants: [],
+    architecture: model.architecture === "deepseek4" ? "moe" : "unknown"
   };
-  return assessModelHardware(projectedCatalogModel, hardware);
+  const assessment = assessModelHardware(projectedCatalogModel, hardware);
+  if (model.compatibility?.status === "compatible") {
+    assessment.compatibility = {
+      status: "verified",
+      label: "Verified for DS4",
+      explanation: "DSBox verified the GGUF v3 architecture metadata and tensor layout before adding this local model."
+    };
+    assessment.requiresAcknowledgement = assessment.performance.level === "may-be-slow"
+      || assessment.performance.level === "very-slow";
+  }
+  return assessment;
 }

@@ -1,21 +1,22 @@
-## DSBox 0.2.1
+## DSBox 0.2.2
 
-This patch removes DeepSeek-specific promotional copy from the general DSBox
-experience and simplifies decorative UI elements.
+This release prevents generic GGUF files from being presented as DS4-compatible
+models and adds a verified DS4-native one-click download.
 
 ### What changed
 
-- Removed the `DeepSeek V4 Flash · on your Mac` promotional row from the empty
-  chat state.
-- Removed every decorative star and sparkle icon from the interface.
-- Kept model recommendations as plain, readable status labels.
-- Replaced DeepSeek-centric engine and coding-agent descriptions with neutral
-  DS4 wording.
-- Fixed catalog fallback IDs so an unknown compatible model is no longer
-  mislabeled as DeepSeek.
-
-Actual DeepSeek model names still appear when that model is selected or listed
-as a real Hugging Face source; DSBox itself remains model-agnostic.
+- Added a lightweight GGUF v3 preflight that reads metadata and the tensor
+  directory without loading model weights or using the GPU.
+- Applied the same compatibility gate to disk scans, Finder selection, model
+  switching, completed downloads, persisted download resumes, and server start.
+- Added specific errors for unsupported standard multipart GGUF files, missing
+  DS4 metadata, unsupported architectures, and malformed containers.
+- Kept current Unsloth repositories visible for provenance while disabling
+  downloads for their unsupported standard multipart layout.
+- Added the checksum-pinned DS4-native Q2 Imatrix model from the DwarfStar
+  repository as an in-app download.
+- Kept hardware guidance advisory: models larger than unified memory remain
+  selectable, with an honest warning that SSD-streamed generation may be slow.
 
 ### macOS community build
 
