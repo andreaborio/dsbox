@@ -393,9 +393,13 @@ export class ModelDownloadManager {
       active.removePartials = removePartials;
       active.controller.abort();
       await active.promise;
-      return cloneSnapshot(record.snapshot);
+      const requestedStage = removePartials ? "cancelled" : "paused";
+      if (record.snapshot.stage === "ready" || record.snapshot.stage === requestedStage) {
+        return cloneSnapshot(record.snapshot);
+      }
     }
-    if (removePartials && record.snapshot.stage !== "ready") {
+    if (record.snapshot.stage === "ready") return cloneSnapshot(record.snapshot);
+    if (removePartials) {
       await rm(record.stagingDirectory, { recursive: true, force: true });
       for (const file of record.snapshot.files) {
         file.downloadedBytes = 0;
@@ -404,7 +408,8 @@ export class ModelDownloadManager {
       record.snapshot.downloadedBytes = 0;
       record.snapshot.stage = "cancelled";
       record.snapshot.error = null;
-    } else if (record.snapshot.stage !== "ready") {
+    } else {
+      await this.reconcileProgress(record);
       record.snapshot.stage = "paused";
       record.snapshot.error = null;
     }

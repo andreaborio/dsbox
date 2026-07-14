@@ -62,6 +62,7 @@ describe("transparent Hugging Face downloads", () => {
   let files: Map<string, Buffer>;
   let requestedRanges: string[];
   let slowResponses: boolean;
+  let managers: ModelDownloadManager[];
 
   beforeEach(async () => {
     home = await mkdtemp(path.join(tmpdir(), "dsbox-downloads-"));
@@ -71,6 +72,7 @@ describe("transparent Hugging Face downloads", () => {
     files = new Map();
     requestedRanges = [];
     slowResponses = false;
+    managers = [];
     server = createServer((request, response) => {
       const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
       const marker = `/resolve/${"a".repeat(40)}/`;
@@ -128,17 +130,24 @@ describe("transparent Hugging Face downloads", () => {
   });
 
   afterEach(async () => {
+    for (const downloads of managers) {
+      for (const snapshot of downloads.list()) {
+        await downloads.cancel(snapshot.id);
+      }
+    }
     delete process.env.DSBOX_HOME;
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(home, { recursive: true, force: true });
   });
 
   async function manager(options: { diskFreeBytes?: number } = {}): Promise<ModelDownloadManager> {
-    return ModelDownloadManager.open(store, bus, {
+    const downloads = await ModelDownloadManager.open(store, bus, {
       hubBaseUrl: baseUrl,
       retryDelayMs: 1,
       getDiskFreeBytes: async () => options.diskFreeBytes ?? 100 * 1024 ** 3
     });
+    managers.push(downloads);
+    return downloads;
   }
 
   it("isolates concurrent atomic state writes across manager instances", async () => {
@@ -292,11 +301,32 @@ describe("transparent Hugging Face downloads", () => {
       assembly: null
     };
     const downloads = await manager();
+    const internals = downloads as unknown as { persist(): Promise<void> };
+    const persist = internals.persist.bind(downloads);
+    let releaseErrorPersist!: () => void;
+    const errorPersistReleased = new Promise<void>((resolve) => {
+      releaseErrorPersist = resolve;
+    });
+    let reportErrorPersist!: () => void;
+    const errorPersistStarted = new Promise<void>((resolve) => {
+      reportErrorPersist = resolve;
+    });
+    let heldErrorPersist = false;
+    internals.persist = async () => {
+      if (!heldErrorPersist && downloads.list().some((snapshot) => snapshot.stage === "error")) {
+        heldErrorPersist = true;
+        reportErrorPersist();
+        await errorPersistReleased;
+      }
+      await persist();
+    };
     const started = await downloads.start(catalogModel(variant), variant.id);
-    const failed = await waitForDownload(downloads, started.id, (snapshot) => snapshot.stage === "error");
+    await errorPersistStarted;
+    const failed = downloads.get(started.id);
+    const cancellation = downloads.cancel(started.id, true);
+    releaseErrorPersist();
+    const cancelled = await cancellation;
     expect(failed.error).toMatch(/verification failed/);
-
-    const cancelled = await downloads.cancel(started.id, true);
     expect(cancelled).toMatchObject({ stage: "cancelled", downloadedBytes: 0, error: null });
     await expect(readFile(`${cancelled.destinationDirectory}.partial/bad.gguf.part`)).rejects.toMatchObject({ code: "ENOENT" });
   });
