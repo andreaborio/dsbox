@@ -1,11 +1,12 @@
 import { createServer, request as httpRequest, type Server } from "node:http";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp, createServices, type AppServices } from "../server/app.js";
 import { TaskCancelledError } from "../server/runtime.js";
+import type { CatalogModel, CatalogModelVariant, CatalogResponse, ModelDownloadSnapshot, RuntimeState } from "../src/types.js";
 
 describe("DSBox API", () => {
   let home: string;
@@ -102,6 +103,170 @@ describe("DSBox API", () => {
     expect(services.runtime.hasTask()).toBe(false);
   });
 
+  it("refreshes the saved model ID when a known GGUF gets authoritative metadata", async () => {
+    const selectedPath = path.join(home, "selected-local.gguf");
+    const rememberedPath = path.join(home, "remembered-local.gguf");
+    const gguf = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    await writeFile(selectedPath, gguf);
+    await writeFile(rememberedPath, gguf);
+    await services.runtime.selectLocalModel(selectedPath, "selected-model");
+
+    await services.runtime.rememberLocalModel(rememberedPath, "generic-local-id");
+    await services.runtime.rememberLocalModel(rememberedPath, "catalog-model-id");
+
+    const local = await request(createApp(services)).get("/api/models/local").expect(200);
+    expect(local.body.models).toContainEqual(expect.objectContaining({
+      path: rememberedPath,
+      modelId: "catalog-model-id",
+      selected: false
+    }));
+    expect(services.runtime.getState().pid).toBeNull();
+  });
+
+  it("switches to an installed GGUF without starting DS4 when it is off", async () => {
+    const firstPath = path.join(home, "first-local.gguf");
+    const secondPath = path.join(home, "second-local.gguf");
+    const gguf = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    await writeFile(firstPath, gguf);
+    await writeFile(secondPath, gguf);
+    await services.runtime.selectLocalModel(firstPath, "first-model");
+    const internal = services.runtime as unknown as {
+      stopEngine(): Promise<void>;
+      startManaged(modelSwitch?: boolean): Promise<void>;
+    };
+    const startManaged = vi.spyOn(internal, "startManaged");
+    const stopEngine = vi.spyOn(internal, "stopEngine");
+
+    const response = await request(createApp(services))
+      .post("/api/models/local/switch")
+      .set("x-dsbox-control", "1")
+      .send({ path: secondPath, modelId: "second-model" })
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      changed: true,
+      restarted: false,
+      model: { path: secondPath, modelId: "second-model", selected: true }
+    });
+    expect(services.store.get().model).toEqual({ path: secondPath, id: "second-model" });
+    expect(startManaged).not.toHaveBeenCalled();
+    expect(stopEngine).not.toHaveBeenCalled();
+    expect(services.runtime.getState().pid).toBeNull();
+  });
+
+  it("validates a replacement GGUF before stopping a running DS4 process", async () => {
+    const currentPath = path.join(home, "current-local.gguf");
+    const invalidPath = path.join(home, "invalid-local.gguf");
+    await writeFile(currentPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(invalidPath, "not a GGUF");
+    await services.runtime.selectLocalModel(currentPath, "current-model");
+    const internal = services.runtime as unknown as {
+      engine: { pid: number } | null;
+      state: RuntimeState;
+      stopEngine(): Promise<void>;
+    };
+    internal.engine = { pid: 1234 };
+    internal.state = { ...services.runtime.getState(), phase: "running", readiness: "ready", pid: 1234 };
+    const stopEngine = vi.spyOn(internal, "stopEngine");
+
+    await request(createApp(services))
+      .post("/api/models/local/switch")
+      .set("x-dsbox-control", "1")
+      .send({ path: invalidPath })
+      .expect(400);
+
+    expect(stopEngine).not.toHaveBeenCalled();
+    expect(internal.engine).not.toBeNull();
+    expect(services.store.get().model).toEqual({ path: currentPath, id: "current-model" });
+    internal.engine = null;
+  });
+
+  it("restarts a running DS4 process exactly once after an installed model is selected", async () => {
+    const currentPath = path.join(home, "running-current.gguf");
+    const nextPath = path.join(home, "running-next.gguf");
+    const gguf = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    await writeFile(currentPath, gguf);
+    await writeFile(nextPath, gguf);
+    await services.runtime.selectLocalModel(currentPath, "running-current");
+    const internal = services.runtime as unknown as {
+      engine: { pid: number } | null;
+      state: RuntimeState;
+      stopEngine(): Promise<void>;
+      startManaged(modelSwitch?: boolean): Promise<void>;
+    };
+    internal.engine = { pid: 1234 };
+    internal.state = { ...services.runtime.getState(), phase: "running", readiness: "ready", pid: 1234 };
+    const stopEngine = vi.spyOn(internal, "stopEngine").mockImplementation(async () => {
+      internal.engine = null;
+      internal.state = { ...internal.state, phase: "idle", readiness: "offline", pid: null };
+    });
+    const startManaged = vi.spyOn(internal, "startManaged").mockImplementation(async () => {
+      internal.engine = { pid: 5678 };
+      internal.state = { ...internal.state, phase: "running", readiness: "ready", pid: 5678 };
+    });
+
+    const response = await request(createApp(services))
+      .post("/api/models/local/switch")
+      .set("x-dsbox-control", "1")
+      .send({ path: nextPath, modelId: "running-next" })
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      changed: true,
+      restarted: true,
+      model: { path: nextPath, modelId: "running-next", selected: true }
+    });
+    expect(stopEngine).toHaveBeenCalledOnce();
+    expect(startManaged).toHaveBeenCalledOnce();
+    expect(startManaged).toHaveBeenCalledWith(true);
+    expect(services.store.get().model).toEqual({ path: nextPath, id: "running-next" });
+    internal.engine = null;
+  });
+
+  it("rolls back the model and restores the previous runtime when a hot switch fails", async () => {
+    const previousPath = path.join(home, "previous-local.gguf");
+    const nextPath = path.join(home, "next-local.gguf");
+    const gguf = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]);
+    await writeFile(previousPath, gguf);
+    await writeFile(nextPath, gguf);
+    await services.runtime.selectLocalModel(previousPath, "previous-model");
+    const internal = services.runtime as unknown as {
+      engine: { pid: number } | null;
+      state: RuntimeState;
+      stopEngine(): Promise<void>;
+      startManaged(modelSwitch?: boolean): Promise<void>;
+    };
+    internal.engine = { pid: 1234 };
+    internal.state = { ...services.runtime.getState(), phase: "running", readiness: "ready", pid: 1234 };
+    vi.spyOn(internal, "stopEngine").mockImplementation(async () => {
+      internal.engine = null;
+      internal.state = { ...internal.state, phase: "idle", readiness: "offline", pid: null };
+    });
+    const startManaged = vi.spyOn(internal, "startManaged")
+      .mockRejectedValueOnce(new Error("new model could not load"))
+      .mockImplementationOnce(async () => {
+        internal.engine = { pid: 5678 };
+        internal.state = { ...internal.state, phase: "running", readiness: "ready", pid: 5678 };
+      });
+
+    const response = await request(createApp(services))
+      .post("/api/models/local/switch")
+      .set("x-dsbox-control", "1")
+      .send({ path: nextPath, modelId: "next-model" })
+      .expect(500);
+
+    expect(response.body).toMatchObject({
+      code: "model_switch_failed",
+      rolledBack: true,
+      runtimeRestored: true
+    });
+    expect(response.body.error).toMatch(/previous model selection was restored and DS4 was relaunched/i);
+    expect(services.store.get().model).toEqual({ path: previousPath, id: "previous-model" });
+    expect(startManaged).toHaveBeenCalledTimes(2);
+    expect(internal.engine?.pid).toBe(5678);
+    internal.engine = null;
+  });
+
   it("runs a pollable full-disk scan and returns validated GGUF results", async () => {
     const nestedDirectory = path.join(home, "nested", "models");
     const modelPath = path.join(nestedDirectory, "local-scan.gguf");
@@ -136,6 +301,81 @@ describe("DSBox API", () => {
     expect(completed.body.models).toContainEqual(expect.objectContaining({ path: modelPath, name: "local-scan" }));
     expect(services.runtime.getState().pid).toBeNull();
     expect(services.runtime.hasTask()).toBe(false);
+
+    const inventoryPath = path.join(home, "local-models.json");
+    expect(JSON.parse(await readFile(inventoryPath, "utf8"))).toMatchObject({
+      version: 1,
+      models: [expect.objectContaining({ path: modelPath, modelId: "local-scan" })]
+    });
+
+    services.metrics.stop();
+    services = await createServices(4242);
+    const restartedApp = createApp(services);
+    const restartedRuntime = services.runtime as unknown as {
+      filesystemGgufPaths(signal: AbortSignal): Promise<{ paths: string[]; truncated: boolean }>;
+    };
+    const filesystemScan = vi.spyOn(restartedRuntime, "filesystemGgufPaths");
+    const restored = await request(restartedApp).get("/api/models/local").expect(200);
+    expect(restored.body.models).toContainEqual(expect.objectContaining({ path: modelPath, selected: false }));
+    expect(filesystemScan).not.toHaveBeenCalled();
+
+    await unlink(modelPath);
+    const pruned = await request(restartedApp).get("/api/models/local").expect(200);
+    expect(pruned.body.models).not.toContainEqual(expect.objectContaining({ path: modelPath }));
+    expect(JSON.parse(await readFile(inventoryPath, "utf8"))).toMatchObject({ version: 1, models: [] });
+  });
+
+  it("keeps validated findings when a local-model scan is cancelled", async () => {
+    const modelDirectory = path.join(home, "cancelled-scan");
+    const foundPath = path.join(modelDirectory, "found-before-cancel.gguf");
+    const blockedPath = path.join(modelDirectory, "blocked-during-cancel.gguf");
+    await mkdir(modelDirectory, { recursive: true });
+    await writeFile(foundPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+    await writeFile(blockedPath, Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(16)]));
+
+    const internal = services.runtime as unknown as {
+      spotlightGgufPaths(
+        signal: AbortSignal,
+        onCandidateCount: (count: number) => void
+      ): Promise<{ paths: string[]; truncated: boolean } | null>;
+      inspectLocalModel(filePath: string, selectedPath: string): Promise<import("../src/types.js").LocalModelCandidate | null>;
+    };
+    const inspectLocalModel = internal.inspectLocalModel.bind(internal);
+    vi.spyOn(internal, "spotlightGgufPaths").mockImplementation(async (_signal, onCandidateCount) => {
+      onCandidateCount(2);
+      return { paths: [foundPath, blockedPath], truncated: false };
+    });
+    let releaseBlocked!: () => void;
+    const blocked = new Promise<void>((resolve) => { releaseBlocked = resolve; });
+    let markBlockedStarted!: () => void;
+    const blockedStarted = new Promise<void>((resolve) => { markBlockedStarted = resolve; });
+    vi.spyOn(internal, "inspectLocalModel").mockImplementation(async (filePath, selectedPath) => {
+      if (path.resolve(filePath) === blockedPath) {
+        markBlockedStarted();
+        await blocked;
+      }
+      return inspectLocalModel(filePath, selectedPath);
+    });
+
+    const app = createApp(services);
+    await request(app).post("/api/models/local/scan").set("x-dsbox-control", "1").expect(202);
+    await blockedStarted;
+    await request(app).post("/api/models/local/scan/cancel").set("x-dsbox-control", "1").expect(200);
+    releaseBlocked();
+
+    const inventoryPath = path.join(home, "local-models.json");
+    await vi.waitFor(async () => {
+      const inventory = JSON.parse(await readFile(inventoryPath, "utf8")) as { models: Array<{ path: string }> };
+      expect(inventory.models).toContainEqual(expect.objectContaining({ path: foundPath }));
+      expect(inventory.models).not.toContainEqual(expect.objectContaining({ path: blockedPath }));
+    });
+
+    services.metrics.stop();
+    services = await createServices(4242);
+    const restored = await request(createApp(services)).get("/api/models/local").expect(200);
+    expect(restored.body.models).toContainEqual(expect.objectContaining({ path: foundPath }));
+    expect(restored.body.models).not.toContainEqual(expect.objectContaining({ path: blockedPath }));
+    expect(services.runtime.getState().pid).toBeNull();
   });
 
   it("cancels a running local-model scan without touching the runtime", async () => {
@@ -157,6 +397,9 @@ describe("DSBox API", () => {
       .set("x-dsbox-control", "1")
       .expect(200);
     expect(cancelled.body).toMatchObject({ status: "cancelled", stage: "idle", error: null });
+    await vi.waitFor(() => {
+      expect((services.runtime as unknown as { localModelScanController: AbortController | null }).localModelScanController).toBeNull();
+    });
     expect(services.runtime.getState().pid).toBeNull();
     expect(services.runtime.hasTask()).toBe(false);
   });
@@ -269,6 +512,71 @@ describe("DSBox API", () => {
     await expect(services.runtime.selectLocalModel(secondPath)).rejects.toThrow(/Cancel the download|turn off DSBox/);
     expect(services.store.get().model.path).toBe(firstPath);
   });
+
+  it("starts a pinned in-app catalog variant and exposes the download contract", async () => {
+    const variant: CatalogModelVariant = {
+      id: "variant-1",
+      label: "Q2 K",
+      files: [{ name: "model.gguf", sizeBytes: 1024, sha256: "a".repeat(64) }],
+      outputFile: "model.gguf",
+      totalBytes: 1024,
+      installable: true,
+      unavailableReason: null,
+      assembly: null
+    };
+    const model: CatalogModel = {
+      publisher: "unsloth",
+      repository: "unsloth/Test-GGUF",
+      revision: "b".repeat(40),
+      label: "Test model",
+      description: "Test",
+      modelId: "test",
+      runtimeBranch: null,
+      runtimeCommit: null,
+      files: [],
+      outputFile: null,
+      totalBytes: 0,
+      recommended: false,
+      experimental: false,
+      installable: true,
+      minimumMemoryGb: null,
+      lastModified: null,
+      sourceUrl: "https://huggingface.co/unsloth/Test-GGUF",
+      unavailableReason: "Choose a quantization in DSBox",
+      variantCount: 1,
+      variants: [variant]
+    };
+    const catalog: CatalogResponse = {
+      author: "andreaborio",
+      label: "DSBox Models",
+      sources: [],
+      models: [model],
+      recommended: null,
+      refreshedAt: new Date().toISOString(),
+      stale: false
+    };
+    const download = {
+      id: "download-1",
+      repository: model.repository,
+      revision: model.revision,
+      variantId: variant.id,
+      stage: "queued"
+    } as ModelDownloadSnapshot;
+    vi.spyOn(services.catalog, "list").mockResolvedValue(catalog);
+    const start = vi.spyOn(services.downloads, "start").mockResolvedValue(download);
+    vi.spyOn(services.downloads, "list").mockReturnValue([download]);
+    const app = createApp(services);
+
+    const started = await request(app)
+      .post("/api/models/download")
+      .set("x-dsbox-control", "1")
+      .send({ repository: model.repository, revision: model.revision, variantId: variant.id })
+      .expect(202);
+    expect(start).toHaveBeenCalledWith(model, variant.id);
+    expect(started.body).toEqual({ accepted: true, download });
+    const listed = await request(app).get("/api/models/downloads").expect(200);
+    expect(listed.body).toEqual({ downloads: [download] });
+  });
 });
 
 describe("gateway passthrough", () => {
@@ -357,6 +665,31 @@ describe("gateway passthrough", () => {
     expect(activityStages).toContain("prefill");
     expect(activityStages).toContain("decode");
     expect(activityStages.at(-1)).toBe("idle");
+  });
+
+  it("rejects media input before it can reach the text-only DS4 runtime", async () => {
+    const response = await request(createApp(services))
+      .post("/api/chat")
+      .set("x-dsbox-control", "1")
+      .send({
+        model: "deepseek-v4-flash",
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this" },
+            { type: "image_url", image_url: { url: "data:image/png;base64,abc" } }
+          ]
+        }]
+      })
+      .expect(422);
+
+    expect(response.body.error).toMatchObject({
+      type: "invalid_request_error",
+      code: "unsupported_input_modality",
+      modality: "image",
+      location: "messages[0].content[1]"
+    });
+    expect(services.activity.stage).toBe("idle");
   });
 
   it("aborts DS4 before upstream headers when the client disconnects", async () => {

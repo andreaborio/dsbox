@@ -13,6 +13,7 @@ import {
   HardDrive,
   MemoryStick,
   MessageSquareText,
+  Pause,
   ShieldCheck,
   Terminal,
   Wrench
@@ -23,8 +24,8 @@ import type { DsboxController } from "../hooks/useDsbox";
 import { apiRequest } from "../lib/api";
 import { shellDisplayArgument } from "../lib/arguments";
 import { formatBytes, formatDuration, formatModelName, timeLabel } from "../lib/format";
-import { Button, CopyButton, StatusPill } from "../components/ui";
-import { DsboxOrb, type DsboxOrbState } from "../components/DsboxOrb";
+import { currentDownload, formatDownloadEta } from "../lib/model-download-state";
+import { BrandMark, Button, CopyButton, StatusPill } from "../components/ui";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -107,10 +108,20 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   const technicalRef = useRef<HTMLDetailsElement | null>(null);
   const reduceMotion = useReducedMotion();
   const latest = metrics.at(-1);
+  const activeDownload = currentDownload(snapshot.downloads);
+  const activeDownloadPercent = activeDownload
+    ? Math.round((activeDownload.downloadedBytes / Math.max(activeDownload.totalBytes, 1)) * 100)
+    : null;
   const phaseCopy = copyByPhase[runtime.phase];
-  const busy = busyPhases.includes(runtime.phase);
+  const busy = Boolean(activeDownload) || busyPhases.includes(runtime.phase);
   const modelMissing = !runtime.modelPresent && runtime.phase !== "running" && !busy;
-  const visibleCopy = modelMissing
+  const visibleCopy = activeDownload
+    ? {
+        title: "Downloading the model",
+        description: `${formatBytes(activeDownload.downloadedBytes, 1)} of ${formatBytes(activeDownload.totalBytes, 1)}${activeDownload.speedBytesPerSecond > 0 ? ` · ${formatBytes(activeDownload.speedBytesPerSecond, 1)}/s` : ""}${formatDownloadEta(activeDownload.etaSeconds) ? ` · ${formatDownloadEta(activeDownload.etaSeconds)}` : ""}`,
+        action: `${activeDownloadPercent}% complete`
+      }
+    : modelMissing
     ? {
         title: "Choose a model",
         description: "Use a GGUF file already on your Mac, or choose exactly what to download from the DSBox catalog.",
@@ -151,14 +162,6 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   const dsboxChoiceActive = recommendedModel
     ? config.model.id === recommendedModel.modelId && Boolean(recommendedRepositoryName && config.model.path.includes(`/models/${recommendedRepositoryName}/`))
     : config.model.id === "deepseek-v4-flash" && config.model.path === managedDefaultPath;
-  const orbState: DsboxOrbState = runtime.phase === "error"
-    ? "error"
-    : busy
-      ? "preparing"
-      : runtime.phase === "running"
-        ? snapshot.activity.stage === "idle" ? "ready" : snapshot.activity.stage
-        : "off";
-
   const power = () => {
     if (busy) return;
     if (modelMissing) {
@@ -180,7 +183,9 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   };
 
   const recentLogs = snapshot.logs.slice(-8);
-  const progress = runtime.phase === "preparing" ? 6
+  const progress = activeDownload
+    ? activeDownloadPercent!
+    : runtime.phase === "preparing" ? 6
     : runtime.phase === "installing" || runtime.phase === "updating" ? 18
     : runtime.phase === "building" ? 38
       : runtime.phase === "downloading" ? 62
@@ -189,8 +194,8 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
 
   return (
     <div className="server-page page-scroll">
-      <section className={`power-panel panel power-panel--${runtime.phase}`} aria-live="polite">
-        <div className="power-panel__status"><StatusPill phase={runtime.phase} /></div>
+      <section className={`power-panel panel power-panel--${activeDownload ? "downloading" : runtime.phase}`} aria-live="polite">
+        <div className="power-panel__status"><StatusPill phase={activeDownload ? "downloading" : runtime.phase} /></div>
         <motion.button
           className={`power-control ${runtime.phase === "running" ? "power-control--on" : ""} ${busy ? "power-control--busy" : ""}`}
           onClick={power}
@@ -199,30 +204,36 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           aria-label={visibleCopy.action}
         >
           <span className="power-control__ring" />
-          <DsboxOrb state={orbState} size="hero" decorative />
+          <BrandMark size="hero" />
         </motion.button>
         <h2>{visibleCopy.title}</h2>
         <p>{visibleCopy.description}</p>
         <strong className="power-panel__action">{visibleCopy.action}</strong>
-        {busy && runtime.phase === "downloading" && (
-          <div className="simple-progress simple-progress--indeterminate" role="progressbar" aria-label="Model download in progress">
-            <span />
+        {activeDownload && (
+          <div className="simple-progress simple-progress--download" role="progressbar" aria-label="Model download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+            <span style={{ width: `${progress}%` }} />
           </div>
         )}
-        {busy && runtime.phase !== "downloading" && (
+        {busy && !activeDownload && runtime.phase !== "downloading" && (
           <div className="simple-progress" role="progressbar" aria-label="Setup progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
             <span style={{ width: `${progress}%` }} />
           </div>
         )}
-        {runtime.phase === "downloading" && (
+        {activeDownload && (
           <Button
             variant="secondary"
             className="download-cancel"
-            icon={<CircleStop size={15} />}
-            onClick={() => void controller.action("Stopping download", "/api/runtime/cancel-task").catch(() => undefined)}
+            icon={<Pause size={15} />}
+            onClick={() => void controller.action("Pausing download", `/api/models/downloads/${activeDownload.id}/cancel`, { removePartials: false }).catch(() => undefined)}
           >
-            Stop download
+            Pause download
           </Button>
+        )}
+        {!activeDownload && runtime.phase === "downloading" && (
+          <>
+            <div className="simple-progress simple-progress--indeterminate" role="progressbar" aria-label="Model download in progress"><span /></div>
+            <Button variant="secondary" className="download-cancel" icon={<CircleStop size={15} />} onClick={() => void controller.action("Stopping download", "/api/runtime/cancel-task").catch(() => undefined)}>Stop download</Button>
+          </>
         )}
         {runtime.phase === "error" && runtime.lastError && (
           <button className="error-detail-link" onClick={() => setTechnicalOpen(true)}>Show technical details</button>

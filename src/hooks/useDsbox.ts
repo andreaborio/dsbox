@@ -35,6 +35,13 @@ export function useDsbox(): DsboxController {
         if (event.type === "snapshot") return event.payload;
         if (!current) return current;
         if (event.type === "runtime") return { ...current, runtime: event.payload };
+        if (event.type === "download") {
+          const downloads = [
+            event.payload,
+            ...(current.downloads ?? []).filter((download) => download.id !== event.payload.id)
+          ].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+          return { ...current, downloads };
+        }
         if (event.type === "config") return { ...current, config: event.payload };
         if (event.type === "activity") return { ...current, activity: event.payload };
         if (event.type === "log") {

@@ -13,12 +13,13 @@ import {
   X
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { DsboxOrb, type DsboxOrbState } from "./components/DsboxOrb";
 import { ChatSidebarThreads } from "./components/ChatSidebarThreads";
 import { Onboarding } from "./components/Onboarding";
-import { chatSessionStore, useChatStreaming } from "./hooks/useChatSession";
+import { BrandMark } from "./components/ui";
+import { chatSessionStore, useActiveChatTitle, useChatStreaming } from "./hooks/useChatSession";
 import { useDsbox } from "./hooks/useDsbox";
 import { formatModelName } from "./lib/format";
+import { currentDownload, downloadStageLabel, resumableDownload } from "./lib/model-download-state";
 import type { ViewId } from "./types";
 
 const ChatView = lazy(() => import("./views/ChatView").then((module) => ({ default: module.ChatView })));
@@ -48,6 +49,7 @@ const titles: Record<ViewId, { title: string; subtitle: string }> = {
 export default function App() {
   const controller = useDsbox();
   const chatStreaming = useChatStreaming();
+  const chatTitle = useActiveChatTitle();
   const [view, setView] = useState<ViewId>("chat");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modelsInitialFilter, setModelsInitialFilter] = useState<"all" | "catalog" | "unsloth" | "local">("all");
@@ -59,6 +61,11 @@ export default function App() {
     window.localStorage.setItem("dsbox:onboarding-complete", "1");
     setOnboardingComplete(true);
   }, [onboardingComplete, snapshot?.runtime.modelPresent]);
+
+  useEffect(() => {
+    const title = view === "chat" ? chatTitle : titles[view].title;
+    document.title = `${title} · DSBox`;
+  }, [chatTitle, view]);
 
   const content = useMemo(() => {
     if (!snapshot) return null;
@@ -76,7 +83,7 @@ export default function App() {
   if (!snapshot) {
     return (
       <div className="boot-screen">
-        <DsboxOrb state="preparing" size="md" />
+        <BrandMark />
         <div className="boot-screen__wordmark">DSBox</div>
         <div className="boot-screen__line"><span /></div>
         <p>Opening DSBox…</p>
@@ -85,40 +92,15 @@ export default function App() {
     );
   }
 
-  const activeTitle = titles[view];
+  const activeTitle = view === "chat" ? { title: chatTitle, subtitle: "" } : titles[view];
   const latest = snapshot.metrics.at(-1);
-  const orbState: DsboxOrbState = snapshot.runtime.phase === "error"
-    ? "error"
-    : ["preparing", "installing", "updating", "building", "downloading", "starting", "stopping"].includes(snapshot.runtime.phase)
-      ? "preparing"
-      : snapshot.runtime.phase === "running"
-        ? snapshot.activity.stage === "idle" ? "ready" : snapshot.activity.stage
-        : "off";
-  const runtimeBusy = ["preparing", "installing", "updating", "building", "downloading", "starting", "stopping"].includes(snapshot.runtime.phase);
-  const downloadActive = snapshot.runtime.phase === "downloading";
-  const modelMissing = !snapshot.runtime.modelPresent && snapshot.runtime.phase !== "running";
-  const powerLabel = snapshot.runtime.phase === "running"
-    ? "On"
-    : downloadActive
-      ? "Stop download"
-      : runtimeBusy
-        ? "In progress"
-        : modelMissing
-          ? "Choose model"
-          : "Turn on";
-  const powerAriaLabel = snapshot.runtime.phase === "running"
-    ? "Turn off DSBox"
-    : downloadActive
-      ? "Stop the model download"
-      : modelMissing
-        ? "Choose a model"
-        : "Turn on DSBox";
-
+  const activeDownload = currentDownload(snapshot.downloads);
+  const interruptedDownload = activeDownload ? null : resumableDownload(snapshot.downloads);
   return (
     <div className={`app-shell ${sidebarCollapsed ? "app-shell--collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar__brand">
-          <DsboxOrb state={orbState} size="sm" decorative />
+          <BrandMark small />
           <AnimatePresence initial={false}>
             {!sidebarCollapsed && (
               <motion.div
@@ -128,7 +110,6 @@ export default function App() {
                 exit={{ opacity: 0, x: -6 }}
               >
                 <strong>DSBox</strong>
-                <span>Local AI</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -157,6 +138,8 @@ export default function App() {
                 <Icon size={18} strokeWidth={1.8} />
                 <span>{item.label}</span>
                 {item.id === "runtime" && snapshot.runtime.phase === "error" && <i className="nav-alert" />}
+                {item.id === "models" && activeDownload && <small>{Math.round((activeDownload.downloadedBytes / Math.max(activeDownload.totalBytes, 1)) * 100)}%</small>}
+                {item.id === "models" && interruptedDownload && <small>{interruptedDownload.stage === "error" ? "retry" : "paused"}</small>}
                 {item.id === "chat" && chatStreaming && <small>live</small>}
                 {item.id === "monitor" && snapshot.runtime.phase === "running" && snapshot.activity.stage !== "idle" && (
                   <small>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(1)} t/s` : "live"}</small>
@@ -185,7 +168,7 @@ export default function App() {
             <span className={`status-orb status-orb--${snapshot.runtime.phase}`} />
             <div>
               <strong>{snapshot.runtime.modelPresent ? formatModelName(snapshot.config.model.id) : "Choose a model"}</strong>
-              <span>{snapshot.runtime.phase === "running" ? "Ready on your Mac" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "DSBox is off" : "Local file or DSBox catalog")}</span>
+              <span>{activeDownload ? downloadStageLabel(activeDownload.stage) : interruptedDownload ? downloadStageLabel(interruptedDownload.stage) : snapshot.runtime.phase === "running" ? "Ready on your Mac" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "DSBox is off" : "Local file or DSBox catalog")}</span>
             </div>
           </div>
           <ChevronRight size={15} />
@@ -196,39 +179,16 @@ export default function App() {
         <header className="topbar">
           <div className="topbar__title">
             <h1>{activeTitle.title}</h1>
-            <span>{activeTitle.subtitle}</span>
+            {activeTitle.subtitle && <span>{activeTitle.subtitle}</span>}
           </div>
-          <div className="topbar__actions">
-            {chatStreaming && (
+          {chatStreaming && (
+            <div className="topbar__actions">
               <button className="topbar__generation-stop" onClick={chatSessionStore.stop} aria-label="Stop the active chat generation">
                 <CircleStop size={15} />
                 <span>Stop generation</span>
               </button>
-            )}
-            <button
-              className={`topbar__power ${snapshot.runtime.phase === "running" ? "topbar__power--on" : ""} ${downloadActive ? "topbar__power--cancel" : ""}`}
-              onClick={() => {
-                if (downloadActive) {
-                  void controller.action("Stopping download", "/api/runtime/cancel-task").catch(() => undefined);
-                  return;
-                }
-                if (runtimeBusy) {
-                  setView("runtime");
-                  return;
-                }
-                if (modelMissing) {
-                  setView("models");
-                  return;
-                }
-                void controller.action(snapshot.runtime.phase === "running" ? "Turning off DSBox" : "Turning on DSBox", "/api/runtime/power").catch(() => undefined);
-              }}
-              aria-label={powerAriaLabel}
-            >
-              <span className="topbar__power-dot" />
-              <span>{powerLabel}</span>
-              {downloadActive ? <CircleStop size={15} /> : <Power size={15} />}
-            </button>
-          </div>
+            </div>
+          )}
         </header>
 
         <div className="view-stage">
@@ -241,7 +201,7 @@ export default function App() {
               exit={{ opacity: 0, y: -3 }}
               transition={{ duration: 0.14, ease: [0.2, 0.8, 0.2, 1] }}
             >
-              <Suspense fallback={<div className="view-loading"><DsboxOrb state="preparing" size="sm" decorative /><span>Loading view…</span></div>}>
+              <Suspense fallback={<div className="view-loading"><BrandMark small /><span>Loading view…</span></div>}>
                 {content}
               </Suspense>
             </motion.div>

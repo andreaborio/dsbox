@@ -1,0 +1,99 @@
+.model-download-dialog {
+  display: grid;
+  gap: var(--ds-space-4);
+  color: var(--ds-color-text-primary);
+  font-family: var(--ds-font-sans);
+}
+
+.model-download-dialog__intro {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--ds-space-3);
+}
+
+.model-download-dialog__icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ds-color-border-default);
+  border-radius: var(--ds-radius-md);
+  background: var(--ds-color-bg-subtle);
+  color: var(--ds-color-text-secondary);
+}
+
+.model-download-dialog__intro strong {
+  display: block;
+  font-size: var(--ds-font-size-body);
+  font-weight: var(--ds-font-weight-semibold);
+}
+
+.model-download-dialog__intro p {
+  margin: var(--ds-space-1) 0 0;
+  color: var(--ds-color-text-secondary);
+  font-size: var(--ds-font-size-chrome);
+  line-height: var(--ds-line-height-body);
+}
+
+.model-download-dialog__section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: var(--ds-space-2);
+  gap: var(--ds-space-3);
+}
+
+.model-download-dialog__section-head strong,
+.model-download-dialog__section-head span { display: block; }
+.model-download-dialog__section-head strong { font-size: var(--ds-font-size-chrome); }
+.model-download-dialog__section-head div > span {
+  margin-top: 2px;
+  color: var(--ds-color-text-tertiary);
+  font-size: var(--ds-font-size-metadata);
+}
+
+.model-download-dialog__variant-list {
+  max-height: 264px;
+  padding: var(--ds-space-1);
+  overflow: auto;
+}
+
+.model-download-dialog__notice-meta {
+  display: flex;
+  margin-top: var(--ds-space-2);
+  flex-wrap: wrap;
+  gap: var(--ds-space-2) var(--ds-space-4);
+  color: var(--ds-color-text-tertiary);
+  font-size: var(--ds-font-size-metadata);
+}
+
+.model-download-dialog__notice-meta span { display: inline-flex; align-items: center; gap: var(--ds-space-1); }
+
+.model-download-dialog__facts {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--ds-color-border-default);
+  border-radius: var(--ds-radius-md);
+}
+
+.model-download-dialog__facts > div {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  gap: var(--ds-space-4);
+  border-bottom: 1px solid var(--ds-color-border-subtle);
+}
+
+.model-download-dialog__facts > div:last-child { border-bottom: 0; }
+.model-download-dialog__facts dt { color: var(--ds-color-text-tertiary); font-size: var(--ds-font-size-metadata); }
+.model-download-dialog__facts dd { min-width: 0; margin: 0; font-size: var(--ds-font-size-metadata); font-weight: var(--ds-font-weight-semibold); text-align: right; }
+.model-download-dialog__destination dd { overflow: hidden; max-width: 390px; font-family: var(--ds-font-mono); text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 620px) {
+  .model-download-dialog__facts > div { align-items: flex-start; flex-direction: column; gap: var(--ds-space-1); }
+  .model-download-dialog__facts dd { width: 100%; text-align: left; }
+}

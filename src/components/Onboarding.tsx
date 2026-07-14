@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, Box, Cpu, HardDrive, Search, ShieldCheck } from 
 import { useState } from "react";
 import { formatBytes } from "../lib/format";
 import type { AppSnapshot } from "../types";
-import { DsboxOrb } from "./DsboxOrb";
+import { BrandMark } from "./ui";
 
 export function Onboarding({
   snapshot,
@@ -23,7 +23,7 @@ export function Onboarding({
       <AnimatePresence mode="wait" initial={false}>
         {step === "welcome" ? (
           <motion.section className="onboarding__step onboarding__welcome" key="welcome" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}>
-            <DsboxOrb state="ready" size="hero" />
+            <BrandMark size="hero" />
             <h1>Your own AI.<br />Entirely on this Mac.</h1>
             <p>Requests sent to DSBox are processed locally. Your selected model and runtime stay under your control.</p>
             <div className="onboarding-hardware">

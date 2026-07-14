@@ -8,8 +8,10 @@ import type { AppSnapshot, InferenceActivity, InferenceStage, ServerEvent, Syste
 import { ConfigStore } from "./config.js";
 import { EventBus } from "./event-bus.js";
 import { MetricsMonitor } from "./metrics.js";
-import { ModelSelectionError, RuntimeManager, isTaskCancelledError } from "./runtime.js";
+import { ModelSelectionError, ModelSwitchError, RuntimeManager, isTaskCancelledError } from "./runtime.js";
 import { ModelCatalog } from "./catalog.js";
+import { ModelDownloadError, ModelDownloadManager } from "./model-downloads.js";
+import { assertTextOnlyInput, UnsupportedInputModalityError } from "./text-only.js";
 import { searchWeb } from "./web-search.js";
 
 export interface AppServices {
@@ -18,6 +20,7 @@ export interface AppServices {
   runtime: RuntimeManager;
   metrics: MetricsMonitor;
   catalog: ModelCatalog;
+  downloads: ModelDownloadManager;
   activity: InferenceActivity;
   system: SystemInfo;
 }
@@ -91,6 +94,8 @@ async function relayToDs4(
     });
     return;
   }
+
+  assertTextOnlyInput(request.body);
 
   const config = services.store.get();
   const target = `http://${config.server.internalHost}:${config.server.internalPort}${targetPath}`;
@@ -182,6 +187,17 @@ export async function createServices(port: number): Promise<AppServices> {
   await runtime.refresh();
   const metrics = new MetricsMonitor(store, runtime, bus);
   const catalog = new ModelCatalog();
+  const downloads = await ModelDownloadManager.open(store, bus, {
+    canStart: () => !runtime.hasTask() && !runtime.isSwitchingModel() && runtime.getState().pid === null,
+    onReady: async (modelPath, modelId) => {
+      try {
+        await runtime.rememberLocalModel(modelPath, modelId);
+      } catch (error) {
+        runtime.log("warn", "dsbox", `The downloaded model is ready, but its local inventory entry could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      await runtime.refresh();
+    }
+  });
   const activity: InferenceActivity = { stage: "idle", source: null, requestId: null, startedAt: null };
   const cpuList = cpus();
   const gatewayBaseUrl = `http://127.0.0.1:${port}`;
@@ -197,13 +213,14 @@ export async function createServices(port: number): Promise<AppServices> {
     openAiBaseUrl: `${gatewayBaseUrl}/v1`,
     anthropicBaseUrl: gatewayBaseUrl
   };
-  return { store, bus, runtime, metrics, catalog, activity, system };
+  return { store, bus, runtime, metrics, catalog, downloads, activity, system };
 }
 
 export function makeSnapshot(services: AppServices): AppSnapshot {
   return {
     config: services.store.get(),
     runtime: services.runtime.getState(),
+    downloads: services.downloads.list(),
     metrics: services.metrics.getHistory(),
     logs: services.runtime.getLogs(),
     activity: structuredClone(services.activity),
@@ -266,6 +283,10 @@ export function createApp(services: AppServices) {
   });
 
   app.put("/api/config", asyncRoute(async (request, response) => {
+    if (services.runtime.isSwitchingModel()) {
+      response.status(409).json({ error: "Wait for the model switch to finish before changing settings" });
+      return;
+    }
     const config = await services.store.set(request.body);
     services.bus.publish({ type: "config", payload: config });
     if (["running", "starting"].includes(services.runtime.getState().phase)) {
@@ -287,6 +308,14 @@ export function createApp(services: AppServices) {
     const force = request.query.refresh === "1";
     response.json(await services.catalog.list(services.system.totalMemoryBytes, force));
   }));
+
+  app.get("/api/models/downloads", (_request, response) => {
+    response.json({ downloads: services.downloads.list() });
+  });
+
+  app.get("/api/models/downloads/:id", (request, response) => {
+    response.json(services.downloads.get(String(request.params.id)));
+  });
 
   app.get("/api/models/local", asyncRoute(async (_request, response) => {
     response.json({ models: await services.runtime.discoverLocalModels() });
@@ -330,18 +359,57 @@ export function createApp(services: AppServices) {
     }
   }));
 
-  app.post("/api/models/download", (request, response) => {
+  app.post("/api/models/local/switch", asyncRoute(async (request, response) => {
+    if (services.downloads.hasActive()) {
+      response.status(409).json({ error: "Pause the active model download before switching models" });
+      return;
+    }
+    const modelPath = String(request.body?.path ?? "");
+    const modelId = request.body?.modelId ? String(request.body.modelId) : undefined;
+    try {
+      response.json(await services.runtime.switchLocalModel(modelPath, modelId));
+    } catch (error) {
+      if (error instanceof ModelSwitchError) {
+        response.status(error.status).json({
+          error: error.message,
+          code: "model_switch_failed",
+          rolledBack: error.rolledBack,
+          runtimeRestored: error.runtimeRestored
+        });
+        return;
+      }
+      if (error instanceof ModelSelectionError) {
+        response.status(error.status).json({ error: error.message });
+        return;
+      }
+      throw error;
+    }
+  }));
+
+  app.post("/api/models/download", asyncRoute(async (request, response) => {
     const repository = String(request.body?.repository ?? "");
-    void services.catalog.list(services.system.totalMemoryBytes).then((catalog) => {
-      const model = catalog.models.find((candidate) => candidate.repository === repository);
-      if (!model) throw new Error("Model not found in the DSBox catalog");
-      return services.runtime.downloadCatalogModel(model);
-    }).catch((error) => {
-      if (isTaskCancelledError(error)) return;
-      services.runtime.log("error", "dsbox", error instanceof Error ? error.message : String(error));
-    });
-    response.status(202).json({ accepted: true });
-  });
+    const revision = request.body?.revision ? String(request.body.revision) : null;
+    const variantId = request.body?.variantId ? String(request.body.variantId) : undefined;
+    const catalog = await services.catalog.list(services.system.totalMemoryBytes);
+    const model = catalog.models.find((candidate) => candidate.repository === repository
+      && (!revision || candidate.revision === revision));
+    if (!model) throw new ModelDownloadError("Model not found in the pinned DSBox catalog", 404);
+    const download = await services.downloads.start(model, variantId);
+    response.status(202).json({ accepted: true, download });
+  }));
+
+  app.post("/api/models/downloads/:id/resume", asyncRoute(async (request, response) => {
+    const download = await services.downloads.resume(String(request.params.id));
+    response.status(202).json({ accepted: true, download });
+  }));
+
+  app.post("/api/models/downloads/:id/cancel", asyncRoute(async (request, response) => {
+    const download = await services.downloads.cancel(
+      String(request.params.id),
+      request.body?.removePartials === true
+    );
+    response.json({ ok: true, download });
+  }));
 
   app.post("/api/runtime/install", (_request, response) => {
     void services.runtime.installOrUpdate().catch(() => undefined);
@@ -360,16 +428,32 @@ export function createApp(services: AppServices) {
   });
 
   app.post("/api/runtime/cancel-task", asyncRoute(async (_request, response) => {
+    const activeDownload = services.downloads.list().find((download) =>
+      ["queued", "preflighting", "downloading", "verifying"].includes(download.stage));
+    if (activeDownload) {
+      await services.downloads.cancel(activeDownload.id);
+      response.json({ ok: true });
+      return;
+    }
     const cancelled = await services.runtime.cancelTask();
     response.json(cancelled ? { ok: true } : { ok: true, alreadyStopped: true });
   }));
 
   app.post("/api/runtime/start", asyncRoute(async (_request, response) => {
+    if (services.downloads.hasActive()) throw new ModelDownloadError("Wait for the model download to finish or pause it before starting DS4", 409);
     await services.runtime.start();
     response.status(202).json({ accepted: true });
   }));
 
   app.post("/api/runtime/power", (_request, response) => {
+    if (services.downloads.hasActive()) {
+      response.status(409).json({ error: "Wait for the model download to finish or pause it before starting DS4" });
+      return;
+    }
+    if (services.runtime.isSwitchingModel()) {
+      response.status(202).json({ accepted: true, action: "working" });
+      return;
+    }
     const phase = services.runtime.getState().phase;
     if (["preparing", "installing", "updating", "building", "downloading", "starting", "stopping"].includes(phase)) {
       response.status(202).json({ accepted: true, action: "working" });
@@ -409,6 +493,7 @@ export function createApp(services: AppServices) {
   }));
 
   app.post("/api/runtime/restart", asyncRoute(async (_request, response) => {
+    if (services.downloads.hasActive()) throw new ModelDownloadError("Wait for the model download to finish or pause it before restarting DS4", 409);
     await services.runtime.restart();
     response.status(202).json({ accepted: true });
   }));
@@ -447,11 +532,27 @@ export function createApp(services: AppServices) {
   });
 
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
-    const status = error instanceof ZodError ? 400 : 500;
+    const status = error instanceof ZodError
+      ? 400
+      : error instanceof ModelDownloadError || error instanceof UnsupportedInputModalityError
+        ? error.status
+        : 500;
     const message = error instanceof ZodError
       ? error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")
       : error instanceof Error ? error.message : "Internal DSBox error";
     if (status >= 500) services.runtime.log("error", "dsbox", message);
+    if (error instanceof UnsupportedInputModalityError) {
+      response.status(status).json({
+        error: {
+          message,
+          type: "invalid_request_error",
+          code: error.code,
+          modality: error.details.modality,
+          location: error.details.location
+        }
+      });
+      return;
+    }
     response.status(status).json({ error: message });
   });
 

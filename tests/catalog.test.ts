@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe("Hugging Face model catalog", () => {
-  it("keeps the current-style experimental multipart model out of one-click recommendations", async () => {
+  it("groups a current-style multipart model for in-app download without recommending experimental builds", async () => {
     const repository = "andreaborio/glm52-ds4-native-64g-q2k-experimental";
     const revision = "696c749dada98815931d8f704e4ba1f1fdfeb5a7";
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -52,16 +52,23 @@ describe("Hugging Face model catalog", () => {
       revision,
       label: "GLM 5.2 DS4 Native 64 GB Q2_K Experimental",
       experimental: true,
-      installable: false,
+      installable: true,
       recommended: false,
-      outputFile: null,
+      outputFile: "model.gguf",
       totalBytes: 244,
-      unavailableReason: "Published in multiple parts: manual installation required"
+      unavailableReason: null,
+      variantCount: 1
     });
     expect(catalog.models[0].files.map((file) => file.name)).toEqual([
       "model.gguf.part-01",
       "model.gguf.part-02"
     ]);
+    expect(catalog.models[0].variants[0]).toMatchObject({
+      installable: true,
+      outputFile: "model.gguf",
+      totalBytes: 244,
+      assembly: { type: "concatenate", outputFile: "model.gguf" }
+    });
   });
 
   it("recommends a compatible stable single-GGUF manifest and pins every lookup to its revision", async () => {
@@ -278,17 +285,25 @@ describe("Hugging Face model catalog", () => {
       label: "DeepSeek V4 Flash",
       modelId: "deepseek-v4-flash",
       variantCount: 2,
-      installable: false,
+      installable: true,
       recommended: false,
-      sourceUrl: `https://huggingface.co/${repositories[0]}/tree/${revisions[0]}`
+      sourceUrl: `https://huggingface.co/${repositories[0]}/tree/${revisions[0]}`,
+      unavailableReason: "Choose a quantization in DSBox"
     });
+    expect(catalog.models.find((model) => model.repository === repositories[0])?.variants).toMatchObject([
+      { label: "UD IQ1 M", totalBytes: 30, installable: true, files: [{ sizeBytes: 10 }, { sizeBytes: 20 }] },
+      { label: "UD IQ2 XXS", totalBytes: 32, installable: true, files: [{ sizeBytes: 11 }, { sizeBytes: 21 }] }
+    ]);
     expect(catalog.models.find((model) => model.repository === repositories[1])).toMatchObject({
       publisher: "unsloth",
       label: "GLM 5.2",
       modelId: "glm-5.2",
       variantCount: 1,
-      installable: false,
-      recommended: false
+      installable: true,
+      recommended: false,
+      totalBytes: 70,
+      outputFile: "UD-IQ1_S/model-00001-of-00002.gguf",
+      unavailableReason: null
     });
     expect(catalog.recommended).toBeNull();
   });

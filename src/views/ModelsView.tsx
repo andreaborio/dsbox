@@ -5,20 +5,27 @@ import {
   Check,
   CircleStop,
   Download,
-  ExternalLink,
   FileBox,
   FolderOpen,
   HardDrive,
+  Pause,
+  Play,
   RefreshCw,
   Search,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Trash2
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ModelDownloadDialog } from "../components/ModelDownloadDialog";
 import { Button, Modal } from "../components/ui";
+import { Badge, Progress } from "../design-system";
 import type { DsboxController } from "../hooks/useDsbox";
 import { apiRequest } from "../lib/api";
 import { formatBytes, formatModelName } from "../lib/format";
+import { currentDownload, downloadStageLabel, formatDownloadEta, resumableDownload } from "../lib/model-download-state";
+import { assessLocalModelHardware, assessModelHardware } from "../lib/model-hardware-advisor";
+import { catalogModelForVariant, chooseDefaultCatalogVariant } from "../lib/model-variants";
 import type {
   AppSnapshot,
   CatalogModel,
@@ -89,6 +96,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
   const [finderOpen, setFinderOpen] = useState(false);
   const [finderMessage, setFinderMessage] = useState<string | null>(null);
   const [downloadModel, setDownloadModel] = useState<CatalogModel | null>(null);
+  const [discardDownloadId, setDiscardDownloadId] = useState<string | null>(null);
 
   const refreshLocalModels = useCallback(async () => {
     setLocalLoading(true);
@@ -146,8 +154,10 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
     };
   }, [scan?.status]);
 
-  const runtimeBusy = ["preparing", "installing", "updating", "building", "downloading", "starting", "running", "stopping"].includes(snapshot.runtime.phase);
-  const downloadActive = snapshot.runtime.phase === "downloading";
+  const activeDownload = currentDownload(snapshot.downloads);
+  const pausedDownload = activeDownload ? null : resumableDownload(snapshot.downloads);
+  const runtimeBusy = Boolean(activeDownload) || ["preparing", "installing", "updating", "building", "downloading", "starting", "running", "stopping"].includes(snapshot.runtime.phase);
+  const downloadActive = Boolean(activeDownload);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleLocalModels = useMemo(() => localModels.filter((model) => {
     if (!normalizedQuery) return true;
@@ -220,21 +230,38 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
     }
   };
 
-  const beginDownload = async () => {
+  const beginDownload = async (variantId: string) => {
     if (!downloadModel) return;
     const selected = downloadModel;
     setDownloadModel(null);
-    await controller.action("Download model", "/api/models/download", { repository: selected.repository });
+    await controller.action("Download model", "/api/models/download", {
+      repository: selected.repository,
+      variantId
+    });
+    await controller.refresh();
   };
 
-  const downloadDestination = (model: CatalogModel) => {
-    const repository = model.repository.split("/").at(-1) ?? "model";
-    const filename = model.outputFile?.split("/").at(-1) ?? "model.gguf";
-    return `~/.dsbox/models/${repository}/${model.revision}/${filename}`;
+  const pauseDownload = async () => {
+    if (!activeDownload) return;
+    await controller.action("Pausing download", `/api/models/downloads/${activeDownload.id}/cancel`, { removePartials: false });
+    await controller.refresh();
+  };
+
+  const resumeDownload = async () => {
+    if (!pausedDownload) return;
+    await controller.action("Resuming download", `/api/models/downloads/${pausedDownload.id}/resume`);
+    await controller.refresh();
+  };
+
+  const discardDownload = async () => {
+    if (!discardDownloadId) return;
+    const id = discardDownloadId;
+    setDiscardDownloadId(null);
+    await controller.action("Cancelling download", `/api/models/downloads/${id}/cancel`, { removePartials: true });
+    await controller.refresh();
   };
 
   const diskFreeBytes = snapshot.metrics.at(-1)?.diskFreeBytes ?? 0;
-  const downloadFits = !downloadModel || diskFreeBytes <= 0 || downloadModel.totalBytes <= diskFreeBytes;
 
   return (
     <div className="models-page page-scroll">
@@ -250,12 +277,61 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
           </div>
         </div>
 
-        {downloadActive && (
-          <div className="model-task-banner" role="status">
+        {activeDownload && (
+          <section className="model-task-banner" aria-label="Active model download">
             <span className="model-task-banner__icon"><Download size={17} /></span>
-            <div><strong>Downloading model</strong><p>{snapshot.runtime.currentTask ?? "The download is resumable if you stop it."}</p></div>
-            <Button variant="secondary" icon={<CircleStop size={14} />} onClick={() => void controller.action("Stopping download", "/api/runtime/cancel-task").catch(() => undefined)}>Stop download</Button>
-          </div>
+            <div className="model-task-banner__body">
+              <div className="model-task-banner__head">
+                <div>
+                  <strong>{downloadStageLabel(activeDownload.stage)}</strong>
+                  <p>{activeDownload.label} · {activeDownload.variantLabel}</p>
+                </div>
+                <Badge tone="accent">Hugging Face</Badge>
+              </div>
+              <Progress
+                label={`${formatBytes(activeDownload.downloadedBytes, 1)} of ${formatBytes(activeDownload.totalBytes, 1)}`}
+                value={activeDownload.downloadedBytes}
+                max={activeDownload.totalBytes || 1}
+                valueText={`${Math.round((activeDownload.downloadedBytes / Math.max(activeDownload.totalBytes, 1)) * 100)}%`}
+                size="sm"
+              />
+              <div className="model-task-banner__meta">
+                <span>{activeDownload.speedBytesPerSecond > 0 ? `${formatBytes(activeDownload.speedBytesPerSecond, 1)}/s` : "Establishing connection…"}</span>
+                {formatDownloadEta(activeDownload.etaSeconds) && <span>{formatDownloadEta(activeDownload.etaSeconds)}</span>}
+                <span>{activeDownload.files.filter((file) => file.stage === "complete").length}/{activeDownload.files.length} files verified</span>
+              </div>
+            </div>
+            <div className="model-task-banner__actions">
+              <Button variant="secondary" icon={<Pause size={14} />} onClick={() => void pauseDownload().catch(() => undefined)}>Pause</Button>
+              <Button variant="ghost" icon={<Trash2 size={14} />} onClick={() => setDiscardDownloadId(activeDownload.id)}>Cancel</Button>
+            </div>
+          </section>
+        )}
+
+        {pausedDownload && (
+          <section className={`model-task-banner model-task-banner--${pausedDownload.stage}`} aria-label="Paused model download">
+            <span className="model-task-banner__icon"><Pause size={17} /></span>
+            <div className="model-task-banner__body">
+              <div className="model-task-banner__head">
+                <div>
+                  <strong>{downloadStageLabel(pausedDownload.stage)}</strong>
+                  <p>{pausedDownload.error ?? `${pausedDownload.label} · ${formatBytes(pausedDownload.downloadedBytes, 1)} kept on this Mac`}</p>
+                </div>
+              </div>
+              <Progress
+                label={`${formatBytes(pausedDownload.downloadedBytes, 1)} of ${formatBytes(pausedDownload.totalBytes, 1)}`}
+                value={pausedDownload.downloadedBytes}
+                max={pausedDownload.totalBytes || 1}
+                valueText={`${Math.round((pausedDownload.downloadedBytes / Math.max(pausedDownload.totalBytes, 1)) * 100)}%`}
+                tone={pausedDownload.stage === "error" ? "danger" : "neutral"}
+                size="sm"
+              />
+            </div>
+            <div className="model-task-banner__actions">
+              <Button variant="primary" icon={<Play size={14} />} onClick={() => void resumeDownload().catch(() => undefined)}>Resume</Button>
+              <Button variant="ghost" icon={<Trash2 size={14} />} onClick={() => setDiscardDownloadId(pausedDownload.id)}>Remove</Button>
+            </div>
+          </section>
         )}
 
         {filter !== "catalog" && filter !== "unsloth" && (
@@ -296,11 +372,15 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
                 <AnimatePresence initial={false}>
                   {visibleLocalModels.map((model) => {
                     const filename = model.path.split("/").at(-1) ?? model.name;
+                    const assessment = assessLocalModelHardware(model, {
+                      totalMemoryBytes: snapshot.system.totalMemoryBytes,
+                      diskFreeBytes
+                    });
                     return (
                       <motion.article key={model.path} layout initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={model.selected ? "local-result local-result--active" : "local-result"}>
                         <span className="local-result__icon"><FileBox size={17} /></span>
                         <div className="local-result__copy"><div><strong>{formatModelName(model.modelId)}</strong>{model.selected && <span className="active-chip"><i /> Active</span>}</div><span>{filename}</span><code title={model.path}>{model.path}</code></div>
-                        <div className="local-result__meta"><strong>{formatBytes(model.sizeBytes, 1)}</strong><span>GGUF detected</span></div>
+                        <div className="local-result__meta"><strong>{formatBytes(model.sizeBytes, 1)}</strong><span className={`model-advisor-label model-advisor-label--${assessment.performance.level}`} title={assessment.performance.explanation}>{assessment.performance.label}</span><small>{assessment.compatibility.label}</small></div>
                         <Button variant={model.selected ? "ghost" : "secondary"} icon={model.selected ? <Check size={14} /> : undefined} disabled={model.selected || runtimeBusy} loading={selectingPath === model.path} onClick={() => void useLocalModel(model)}>{model.selected ? "In use" : "Use"}</Button>
                       </motion.article>
                     );
@@ -317,10 +397,10 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
 
         {filter !== "local" && (
           <section className="catalog-section" aria-labelledby="catalog-title">
-            <div className="catalog-section__head"><div><span className="eyebrow">{filter === "unsloth" ? "Published by Unsloth · surfaced by DSBox" : filter === "catalog" ? "Published by andreaborio · selected by DSBox" : "Hugging Face sources · organized by DSBox"}</span><h2 id="catalog-title">{filter === "unsloth" ? "Unsloth models" : filter === "catalog" ? "DSBox catalog" : "Model sources"}</h2><p>{filter === "unsloth" ? "Choose among official Unsloth GGUF repositories. No download starts automatically." : "Downloads are always explicit, resumable, and pinned to a verified revision."}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
+            <div className="catalog-section__head"><div><span className="eyebrow">{filter === "unsloth" ? "Published by Unsloth · organized by DSBox" : filter === "catalog" ? "Published by andreaborio · selected by DSBox" : "Hugging Face sources · organized by DSBox"}</span><h2 id="catalog-title">{filter === "unsloth" ? "Unsloth models" : filter === "catalog" ? "DSBox catalog" : "Model sources"}</h2><p>{filter === "unsloth" ? "Choose and download complete GGUF variants without leaving DSBox." : "Downloads happen inside DSBox, resume after interruptions, and stay pinned to a specific revision."}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
 
             {catalogLoading ? (
-              <div className="models-empty models-empty--panel"><RefreshCw className="spin" size={17} /><div><strong>Loading the DSBox catalog</strong><p>No download has started.</p></div></div>
+              <div className="models-empty models-empty--panel"><RefreshCw className="spin" size={17} /><div><strong>Loading the DSBox catalog</strong><p>{downloadActive ? "Your current download continues while the catalog refreshes." : "No download has started."}</p></div></div>
             ) : catalogError ? (
               <div className="models-empty models-empty--panel models-empty--error"><AlertTriangle size={17} /><div><strong>Catalog unavailable</strong><p>{catalogError}</p></div><Button variant="secondary" onClick={() => void refreshCatalog(true)}>Try again</Button></div>
             ) : visibleCatalogModels.length ? (
@@ -331,22 +411,29 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
                   const active = snapshot.config.model.id === model.modelId && snapshot.config.model.path.includes(`/models/${repositoryName}/`);
                   const branchCompatible = !model.runtimeBranch || snapshot.config.repository.branch === model.runtimeBranch;
                   const memoryGb = snapshot.system.totalMemoryBytes / 1024 ** 3;
-                  const memoryCompatible = !model.minimumMemoryGb || memoryGb >= model.minimumMemoryGb;
-                  const selectable = model.installable && branchCompatible && memoryCompatible && model.totalBytes > 0 && !runtimeBusy;
-                  const unavailable = model.unavailableReason
+                  const defaultVariant = chooseDefaultCatalogVariant(model, snapshot.system.totalMemoryBytes);
+                  const assessedModel = defaultVariant ? catalogModelForVariant(model, defaultVariant) : model;
+                  const assessment = assessModelHardware(assessedModel, {
+                    totalMemoryBytes: snapshot.system.totalMemoryBytes,
+                    diskFreeBytes
+                  });
+                  const selectable = model.installable && branchCompatible && Boolean(defaultVariant) && !runtimeBusy;
+                  const unavailable = (!model.installable ? model.unavailableReason : null)
                     ?? (!branchCompatible ? `Requires the ${model.runtimeBranch} engine channel` : null)
-                    ?? (!memoryCompatible ? `Requires at least ${model.minimumMemoryGb} GB of unified memory` : null)
-                    ?? (!model.totalBytes ? "Download size unavailable" : null)
+                    ?? (!defaultVariant ? "No complete GGUF version is available" : null)
                     ?? (runtimeBusy ? "Turn off DSBox before changing models" : null);
                   return (
                     <article className={`${active ? "catalog-card catalog-card--active" : "catalog-card"} ${publisher === "unsloth" ? "catalog-card--unsloth" : ""}`} key={model.repository}>
                       <div className="catalog-card__head"><span className={`catalog-card__tile ${model.experimental ? "catalog-card__tile--experimental" : ""} ${publisher === "unsloth" ? "catalog-card__tile--unsloth" : ""}`}><Box size={22} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended"><Sparkles size={11} /> Recommended by DSBox</span>}{publisher === "unsloth" && <span className="source-chip">Unsloth</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
                       <p className="catalog-card__description">{model.description}</p>
-                      <div className="catalog-card__facts"><span>{model.totalBytes ? formatBytes(model.totalBytes, 0) : model.variantCount ? `${model.variantCount} quantizations` : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB minimum memory</span>}<span>{publisher === "unsloth" ? "Sharded GGUF variants" : model.files.length === 1 ? "Single GGUF" : `${model.files.length} files`}</span>{model.files[0]?.sha256 && <span>SHA-256 published</span>}</div>
-                      <div className="catalog-card__compatibility"><div><span>{publisher === "unsloth" ? "Choose for this Mac" : "Hardware declaration"}</span><strong>{publisher === "unsloth" ? `Select a quantization for ${Math.round(memoryGb)} GB unified memory` : model.minimumMemoryGb ? memoryCompatible ? `Fits this ${Math.round(memoryGb)} GB Mac` : `Needs ${model.minimumMemoryGb} GB` : "Not provided by the publisher"}</strong></div><ShieldCheck size={16} /></div>
+                      <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB publisher guidance</span>}<span>{defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF"}</span>{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
+                      <div className={`catalog-card__advisor catalog-card__advisor--${assessment.performance.level}`} title={assessment.performance.explanation}>
+                        <span className="catalog-card__advisor-icon" aria-hidden="true">{assessment.performance.level === "very-slow" || assessment.performance.level === "may-be-slow" ? <AlertTriangle size={15} /> : <HardDrive size={15} />}</span>
+                        <div><span>On this {Math.round(memoryGb)} GB Mac</span><strong>{assessment.performance.label}</strong></div>
+                        <Badge tone="neutral" icon={assessment.compatibility.status === "verified" ? <ShieldCheck size={12} /> : undefined}>{assessment.compatibility.label}</Badge>
+                      </div>
                       <div className="catalog-card__footer">
-                        {active ? <span className="catalog-card__active-label"><Check size={14} /> Ready on this Mac</span> : selectable ? <Button variant="primary" icon={<Download size={14} />} onClick={() => setDownloadModel(model)}>Download {formatBytes(model.totalBytes, 0)} and use</Button> : <span className="catalog-card__unavailable">{unavailable ?? "Manual installation only"}</span>}
-                        <a href={model.sourceUrl} target="_blank" rel="noopener noreferrer">{publisher === "unsloth" ? "Browse quantizations" : "View on Hugging Face"} <ExternalLink size={12} /></a>
+                        {active ? <span className="catalog-card__active-label"><Check size={14} /> Ready on this Mac</span> : selectable ? <Button variant="primary" icon={<Download size={14} />} onClick={() => setDownloadModel(model)}>{model.variantCount > 1 ? "Choose & download" : assessment.requiresAcknowledgement ? "Review download" : "Download & use"}</Button> : <span className="catalog-card__unavailable">{unavailable ?? "No downloadable version"}</span>}
                       </div>
                     </article>
                   );
@@ -360,13 +447,33 @@ export function ModelsView({ snapshot, controller, initialFilter = "all" }: Prop
         )}
       </div>
 
-      <Modal
-        open={Boolean(downloadModel)}
+      <ModelDownloadDialog
+        model={downloadModel}
+        totalMemoryBytes={snapshot.system.totalMemoryBytes}
+        diskFreeBytes={diskFreeBytes}
+        busy={controller.busyAction === "Download model"}
         onClose={() => setDownloadModel(null)}
-        title="Confirm model download"
-        footer={<><Button variant="ghost" onClick={() => setDownloadModel(null)}>Cancel</Button><Button variant="primary" icon={<Download size={14} />} disabled={!downloadFits} onClick={() => void beginDownload().catch(() => undefined)}>Download and use</Button></>}
+        onConfirm={beginDownload}
+      />
+
+      <Modal
+        open={Boolean(discardDownloadId)}
+        onClose={() => setDiscardDownloadId(null)}
+        title="Cancel this download?"
+        footer={(
+          <>
+            <Button variant="ghost" onClick={() => setDiscardDownloadId(null)}>Keep download</Button>
+            <Button variant="danger" icon={<Trash2 size={14} />} onClick={() => void discardDownload().catch(() => undefined)}>Cancel & remove files</Button>
+          </>
+        )}
       >
-        {downloadModel && <div className="catalog-confirm"><span className="catalog-confirm__icon"><Download size={21} /></span><div><strong>{downloadModel.label}</strong><p>This file will be downloaded from Hugging Face. DSBox will select it after verification, but it will not start the server.</p></div><dl><div><dt>Download</dt><dd>{formatBytes(downloadModel.totalBytes, 1)}</dd></div><div><dt>Free space</dt><dd>{diskFreeBytes ? formatBytes(diskFreeBytes, 1) : "Checking…"}</dd></div><div className="catalog-confirm__destination"><dt>Destination</dt><dd title={downloadDestination(downloadModel)}>{downloadDestination(downloadModel)}</dd></div><div><dt>Revision</dt><dd>{downloadModel.revision.slice(0, 12)}</dd></div></dl>{!downloadFits && <div className="branch-warning"><AlertTriangle size={15} /><p>There is not enough free space on the model volume for this download.</p></div>}<div className="catalog-confirm__notice"><ShieldCheck size={15} /><p>The download starts only after you confirm it here. It is resumable and can be stopped at any time.</p></div></div>}
+        <div className="model-download-cancel-copy">
+          <span><Trash2 size={18} /></span>
+          <div>
+            <strong>Partial files will be deleted</strong>
+            <p>Pause instead if you want to continue later without downloading the same bytes again.</p>
+          </div>
+        </div>
       </Modal>
     </div>
   );

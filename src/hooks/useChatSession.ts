@@ -33,3 +33,14 @@ export function useChatStreaming(): boolean {
     () => false
   );
 }
+
+export function useActiveChatTitle(): string {
+  return useSyncExternalStore(
+    chatSessionStore.subscribe,
+    () => {
+      const snapshot = chatSessionStore.getSnapshot();
+      return snapshot.threads.find((thread) => thread.id === snapshot.activeThreadId)?.title ?? "New chat";
+    },
+    () => "New chat"
+  );
+}

@@ -67,6 +67,7 @@ describe("persistent chat session", () => {
     expect(assistant.pending).toBe(false);
     expect(assistant.stats).toMatchObject({
       promptTokens: 100,
+      cachedPromptTokens: null,
       completionTokens: 10,
       reasoningTokens: 4,
       totalTokens: 110,
@@ -77,6 +78,115 @@ describe("persistent chat session", () => {
       prefillTokensPerSecond: 200,
       averageTokensPerSecond: 10,
       timingSource: "server"
+    });
+  });
+
+  it("does not inflate decode speed by excluding the thinking interval", async () => {
+    let streamController!: ReadableStreamDefaultController<Uint8Array>;
+    let currentTime = 1_000;
+    const fetcher = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) { streamController = controller; }
+    }), { status: 200, headers: { "content-type": "text/event-stream" } }));
+    const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), now: () => currentTime, createId: ids() });
+
+    const completion = store.send({ content: "Think, then answer", model: "test", maxTokens: 32 });
+    await vi.waitFor(() => expect(store.getSnapshot().streaming).toBe(true));
+    currentTime = 1_800;
+    streamController.enqueue(frame({ choices: [{ delta: { reasoning_content: "reasoning" } }] }));
+    await vi.waitFor(() => expect(store.getSnapshot().messages.at(-1)?.reasoning).toBe("reasoning"));
+    currentTime = 3_000;
+    streamController.enqueue(frame({ choices: [{ delta: { content: "answer" } }] }));
+    await vi.waitFor(() => expect(store.getSnapshot().messages.at(-1)?.content).toBe("answer"));
+    streamController.enqueue(frame({
+      choices: [],
+      usage: { prompt_tokens: 100, completion_tokens: 12, total_tokens: 112 }
+    }));
+    currentTime = 4_200;
+    streamController.close();
+    await completion;
+
+    expect(store.getSnapshot().messages.at(-1)?.stats).toMatchObject({
+      prefillMs: 800,
+      thinkingMs: 1_200,
+      decodeMs: 2_400,
+      averageTokensPerSecond: 5,
+      timingSource: "end-to-end"
+    });
+  });
+
+  it("uses only uncached DS4 prompt tokens for estimated prefill throughput", async () => {
+    let currentTime = 1_000;
+    const fetcher = vi.fn(async () => {
+      currentTime = 2_000;
+      return new Response(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "done" } }] })}\n\ndata: ${JSON.stringify({
+          choices: [],
+          usage: {
+            prompt_tokens: 1_000,
+            completion_tokens: 1,
+            total_tokens: 1_001,
+            prompt_tokens_details: { cached_tokens: 900, cache_write_tokens: 100 }
+          }
+        })}\n\ndata: [DONE]\n\n`,
+        { status: 200, headers: { "content-type": "text/event-stream" } }
+      );
+    });
+    const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), now: () => currentTime, createId: ids() });
+
+    await store.send({ content: "Continue the cached chat", model: "test", maxTokens: 32 });
+
+    expect(store.getSnapshot().messages.at(-1)?.stats).toMatchObject({
+      promptTokens: 1_000,
+      cachedPromptTokens: 900,
+      prefillMs: 1_000,
+      prefillTokensPerSecond: 100
+    });
+  });
+
+  it("repairs persisted answer-only decode estimates from older builds", () => {
+    const storage = new MemoryStorage();
+    storage.setItem("dsbox:chat-threads:v1", JSON.stringify({
+      version: 1,
+      activeThreadId: "thread-1",
+      threads: [{
+        id: "thread-1",
+        title: "Old stats",
+        createdAt: 1_000,
+        updatedAt: 4_200,
+        messages: [{
+          id: "assistant-1",
+          role: "assistant",
+          content: "answer",
+          reasoning: "reasoning",
+          stats: {
+            startedAt: 1_000,
+            firstTokenAt: 1_800,
+            reasoningStartedAt: 1_800,
+            answerStartedAt: 3_000,
+            completedAt: 4_200,
+            promptTokens: 100,
+            completionTokens: 12,
+            reasoningTokens: null,
+            totalTokens: 112,
+            prefillMs: 800,
+            thinkingMs: 1_200,
+            decodeMs: 1_200,
+            totalMs: 3_200,
+            webSearchMs: null,
+            prefillTokensPerSecond: 125,
+            averageTokensPerSecond: 10,
+            timingSource: "end-to-end"
+          }
+        }]
+      }]
+    }));
+
+    const restored = new ChatSessionStore({ storage, createId: ids() });
+
+    expect(restored.getSnapshot().messages[0]?.stats).toMatchObject({
+      cachedPromptTokens: null,
+      decodeMs: 2_400,
+      averageTokensPerSecond: 5
     });
   });
 

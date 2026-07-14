@@ -136,6 +136,22 @@ export interface CatalogModelFile {
   sha256: string | null;
 }
 
+export interface CatalogModelAssembly {
+  type: "concatenate";
+  outputFile: string;
+}
+
+export interface CatalogModelVariant {
+  id: string;
+  label: string;
+  files: CatalogModelFile[];
+  outputFile: string;
+  totalBytes: number;
+  installable: boolean;
+  unavailableReason: string | null;
+  assembly: CatalogModelAssembly | null;
+}
+
 export type CatalogPublisher = "andreaborio" | "unsloth";
 
 export interface CatalogSource {
@@ -164,6 +180,53 @@ export interface CatalogModel {
   sourceUrl: string;
   unavailableReason: string | null;
   variantCount: number;
+  variants: CatalogModelVariant[];
+  /** Optional catalog metadata. Unknown architectures remain user-selectable. */
+  architecture?: "moe" | "dense" | "unknown" | null;
+}
+
+export type ModelDownloadStage =
+  | "queued"
+  | "preflighting"
+  | "downloading"
+  | "verifying"
+  | "ready"
+  | "paused"
+  | "cancelled"
+  | "error";
+
+export type ModelDownloadFileStage = "pending" | "downloading" | "verifying" | "complete" | "error";
+
+export interface ModelDownloadFileSnapshot extends CatalogModelFile {
+  downloadedBytes: number;
+  stage: ModelDownloadFileStage;
+}
+
+export interface ModelDownloadSnapshot {
+  id: string;
+  repository: string;
+  revision: string;
+  variantId: string;
+  variantLabel: string;
+  modelId: string;
+  label: string;
+  stage: ModelDownloadStage;
+  files: ModelDownloadFileSnapshot[];
+  outputFile: string;
+  totalBytes: number;
+  downloadedBytes: number;
+  speedBytesPerSecond: number;
+  etaSeconds: number | null;
+  destinationDirectory: string;
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  error: string | null;
+  disk: {
+    availableBytes: number | null;
+    requiredBytes: number;
+    shortfallBytes: number;
+  };
 }
 
 export interface CatalogResponse {
@@ -211,9 +274,16 @@ export interface NativeModelSelectionResult {
   model: LocalModelCandidate | null;
 }
 
+export interface LocalModelSwitchResult {
+  model: LocalModelCandidate;
+  changed: boolean;
+  restarted: boolean;
+}
+
 export interface AppSnapshot {
   config: DsboxConfig;
   runtime: RuntimeState;
+  downloads: ModelDownloadSnapshot[];
   metrics: MetricSample[];
   logs: LogEntry[];
   activity: InferenceActivity;
@@ -226,7 +296,8 @@ export type ServerEvent =
   | { type: "metrics"; payload: MetricSample }
   | { type: "log"; payload: LogEntry }
   | { type: "activity"; payload: InferenceActivity }
-  | { type: "config"; payload: DsboxConfig };
+  | { type: "config"; payload: DsboxConfig }
+  | { type: "download"; payload: ModelDownloadSnapshot };
 
 export interface ChatMessage {
   id: string;
@@ -255,6 +326,7 @@ export interface ChatResponseStats {
   answerStartedAt: number | null;
   completedAt: number | null;
   promptTokens: number | null;
+  cachedPromptTokens: number | null;
   completionTokens: number | null;
   reasoningTokens: number | null;
   totalTokens: number | null;

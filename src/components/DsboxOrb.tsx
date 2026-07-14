@@ -1,29 +1,23 @@
-export type DsboxOrbState = "off" | "ready" | "preparing" | "prefill" | "thinking" | "decode" | "error";
+export type DsboxOrbState = "prefill" | "thinking" | "decode";
 
 const labels: Record<DsboxOrbState, string> = {
-  off: "DSBox is off",
-  ready: "DSBox is ready",
-  preparing: "DSBox is preparing",
   prefill: "DSBox is processing context",
   thinking: "DSBox is thinking",
-  decode: "DSBox is generating a response",
-  error: "DSBox needs attention"
+  decode: "DSBox is generating a response"
 };
 
 export function DsboxOrb({
   state,
-  size = "md",
   className = "",
   decorative = false
 }: {
   state: DsboxOrbState;
-  size?: "sm" | "md" | "hero";
   className?: string;
   decorative?: boolean;
 }) {
   return (
     <span
-      className={`dsbox-orb dsbox-orb--${size} dsbox-orb--${state} ${className}`}
+      className={`dsbox-orb dsbox-orb--${state} ${className}`}
       role={decorative ? undefined : "img"}
       aria-hidden={decorative || undefined}
       aria-label={decorative ? undefined : labels[state]}

@@ -12,6 +12,7 @@ import type {
   CatalogModel,
   LocalModelCandidate,
   LocalModelScanSnapshot,
+  LocalModelSwitchResult,
   LogEntry,
   NativeModelSelectionResult,
   RuntimeState
@@ -38,6 +39,18 @@ const fallbackModelVariables: Record<string, string> = {
   "q4-imatrix": "Q4_IMATRIX_FILE",
   "pro-q2-imatrix": "PRO_Q2_IMATRIX_FILE"
 };
+
+const localModelInventoryVersion = 1;
+
+interface LocalModelInventoryRecord {
+  path: string;
+  modelId: string;
+}
+
+interface LocalModelInventoryDocument {
+  version: typeof localModelInventoryVersion;
+  models: LocalModelInventoryRecord[];
+}
 
 export function parseFallbackModelFilename(script: string, variant: string): string | null {
   const variable = fallbackModelVariables[variant];
@@ -92,12 +105,24 @@ export function isTaskCancelledError(error: unknown): error is TaskCancelledErro
 }
 
 export class ModelSelectionError extends Error {
-  readonly status: 400 | 409;
+  readonly status: 400 | 409 | 500;
 
-  constructor(message: string, status: 400 | 409 = 400) {
+  constructor(message: string, status: 400 | 409 | 500 = 400) {
     super(message);
     this.name = "ModelSelectionError";
     this.status = status;
+  }
+}
+
+export class ModelSwitchError extends ModelSelectionError {
+  readonly rolledBack: boolean;
+  readonly runtimeRestored: boolean;
+
+  constructor(message: string, rolledBack: boolean, runtimeRestored: boolean) {
+    super(message, 500);
+    this.name = "ModelSwitchError";
+    this.rolledBack = rolledBack;
+    this.runtimeRestored = runtimeRestored;
   }
 }
 
@@ -179,10 +204,12 @@ export class RuntimeManager {
   private stopping = false;
   private startPending = false;
   private modelSelectionPending = false;
+  private modelSwitchPending = false;
   private modelPickerPending = false;
   private localModelScan = structuredClone(initialLocalModelScan);
   private localModelScanController: AbortController | null = null;
   private nextLocalModelScanId = 1;
+  private localModelInventoryQueue: Promise<void> = Promise.resolve();
   private readonly cancelledTasks = new WeakSet<ManagedChild>();
   private automaticMemoryGuard: {
     baselineSwapoutPages: number;
@@ -213,6 +240,10 @@ export class RuntimeManager {
 
   hasTask(): boolean {
     return this.task !== null;
+  }
+
+  isSwitchingModel(): boolean {
+    return this.modelSwitchPending;
   }
 
   private async darwinMemorySafetySnapshot(): Promise<{
@@ -359,11 +390,11 @@ export class RuntimeManager {
   }
 
   private modelChangeBlocked(): boolean {
-    return Boolean(this.task || this.engine || this.startPending || this.state.phase === "preparing");
+    return Boolean(this.task || this.engine || this.startPending || this.modelSwitchPending || this.state.phase === "preparing");
   }
 
   prepareOneClickStart(): void {
-    if (this.engine || this.task || this.startPending || this.modelSelectionPending || this.state.phase === "preparing") throw new Error("DSBox is already working");
+    if (this.engine || this.task || this.startPending || this.modelSelectionPending || this.modelSwitchPending || this.state.phase === "preparing") throw new Error("DSBox is already working");
     this.setState({
       phase: "preparing",
       readiness: "offline",
@@ -610,7 +641,7 @@ export class RuntimeManager {
   }
 
   async installOrUpdate(): Promise<void> {
-    if (this.task || this.engine) throw new Error("Stop the runtime before updating");
+    if (this.task || this.engine || this.modelSwitchPending) throw new Error("Stop the runtime before updating");
     const config = this.store.get();
     const directory = config.repository.directory;
     const installed = await this.pathExists(path.join(directory, ".git"));
@@ -682,7 +713,7 @@ export class RuntimeManager {
   }
 
   async build(): Promise<void> {
-    if (this.task || this.engine) throw new Error("Stop the runtime before building");
+    if (this.task || this.engine || this.modelSwitchPending) throw new Error("Stop the runtime before building");
     const config = this.store.get();
     if (!(await this.pathExists(path.join(config.repository.directory, ".git")))) {
       throw new Error("Install or select a ds4 checkout first");
@@ -744,7 +775,7 @@ export class RuntimeManager {
     };
     const allowed = new Set(Object.keys(estimatedSizesGb));
     if (!allowed.has(variant)) throw new Error("This model variant is not supported by the launcher");
-    if (this.task || this.engine) throw new Error("Stop the runtime before downloading a model");
+    if (this.task || this.engine || this.modelSwitchPending) throw new Error("Stop the runtime before downloading a model");
     const config = this.store.get();
     const script = path.join(config.repository.directory, "download_model.sh");
     if (!(await this.pathExists(script))) throw new Error("download_model.sh was not found: install the fork first");
@@ -826,114 +857,102 @@ export class RuntimeManager {
     this.log("success", "git", "DS4 engine updated and rebuilt for the selected model.");
   }
 
-  async downloadCatalogModel(model: CatalogModel): Promise<void> {
-    if (!["andreaborio", "unsloth"].some((publisher) => model.repository.startsWith(`${publisher}/`))) {
-      throw new Error("The catalog only accepts models from configured Hugging Face sources");
-    }
-    if (!model.installable || !model.outputFile || model.files.length !== 1) {
-      throw new Error(model.unavailableReason || "This model does not support automatic installation yet");
-    }
-    if (this.task || this.engine) throw new Error("Turn off DS4 before changing models");
-    if (!/^[a-f0-9]{40,64}$/i.test(model.revision)) throw new Error("Invalid Hugging Face revision");
-    const config = this.store.get();
-    if (model.runtimeBranch && model.runtimeBranch !== config.repository.branch) {
-      throw new Error(`This model requires the ${model.runtimeBranch} channel`);
-    }
-    if (model.runtimeBranch && await this.pathExists(path.join(config.repository.directory, ".git"))) {
-      const actualBranch = await execFileAsync("git", ["branch", "--show-current"], { cwd: config.repository.directory })
-        .then((result) => result.stdout.trim())
-        .catch(() => "");
-      if (actualBranch && actualBranch !== model.runtimeBranch) {
-        throw new Error(`The installed engine uses the ${actualBranch} channel; this model requires ${model.runtimeBranch}`);
-      }
-    }
-    await this.ensureCatalogRuntime(model);
-    const filename = path.basename(model.outputFile);
-    if (!filename.toLowerCase().endsWith(".gguf")) throw new Error("The selected file is not a GGUF");
-    const repositoryName = model.repository.split("/").at(-1)!;
-    const destinationDirectory = path.join(this.store.homeDirectory, "models", repositoryName, model.revision);
-    const destination = path.join(destinationDirectory, filename);
-    const partial = `${destination}.partial`;
-    await mkdir(destinationDirectory, { recursive: true, mode: 0o700 });
-
-    const expectedBytes = model.files[0]?.sizeBytes ?? 0;
-    const expectedSha256 = model.files[0]?.sha256?.toLowerCase() ?? null;
-    let partialBytes = 0;
-    try {
-      partialBytes = (await stat(partial)).size;
-    } catch {
-      // No resumable partial yet.
-    }
-    await this.ensureDiskSpace(destinationDirectory, Math.max(0, expectedBytes - partialBytes));
-    try {
-      const existing = await stat(destination);
-      const sizeMatches = !expectedBytes || existing.size === expectedBytes;
-      const checksumMatches = sizeMatches && (!expectedSha256 || await this.sha256(destination) === expectedSha256);
-      if (checksumMatches) {
-        const next = this.store.get();
-        next.model.path = destination;
-        next.model.id = model.modelId;
-        const saved = await this.store.set(next);
-        this.bus.publish({ type: "config", payload: saved });
-        this.log("success", "dsbox", `${model.label} is already available on this Mac.`);
-        await this.refresh();
-        return;
-      }
-      this.log("warn", "download", "The local file does not match the catalog revision and will be downloaded again.");
-    } catch {
-      // Download or resume below.
-    }
-
-    this.setState({ phase: "downloading", currentTask: `Downloading ${model.label}`, lastError: null });
-    try {
-      const encodedRepository = model.repository.split("/").map(encodeURIComponent).join("/");
-      const encodedFile = model.outputFile.split("/").map(encodeURIComponent).join("/");
-      const url = `https://huggingface.co/${encodedRepository}/resolve/${encodeURIComponent(model.revision)}/${encodedFile}?download=true`;
-      await this.runTask(
-        "/usr/bin/curl",
-        ["--location", "--fail", "--retry", "4", "--retry-delay", "2", "--continue-at", "-", "--output", partial, url],
-        destinationDirectory,
-        "download"
-      );
-      const completed = await stat(partial);
-      if (expectedBytes && completed.size !== expectedBytes) {
-        throw new Error(`Incomplete download: received ${completed.size} bytes, expected ${expectedBytes}`);
-      }
-      if (expectedSha256) {
-        const actualSha256 = await this.sha256(partial);
-        if (actualSha256 !== expectedSha256) {
-          await rename(partial, `${partial}.corrupt-${Date.now()}`);
-          throw new Error("Invalid model SHA-256 checksum; the incomplete file was isolated");
-        }
-      }
-      await rename(partial, destination);
-      const next = this.store.get();
-      next.model.path = destination;
-      next.model.id = model.modelId;
-      const saved = await this.store.set(next);
-      this.bus.publish({ type: "config", payload: saved });
-      this.log("success", "dsbox", `${model.label} is ready.`);
-      this.setState({ phase: "idle", currentTask: null, lastError: null });
-    } catch (error) {
-      if (isTaskCancelledError(error)) {
-        this.log("info", "dsbox", "Download cancelled. The partial file is preserved for resuming later.");
-        this.setState({ phase: "idle", currentTask: null, lastError: null });
-        throw error;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      this.log("error", "dsbox", message);
-      this.setState({ phase: "error", currentTask: null, lastError: message });
-      throw error;
-    } finally {
-      await this.refresh();
-    }
-  }
-
   private inferLocalModelId(filePath: string): string {
     const filename = path.basename(filePath, path.extname(filePath));
     if (/glm[-_. ]?5[._-]?2/i.test(filename) || /glm52/i.test(filename)) return "glm-5.2";
     if (/deepseek[-_. ]?v?4/i.test(filename)) return "deepseek-v4-flash";
     return filename.slice(0, 160) || "local-model";
+  }
+
+  private get localModelInventoryPath(): string {
+    return path.join(this.store.homeDirectory, "local-models.json");
+  }
+
+  private async readLocalModelInventory(): Promise<LocalModelInventoryRecord[]> {
+    try {
+      const parsed = JSON.parse(await readFile(this.localModelInventoryPath, "utf8")) as Partial<LocalModelInventoryDocument>;
+      if (parsed.version !== localModelInventoryVersion || !Array.isArray(parsed.models)) return [];
+      return parsed.models.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        const candidate = entry as Partial<LocalModelInventoryRecord>;
+        if (
+          typeof candidate.path !== "string"
+          || !path.isAbsolute(candidate.path)
+          || !candidate.path.toLowerCase().endsWith(".gguf")
+          || typeof candidate.modelId !== "string"
+          || !candidate.modelId.trim()
+          || candidate.modelId.length > 160
+        ) return [];
+        return [{ path: path.resolve(candidate.path), modelId: candidate.modelId.trim() }];
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) return [];
+      throw error;
+    }
+  }
+
+  private async writeLocalModelInventory(records: LocalModelInventoryRecord[]): Promise<void> {
+    const models = [...records]
+      .sort((left, right) => left.path.localeCompare(right.path));
+    const document: LocalModelInventoryDocument = { version: localModelInventoryVersion, models };
+    const serialized = `${JSON.stringify(document, null, 2)}\n`;
+    try {
+      if (await readFile(this.localModelInventoryPath, "utf8") === serialized) return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await mkdir(this.store.homeDirectory, { recursive: true });
+    const temporaryPath = `${this.localModelInventoryPath}.tmp`;
+    await writeFile(temporaryPath, serialized, { mode: 0o600 });
+    await rename(temporaryPath, this.localModelInventoryPath);
+  }
+
+  private queueLocalModelInventory<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.localModelInventoryQueue.then(operation, operation);
+    this.localModelInventoryQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  /**
+   * Reconcile known paths under one serialized transaction. Every entry is
+   * re-opened before it is written, so deleted, unreadable, corrupt, or
+   * incomplete multipart GGUF files are pruned instead of becoming stale UI.
+   */
+  private reconcileLocalModelInventory(incoming: LocalModelCandidate[]): Promise<LocalModelCandidate[]> {
+    return this.queueLocalModelInventory(async () => {
+      const config = this.store.get();
+      const selectedPath = path.resolve(config.model.path);
+      const records = await this.readLocalModelInventory();
+      const known = new Map<string, LocalModelInventoryRecord>();
+      for (const record of records) known.set(path.resolve(record.path), record);
+      for (const candidate of incoming) {
+        const candidatePath = path.resolve(candidate.path);
+        known.set(candidatePath, { path: candidatePath, modelId: candidate.modelId });
+      }
+
+      const validated: LocalModelCandidate[] = [];
+      for (const record of known.values()) {
+        const candidate = await this.inspectLocalModel(record.path, selectedPath);
+        if (!candidate) continue;
+        validated.push({
+          ...candidate,
+          modelId: candidate.selected ? config.model.id : record.modelId
+        });
+      }
+      if (!known.has(selectedPath)) {
+        const selected = await this.inspectLocalModel(selectedPath, selectedPath);
+        if (selected) validated.push({ ...selected, modelId: config.model.id, selected: true });
+      }
+
+      const unique = new Map<string, LocalModelCandidate>();
+      for (const candidate of validated) unique.set(candidate.path, candidate);
+      const models = [...unique.values()];
+      await this.writeLocalModelInventory(models.map((candidate) => ({
+        path: candidate.path,
+        modelId: candidate.modelId
+      })));
+      return models;
+    });
   }
 
   private async inspectLocalModel(filePath: string, selectedPath: string): Promise<LocalModelCandidate | null> {
@@ -987,62 +1006,11 @@ export class RuntimeManager {
 
   async discoverLocalModels(): Promise<LocalModelCandidate[]> {
     const config = this.store.get();
-    const userHome = process.env.NODE_ENV === "test" ? path.dirname(this.store.homeDirectory) : homedir();
-    const rawRoots = [
-      path.dirname(config.model.path),
-      path.join(this.store.homeDirectory, "models"),
-      path.join(userHome, "Downloads"),
-      path.join(userHome, "Beep"),
-      path.join(userHome, "Models"),
-      path.join(userHome, ".cache", "huggingface", "hub"),
-      path.join(userHome, "Documents")
-    ].map((root) => path.resolve(root));
-    const roots = [...new Set(rawRoots)];
     const candidates: LocalModelCandidate[] = [];
-    const seen = new Set<string>();
-    const seenDirectories = new Set<string>();
-    const skippedDirectories = new Set([".git", "node_modules", "dist", "dist-server", "build", ".cache"]);
-    const deadline = Date.now() + 2_500;
-    let scannedEntries = 0;
-
     const selected = await this.inspectLocalModel(config.model.path, config.model.path);
-    if (selected) {
-      candidates.push(selected);
-      seen.add(selected.path);
-    }
-
-    const visit = async (directory: string, depth: number): Promise<void> => {
-      if (depth > 5 || candidates.length >= 120 || scannedEntries >= 5_000 || Date.now() >= deadline) return;
-      const absoluteDirectory = path.resolve(directory);
-      if (seenDirectories.has(absoluteDirectory)) return;
-      seenDirectories.add(absoluteDirectory);
-      let entries;
-      try {
-        entries = await readdir(absoluteDirectory, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        scannedEntries += 1;
-        if (candidates.length >= 120 || scannedEntries >= 5_000 || Date.now() >= deadline) break;
-        const candidatePath = path.join(absoluteDirectory, entry.name);
-        if (entry.isDirectory()) {
-          if (!entry.name.startsWith(".") && !skippedDirectories.has(entry.name)) {
-            await visit(candidatePath, depth + 1);
-          }
-          continue;
-        }
-        if (!entry.name.toLowerCase().endsWith(".gguf")) continue;
-        const absolutePath = path.resolve(candidatePath);
-        if (seen.has(absolutePath)) continue;
-        seen.add(absolutePath);
-        const candidate = await this.inspectLocalModel(absolutePath, config.model.path);
-        if (candidate) candidates.push(candidate);
-      }
-    };
-
-    for (const root of roots) await visit(root, 0);
-    return candidates.sort((left, right) => Number(right.selected) - Number(left.selected) || right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name));
+    if (selected) candidates.push({ ...selected, modelId: config.model.id });
+    const models = await this.reconcileLocalModelInventory(candidates);
+    return models.sort((left, right) => Number(right.selected) - Number(left.selected) || right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name));
   }
 
   getLocalModelScan(): LocalModelScanSnapshot {
@@ -1270,6 +1238,7 @@ export class RuntimeManager {
         seenPaths.add(absolutePath);
         inspected += 1;
         const candidate = await this.inspectLocalModel(absolutePath, config.model.path);
+        if (signal.aborted) throw scanAbortError();
         if (candidate) {
           usable += 1;
           addModel(candidate);
@@ -1305,6 +1274,8 @@ export class RuntimeManager {
         });
         const usable = await validatePaths(spotlight.paths);
         if (usable > 0) {
+          if (signal.aborted) throw scanAbortError();
+          await this.reconcileLocalModelInventory(models);
           if (spotlight.truncated) warning = "Spotlight returned more than 1,000 GGUF paths. Use Finder if your model is not listed.";
           this.updateLocalModelScan(scanId, {
             status: "complete",
@@ -1333,6 +1304,8 @@ export class RuntimeManager {
         progress: { candidateFiles: fallback.paths.length }
       });
       await validatePaths(fallback.paths);
+      if (signal.aborted) throw scanAbortError();
+      await this.reconcileLocalModelInventory(models);
       if (fallback.truncated) {
         warning = "The disk scan reached its safety limit; use Finder if your model is not listed.";
       }
@@ -1347,16 +1320,21 @@ export class RuntimeManager {
       });
     } catch (error) {
       if (signal.aborted || (error instanceof Error && error.name === "AbortError")) {
-        if (this.localModelScan.status === "scanning") {
-          this.updateLocalModelScan(scanId, {
-            status: "cancelled",
-            stage: "idle",
-            completedAt: new Date().toISOString(),
-            models: sortedModels(),
-            error: null,
-            progress: { modelsFound: models.length }
-          });
+        let warning = this.localModelScan.warning;
+        try {
+          await this.reconcileLocalModelInventory(models);
+        } catch {
+          warning = "The scan stopped, but DSBox could not save the models found before cancellation.";
         }
+        this.updateLocalModelScan(scanId, {
+          status: "cancelled",
+          stage: "idle",
+          completedAt: new Date().toISOString(),
+          models: sortedModels(),
+          warning,
+          error: null,
+          progress: { modelsFound: models.length }
+        });
         return;
       }
       this.updateLocalModelScan(scanId, {
@@ -1431,17 +1409,140 @@ export class RuntimeManager {
       if (this.modelChangeBlocked()) {
         throw new ModelSelectionError("DSBox started another operation; try again after it is turned off", 409);
       }
-      const next = this.store.get();
-      next.model.path = candidate.path;
-      next.model.id = modelId?.trim() || candidate.modelId;
-      const saved = await this.store.set(next);
-      this.bus.publish({ type: "config", payload: saved });
+      const saved = await this.persistLocalModel(candidate, modelId?.trim() || candidate.modelId);
       this.log("success", "dsbox", `${candidate.name} selected from this Mac. No download required.`);
       this.setState({ phase: this.state.installed ? "idle" : "uninstalled", currentTask: null, lastError: null, readiness: "offline" });
       await this.refresh();
       return { ...candidate, modelId: saved.model.id, selected: true };
     } finally {
       this.modelSelectionPending = false;
+    }
+  }
+
+  private async persistLocalModel(candidate: LocalModelCandidate, modelId: string) {
+    const next = this.store.get();
+    next.model.path = candidate.path;
+    next.model.id = modelId;
+    const saved = await this.store.set(next);
+    this.bus.publish({ type: "config", payload: saved });
+    try {
+      await this.reconcileLocalModelInventory([{ ...candidate, modelId, selected: true }]);
+    } catch (error) {
+      this.log("warn", "dsbox", `The model was selected, but its local inventory entry could not be saved: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return saved;
+  }
+
+  async rememberLocalModel(filePath: string, modelId?: string): Promise<LocalModelCandidate | null> {
+    const config = this.store.get();
+    const candidate = await this.inspectLocalModel(filePath, config.model.path);
+    if (!candidate) return null;
+    const models = await this.reconcileLocalModelInventory([{
+      ...candidate,
+      modelId: modelId?.trim() || candidate.modelId
+    }]);
+    return models.find((model) => model.path === candidate.path) ?? null;
+  }
+
+  async switchLocalModel(filePath: string, modelId?: string): Promise<LocalModelSwitchResult> {
+    const running = Boolean(this.engine) && this.state.phase === "running";
+    const engineInTransition = Boolean(this.engine) && !running;
+    if (
+      this.modelSwitchPending
+      || this.modelSelectionPending
+      || this.task
+      || this.startPending
+      || this.stopping
+      || this.state.phase === "preparing"
+      || engineInTransition
+    ) {
+      throw new ModelSelectionError("Wait for the current DSBox operation to finish before switching models", 409);
+    }
+    if (!path.isAbsolute(filePath)) throw new ModelSelectionError("DSBox did not receive a valid model location");
+
+    this.modelSwitchPending = true;
+    const previous = this.store.get();
+    try {
+      const candidate = await this.inspectLocalModel(filePath, filePath);
+      if (!candidate) throw new ModelSelectionError("This file does not exist or is not a readable GGUF");
+      const requestedModelId = modelId?.trim();
+      if (requestedModelId && requestedModelId.length > 160) {
+        throw new ModelSelectionError("The model ID must be 160 characters or fewer");
+      }
+      const nextModelId = requestedModelId || candidate.modelId;
+      if (candidate.path === path.resolve(previous.model.path) && nextModelId === previous.model.id) {
+        return { model: { ...candidate, modelId: nextModelId, selected: true }, changed: false, restarted: false };
+      }
+
+      try {
+        if (running) {
+          await this.stopEngine();
+          if (this.engine) throw new Error("The previous DS4 process did not finish shutting down");
+        }
+
+        const saved = await this.persistLocalModel(candidate, nextModelId);
+        this.setState({
+          phase: this.state.installed ? "idle" : "uninstalled",
+          readiness: "offline",
+          currentTask: null,
+          lastError: null
+        });
+        await this.refresh();
+        if (running) await this.startManaged(true);
+        this.log(
+          "success",
+          "dsbox",
+          running
+            ? `${candidate.name} selected. DS4 is restarting with the new model.`
+            : `${candidate.name} selected. It will be used the next time DS4 starts.`
+        );
+        return {
+          model: { ...candidate, modelId: saved.model.id, selected: true },
+          changed: true,
+          restarted: running
+        };
+      } catch (error) {
+        const current = this.store.get();
+        const configNeedsRollback = current.model.path !== previous.model.path || current.model.id !== previous.model.id;
+        let rolledBack = !configNeedsRollback;
+        let runtimeRestored = running && Boolean(this.engine) && this.state.phase === "running";
+        const rollbackFailures: string[] = [];
+
+        if (configNeedsRollback) {
+          try {
+            const restored = await this.store.set(previous);
+            this.bus.publish({ type: "config", payload: restored });
+            await this.refresh();
+            rolledBack = true;
+          } catch (rollbackError) {
+            rollbackFailures.push(`configuration rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
+          }
+        }
+
+        if (running && !this.engine && rolledBack) {
+          try {
+            await this.startManaged(true);
+            runtimeRestored = true;
+          } catch (restartError) {
+            rollbackFailures.push(`previous model could not restart: ${restartError instanceof Error ? restartError.message : String(restartError)}`);
+          }
+        }
+        if (running && this.engine && !runtimeRestored) {
+          rollbackFailures.push("the previous runtime is still shutting down");
+        }
+
+        const reason = (error instanceof Error ? error.message : String(error)).replace(/[.\s]+$/, "");
+        const recovery = rollbackFailures.length
+          ? ` Recovery was incomplete (${rollbackFailures.join("; ")}).`
+          : running
+            ? " The previous model selection was restored and DS4 was relaunched."
+            : " The previous model selection was restored.";
+        const message = `Could not switch to ${candidate.name}: ${reason}.${recovery}`;
+        this.log("error", "dsbox", message);
+        throw new ModelSwitchError(message, rolledBack, runtimeRestored);
+      }
+    } finally {
+      this.modelSwitchPending = false;
     }
   }
 
@@ -1519,8 +1620,10 @@ export class RuntimeManager {
     }
   }
 
-  async start(): Promise<void> {
-    if (this.engine || this.task || this.startPending || this.modelSelectionPending) throw new Error("A DS4 process or operation is already active");
+  private async startManaged(modelSwitch = false): Promise<void> {
+    if (this.engine || this.task || this.startPending || this.modelSelectionPending || (this.modelSwitchPending && !modelSwitch)) {
+      throw new Error("A DS4 process or operation is already active");
+    }
     this.startPending = true;
     try {
       await this.startEngine();
@@ -1530,6 +1633,10 @@ export class RuntimeManager {
     } finally {
       this.startPending = false;
     }
+  }
+
+  async start(): Promise<void> {
+    await this.startManaged();
   }
 
   private async startEngine(): Promise<void> {
@@ -1650,7 +1757,7 @@ export class RuntimeManager {
     }, 1000);
   }
 
-  async stop(): Promise<void> {
+  private async stopEngine(): Promise<void> {
     if (this.automaticSafetyStopPromise) return this.automaticSafetyStopPromise;
     if (!this.engine) throw new Error("ds4-server is not running");
     if (this.stopping) return;
@@ -1674,7 +1781,13 @@ export class RuntimeManager {
     });
   }
 
+  async stop(): Promise<void> {
+    if (this.modelSwitchPending) throw new Error("A model switch is already in progress");
+    await this.stopEngine();
+  }
+
   async forceStop(): Promise<void> {
+    if (this.modelSwitchPending) throw new Error("A model switch is already in progress");
     if (!this.engine) throw new Error("ds4-server is not running");
     this.log("warn", "dsbox", "Force stop requested; the latest KV checkpoint may not be saved.");
     this.clearAutomaticMemoryWatchdog();
@@ -1683,6 +1796,7 @@ export class RuntimeManager {
   }
 
   async restart(): Promise<void> {
+    if (this.modelSwitchPending) throw new Error("A model switch is already in progress");
     if (this.engine) await this.stop();
     if (this.engine) throw new Error("The previous process has not stopped yet");
     await this.start();

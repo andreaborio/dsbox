@@ -1,4 +1,13 @@
-import type { CatalogModel, CatalogPublisher, CatalogResponse, CatalogSource } from "../src/types.js";
+import { createHash } from "node:crypto";
+import path from "node:path";
+import type {
+  CatalogModel,
+  CatalogModelFile,
+  CatalogModelVariant,
+  CatalogPublisher,
+  CatalogResponse,
+  CatalogSource
+} from "../src/types.js";
 
 const AUTHOR = "andreaborio" as const;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -91,6 +100,143 @@ function quantizationVariantCount(files: Array<HubSibling & { rfilename: string 
   return variants.size;
 }
 
+function catalogFile(file: HubSibling & { rfilename: string }, manifestPart?: { sizeBytes?: number; sha256?: string }): CatalogModelFile {
+  return {
+    name: file.rfilename,
+    sizeBytes: Number(manifestPart?.sizeBytes ?? file.lfs?.size ?? file.size ?? 0),
+    sha256: manifestPart?.sha256 ?? file.lfs?.sha256 ?? null
+  };
+}
+
+function variantId(key: string): string {
+  return createHash("sha256").update(key).digest("hex").slice(0, 16);
+}
+
+function shardIdentity(filename: string): { key: string; index: number; count: number } | null {
+  const normalized = filename.replaceAll("\\", "/");
+  const basename = path.posix.basename(normalized);
+  const match = basename.match(/^(.*?)-(\d{5})-of-(\d{5})\.gguf$/i);
+  if (!match) return null;
+  const directory = path.posix.dirname(normalized);
+  return {
+    key: `${directory === "." ? "" : `${directory}/`}${match[1]}`,
+    index: Number(match[2]),
+    count: Number(match[3])
+  };
+}
+
+function variantLabel(key: string, files: CatalogModelFile[]): string {
+  const directory = path.posix.dirname(files[0]?.name ?? "");
+  if (directory && directory !== ".") return path.posix.basename(directory).replaceAll(/[-_]+/g, " ");
+  const base = path.posix.basename(key || files[0]?.name || "GGUF", ".gguf");
+  const quantization = base.match(/(?:^|[-_.])(UD[-_.])?(IQ\d(?:_[A-Z0-9]+)?|Q\d(?:_[A-Z0-9]+)?|BF16|F16)(?:$|[-_.])/i);
+  return quantization?.[0]?.replace(/^[-_.]+|[-_.]+$/g, "").replaceAll(/[-_.]+/g, " ")
+    || base.replaceAll(/[-_]+/g, " ");
+}
+
+function groupedGgufVariants(files: Array<HubSibling & { rfilename: string }>): CatalogModelVariant[] {
+  const groups = new Map<string, Array<{ source: HubSibling & { rfilename: string }; shard: ReturnType<typeof shardIdentity> }>>();
+  for (const file of files) {
+    const shard = shardIdentity(file.rfilename);
+    const key = shard?.key ?? file.rfilename;
+    const group = groups.get(key) ?? [];
+    group.push({ source: file, shard });
+    groups.set(key, group);
+  }
+
+  return [...groups.entries()].map(([key, group]) => {
+    group.sort((left, right) => (left.shard?.index ?? 0) - (right.shard?.index ?? 0));
+    const catalogFiles = group.map(({ source }) => catalogFile(source));
+    const shardCount = group[0]?.shard?.count ?? null;
+    const completeShardSet = shardCount === null
+      ? group.length === 1
+      : group.length === shardCount
+        && group.every(({ shard }, index) => shard?.count === shardCount && shard.index === index + 1);
+    const sizesKnown = catalogFiles.every((file) => Number.isSafeInteger(file.sizeBytes) && file.sizeBytes > 0);
+    const installable = completeShardSet && sizesKnown;
+    return {
+      id: variantId(key),
+      label: variantLabel(key, catalogFiles),
+      files: catalogFiles,
+      outputFile: catalogFiles[0]?.name ?? "",
+      totalBytes: catalogFiles.reduce((sum, file) => sum + file.sizeBytes, 0),
+      installable,
+      unavailableReason: !completeShardSet
+        ? "This quantization has an incomplete GGUF shard set"
+        : !sizesKnown
+          ? "Hugging Face did not publish the download size"
+          : null,
+      assembly: null
+    };
+  }).sort((left, right) => left.totalBytes - right.totalBytes || left.label.localeCompare(right.label));
+}
+
+function assemblyVariant(
+  manifest: DsboxManifest,
+  allFiles: Array<HubSibling & { rfilename: string }>
+): CatalogModelVariant | null {
+  const assembly = manifest.artifact?.assembly;
+  const outputFile = manifest.artifact?.output;
+  if (!assembly?.parts?.length || !outputFile) return null;
+  if (!/^(?:concat|concatenate)$/i.test(assembly.type ?? "")) return null;
+  const parts = assembly.parts.map((part) => {
+    const filename = part.path?.trim();
+    if (!filename) return null;
+    const source = allFiles.find((file) => file.rfilename === filename);
+    return source ? catalogFile(source, part) : null;
+  });
+  const missingPart = parts.some((part) => !part);
+  const files = parts.filter((part): part is CatalogModelFile => Boolean(part));
+  const sizesKnown = files.every((file) => Number.isSafeInteger(file.sizeBytes) && file.sizeBytes > 0);
+  const key = `assembly:${outputFile}:${files.map((file) => file.name).join("|")}`;
+  return {
+    id: variantId(key),
+    label: variantLabel(outputFile, files),
+    files,
+    outputFile,
+    totalBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0),
+    installable: !missingPart && sizesKnown,
+    unavailableReason: missingPart
+      ? "The DSBox manifest references a missing model part"
+      : !sizesKnown
+        ? "The DSBox manifest does not declare every part size"
+        : null,
+    assembly: { type: "concatenate", outputFile }
+  };
+}
+
+function inferredMultipartVariants(files: Array<HubSibling & { rfilename: string }>): CatalogModelVariant[] {
+  const groups = new Map<string, Array<{ source: HubSibling & { rfilename: string }; index: number }>>();
+  for (const file of files) {
+    const normalized = file.rfilename.replaceAll("\\", "/");
+    const match = normalized.match(/^(.*\.gguf)\.part-(\d+)$/i);
+    if (!match) continue;
+    const group = groups.get(match[1]) ?? [];
+    group.push({ source: file, index: Number(match[2]) });
+    groups.set(match[1], group);
+  }
+  return [...groups.entries()].map(([outputFile, parts]) => {
+    parts.sort((left, right) => left.index - right.index);
+    const catalogFiles = parts.map(({ source }) => catalogFile(source));
+    const complete = parts.length > 0 && parts.every((part, index) => part.index === index + 1);
+    const sizesKnown = catalogFiles.every((file) => Number.isSafeInteger(file.sizeBytes) && file.sizeBytes > 0);
+    return {
+      id: variantId(`multipart:${outputFile}:${catalogFiles.map((file) => file.name).join("|")}`),
+      label: variantLabel(outputFile, catalogFiles),
+      files: catalogFiles,
+      outputFile,
+      totalBytes: catalogFiles.reduce((sum, file) => sum + file.sizeBytes, 0),
+      installable: complete && sizesKnown,
+      unavailableReason: !complete
+        ? "This model has an incomplete multipart GGUF set"
+        : !sizesKnown
+          ? "Hugging Face did not publish every model part size"
+          : null,
+      assembly: { type: "concatenate", outputFile }
+    };
+  });
+}
+
 async function fetchJson<T>(url: string, timeout = 6000): Promise<T> {
   const response = await fetch(url, {
     headers: { "user-agent": "DSBox/0.1 (+local-model-catalog)" },
@@ -144,23 +290,21 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     || repository.toLowerCase().includes("experimental");
   const allFiles = (model.siblings ?? []).filter((file): file is HubSibling & { rfilename: string } => Boolean(file.rfilename));
   const directGgufs = allFiles.filter((file) => file.rfilename.toLowerCase().endsWith(".gguf"));
-  const variantCount = quantizationVariantCount(directGgufs);
+  const groupedVariants = groupedGgufVariants(directGgufs);
+  const declaredAssembly = manifest ? assemblyVariant(manifest, allFiles) : null;
+  const inferredAssemblies = inferredMultipartVariants(allFiles);
+  const variants = declaredAssembly
+    ? [declaredAssembly, ...groupedVariants.filter((variant) => variant.outputFile !== declaredAssembly.outputFile)]
+    : [...groupedVariants, ...inferredAssemblies];
+  const variantCount = variants.length || quantizationVariantCount(directGgufs);
   const requestedFile = manifest?.file || (manifest?.artifact?.assembly ? undefined : manifest?.artifact?.output);
-  const manifestFile = requestedFile
-    ? allFiles.find((file) => file.rfilename === requestedFile)
-    : undefined;
-  const manifestFileMissing = Boolean(requestedFile && !manifestFile);
-  const selected = requestedFile
-    ? manifestFile ? [manifestFile] : []
-    : directGgufs.length === 1 ? directGgufs : [];
-  const multipart = allFiles.filter((file) => /\.gguf\.part-\d+$/i.test(file.rfilename));
-  const visibleFiles = selected.length ? selected : multipart;
-  const files = visibleFiles.map((file) => ({
-    name: file.rfilename,
-    sizeBytes: Number(file.lfs?.size ?? file.size ?? 0),
-    sha256: file.lfs?.sha256 ?? null
-  }));
-  const installable = selected.length === 1;
+  const selectedVariant = declaredAssembly
+    ?? (requestedFile
+      ? variants.find((variant) => variant.files.some((file) => file.name === requestedFile))
+      : variants.length === 1 ? variants[0] : undefined);
+  const manifestFileMissing = Boolean(requestedFile && !selectedVariant);
+  const files = selectedVariant?.files ?? [];
+  const installable = !manifestFileMissing && variants.some((variant) => variant.installable);
   const minimumMemoryGb = Number.isFinite(manifest?.minimumMemoryGb)
     ? Number(manifest?.minimumMemoryGb)
     : Number.isFinite(manifest?.requirements?.minUnifiedMemoryBytes)
@@ -175,17 +319,16 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     && Boolean(explicitModelId)
     && Boolean(runtimeBranch)
     && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeCommit ?? "");
-  const checksumAvailable = /^[a-f0-9]{64}$/i.test(files[0]?.sha256 ?? "");
-  const recommended = manifest?.recommended === true && stable && installable && !experimental && memoryFits && compatibilityDeclared && checksumAvailable;
+  const checksumAvailable = Boolean(files.length) && files.every((file) => /^[a-f0-9]{64}$/i.test(file.sha256 ?? ""));
+  const recommended = manifest?.recommended === true && stable && Boolean(selectedVariant?.installable) && !experimental && memoryFits && compatibilityDeclared && checksumAvailable;
   const unavailableReason = manifestFileMissing
     ? `The manifest references a missing file: ${requestedFile}`
-    : installable
-      ? minimumMemoryGb !== null && !memoryFits ? `Requires at least ${minimumMemoryGb} GB of memory` : null
-      : publisher === "unsloth" && variantCount
-        ? "Choose a quantization on Hugging Face, then select its first GGUF shard in DSBox"
-        : multipart.length
-          ? "Published in multiple parts: manual installation required"
-          : "No installable GGUF detected";
+    : selectedVariant?.unavailableReason
+      ?? (installable && !selectedVariant && variantCount > 1
+        ? "Choose a quantization in DSBox"
+        : installable
+          ? null
+          : "No complete installable GGUF bundle detected");
   return {
     publisher,
     repository,
@@ -201,7 +344,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     runtimeBranch,
     runtimeCommit,
     files,
-    outputFile: selected[0]?.rfilename ?? null,
+    outputFile: selectedVariant?.outputFile ?? null,
     totalBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0),
     recommended,
     experimental,
@@ -210,7 +353,8 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     lastModified: model.lastModified ?? null,
     sourceUrl: `https://huggingface.co/${repository}/tree/${revision}`,
     unavailableReason,
-    variantCount
+    variantCount,
+    variants
   };
 }
 

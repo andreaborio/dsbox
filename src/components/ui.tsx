@@ -3,12 +3,17 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import type { EnginePhase } from "../types";
 
-export function BrandMark({ small = false }: { small?: boolean }) {
+export function BrandMark({ small = false, size }: { small?: boolean; size?: "md" | "hero" }) {
+  const sizeClass = small ? "brand-mark--small" : size === "hero" ? "brand-mark--hero" : "";
   return (
-    <span className={`brand-mark ${small ? "brand-mark--small" : ""}`} aria-hidden="true">
-      <span className="brand-mark__core" />
-      <span className="brand-mark__orbit brand-mark__orbit--one" />
-      <span className="brand-mark__orbit brand-mark__orbit--two" />
+    <span className={`brand-mark ${sizeClass}`} aria-hidden="true">
+      <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
+        <rect className="brand-mark__tile" x="1" y="1" width="30" height="30" rx="9" />
+        <path
+          className="brand-mark__stream"
+          d="M22.5 9.6h-9.1c-2.35 0-4.05 1.34-4.05 3.3s1.7 3.3 4.05 3.3h5.2c2.35 0 4.05 1.34 4.05 3.3s-1.7 3.3-4.05 3.3H9.5"
+        />
+      </svg>
     </span>
   );
 }
@@ -67,12 +72,28 @@ export function Button({
 export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const fallback = document.createElement("textarea");
+        fallback.value = value;
+        fallback.style.position = "fixed";
+        fallback.style.opacity = "0";
+        document.body.appendChild(fallback);
+        fallback.select();
+        const copiedWithFallback = document.execCommand("copy");
+        fallback.remove();
+        if (!copiedWithFallback) throw new Error("Clipboard is unavailable");
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
   };
   return (
-    <button className="copy-button" onClick={() => void copy()} title={label || "Copy to clipboard"} aria-label={copied ? "Copied" : label || "Copy to clipboard"}>
+    <button type="button" className="copy-button" onClick={() => void copy()} title={label || "Copy to clipboard"} aria-label={copied ? "Copied" : label || "Copy to clipboard"}>
       {copied ? <Check size={14} /> : <Copy size={14} />}
       <span>{copied ? "Copied" : label}</span>
     </button>
@@ -166,7 +187,7 @@ export function Modal({
       }
     };
     window.addEventListener("keydown", handler);
-    const frame = window.requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled])")?.focus());
+    const frame = window.requestAnimationFrame(() => dialogRef.current?.focus({ preventScroll: true }));
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("keydown", handler);
@@ -184,6 +205,7 @@ export function Modal({
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
+            tabIndex={-1}
             initial={{ opacity: 0, scale: 0.985, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.985, y: 6 }}
