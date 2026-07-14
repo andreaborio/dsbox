@@ -135,7 +135,7 @@ export default function App() {
                 aria-label={item.label}
                 aria-current={view === item.id ? "page" : undefined}
               >
-                <i className="nav-item__icon" aria-hidden="true"><Icon size={17} strokeWidth={2} /></i>
+                <i className="nav-item__icon" aria-hidden="true"><Icon size={17} strokeWidth={1.75} /></i>
                 <span>{item.label}</span>
                 {item.id === "runtime" && snapshot.runtime.phase === "error" && <i className="nav-alert" />}
                 {item.id === "models" && activeDownload && <small>{Math.round((activeDownload.downloadedBytes / Math.max(activeDownload.totalBytes, 1)) * 100)}%</small>}
@@ -159,7 +159,7 @@ export default function App() {
           aria-label="Settings"
           aria-current={view === "settings" ? "page" : undefined}
         >
-          <i className="nav-item__icon" aria-hidden="true"><SlidersHorizontal size={17} strokeWidth={2} /></i>
+          <i className="nav-item__icon" aria-hidden="true"><SlidersHorizontal size={17} strokeWidth={1.75} /></i>
           <span>Settings</span>
         </button>
 

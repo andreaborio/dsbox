@@ -409,7 +409,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
                   onClick={() => { setActiveView(item.id); setQuery(""); }}
                   aria-pressed={activeView === item.id}
                 >
-                  <span className="models-view-switcher__icon" aria-hidden="true"><Icon size={14} strokeWidth={2.1} /></span>
+                  <span className="models-view-switcher__icon" aria-hidden="true"><Icon size={14} strokeWidth={1.8} /></span>
                   <span>{item.label}</span>
                 </button>
               );
