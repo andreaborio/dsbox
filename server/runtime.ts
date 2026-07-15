@@ -49,8 +49,8 @@ const fallbackModelVariables: Record<string, string> = {
 };
 
 const localModelInventoryVersion = 1;
-export const QWEN35_RUNTIME_BRANCH = "main";
-export const QWEN35_RUNTIME_COMMIT = "1fdfe080ea63c6ce066b5696fa5655c357141abb";
+export const QWEN35_RUNTIME_BRANCH = "codex/qwen-tool-dialect";
+export const QWEN35_RUNTIME_COMMIT = "fc1561f36080829ecc43695af29d82782a852e86";
 const qwenUnsupportedEnvironmentKeys = [
   "DS4_EXPERT_PROFILE",
   "DS4_EXPERT_HOTLIST",

@@ -315,6 +315,62 @@ export type ServerEvent =
   | { type: "config"; payload: DsboxConfig }
   | { type: "download"; payload: ModelDownloadSnapshot };
 
+export type ChatToolCallState = "proposed" | "running" | "succeeded" | "failed" | "canceled";
+
+export interface ChatToolActivity {
+  callId: string;
+  name: string;
+  step?: number;
+  state: ChatToolCallState;
+  argumentsText: string;
+  arguments?: unknown;
+  result?: unknown;
+  summary?: string;
+  error?: string;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+  durationMs?: number;
+}
+
+export type ChatMessageBlock =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool_call"; activity: ChatToolActivity };
+
+export type ChatAgentEventType =
+  | "run.created"
+  | "text.delta"
+  | "reasoning.delta"
+  | "tool_call.created"
+  | "tool_call.arguments.delta"
+  | "tool_call.arguments.done"
+  | "tool_call.completed"
+  | "tool_call.started"
+  | "tool_call.result"
+  | "tool_result.started"
+  | "tool_result.completed"
+  | "tool_call.failed"
+  | "response.usage"
+  | "response.completed"
+  | "run.error"
+  | "run.completed";
+
+export interface ChatAgentEvent {
+  type: ChatAgentEventType;
+  step?: number;
+  callId?: string;
+  name?: string;
+  delta?: string;
+  arguments?: unknown;
+  result?: unknown;
+  summary?: string;
+  error?: string;
+  durationMs?: number;
+  usage?: Record<string, unknown>;
+  timings?: Record<string, unknown>;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -327,6 +383,7 @@ export interface ChatMessage {
   stats?: ChatResponseStats;
   sources?: ChatSource[];
   skillNotice?: string;
+  blocks?: ChatMessageBlock[];
 }
 
 export interface ChatSource {

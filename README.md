@@ -155,7 +155,7 @@ DSBox does not pretend that “fits on SSD” means “will be fast.” A model 
 Adaptive mode lets DS4 calculate its expert-cache budget from live model geometry and available memory. DSBox independently watches macOS pressure and swap activity while the runtime is active, and performs a safety stop if pressure becomes unsafe or required signals repeatedly disappear. Manual context, cache, KV-disk, trace, imatrix, flags, and environment controls remain available in Settings.
 
 For the validated Qwen3.6-35B-A3B path, DSBox requires DS4
-[`1fdfe08`](https://github.com/andreaborio/ds4/commit/1fdfe080ea63c6ce066b5696fa5655c357141abb)
+[`fc1561f`](https://github.com/andreaborio/ds4/commit/fc1561f36080829ecc43695af29d82782a852e86)
 or newer and deliberately passes neither `--ssd-streaming` nor `--resident`.
 DS4 therefore admits full residency only after its own working-set and live
 memory-pressure checks, with SSD streaming as the safe fallback. DSBox keeps its
@@ -183,7 +183,7 @@ without/with Thinking, confirming that full-vocabulary sampling no longer adds
 a material decode penalty. These are bounded machine-local measurements, not
 guarantees for arbitrary prompts or foreground GPU load; the full methodology
 is in the DS4
-[`tests/qwen/README.md`](https://github.com/andreaborio/ds4/blob/1fdfe080ea63c6ce066b5696fa5655c357141abb/tests/qwen/README.md).
+[`tests/qwen/README.md`](https://github.com/andreaborio/ds4/blob/fc1561f36080829ecc43695af29d82782a852e86/tests/qwen/README.md).
 
 </details>
 

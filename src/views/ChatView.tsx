@@ -19,13 +19,14 @@ import {
   RefreshCw,
   Timer,
   Trash2,
+  Wrench,
   Zap
 } from "lucide-react";
 import { Children, isValidElement, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import type { AppSnapshot, ChatMessage, LocalModelCandidate, LocalModelSwitchResult, ViewId } from "../types";
+import type { AppSnapshot, ChatMessage, ChatToolActivity, LocalModelCandidate, LocalModelSwitchResult, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
 import { useChatSession } from "../hooks/useChatSession";
 import { BrandMark, Button, CopyButton, Modal } from "../components/ui";
@@ -47,10 +48,11 @@ const suggestions = [
 ];
 
 type LiveInferenceStage = DsboxOrbState;
-type MessageStageState = LiveInferenceStage | "error" | "off" | "ready" | "preparing";
+type MessageStageState = LiveInferenceStage | "error" | "off" | "ready" | "preparing" | "tool";
 
 function liveInferenceStage(message: ChatMessage, skillStage: "idle" | "searching"): LiveInferenceStage | null {
   if (!message.pending || message.error || message.interrupted || skillStage === "searching") return null;
+  if (message.blocks?.some((block) => block.type === "tool_call" && ["proposed", "running"].includes(block.activity.state))) return "thinking";
   if (message.content) return "decode";
   if (message.reasoning) return "thinking";
   return "prefill";
@@ -71,6 +73,84 @@ function formatDuration(milliseconds: number | null): string {
   const minutes = Math.floor(milliseconds / 60_000);
   const seconds = Math.round((milliseconds % 60_000) / 1000);
   return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function messageToolActivities(message: ChatMessage): ChatToolActivity[] {
+  return message.blocks?.flatMap((block) => block.type === "tool_call" ? [block.activity] : []) ?? [];
+}
+
+function toolLabel(name: string): string {
+  return name.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function toolStateLabel(activity: ChatToolActivity): string {
+  if (activity.summary) return activity.summary;
+  if (activity.state === "proposed") return "Preparing call";
+  if (activity.state === "running") return "Running locally";
+  if (activity.state === "succeeded") return "Completed";
+  if (activity.state === "canceled") return "Canceled";
+  return activity.error ?? "Failed";
+}
+
+function displayToolValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function ToolActivityRail({ activities }: { activities: ChatToolActivity[] }) {
+  if (!activities.length) return null;
+  return (
+    <section className="tool-activity" aria-label="Tool activity">
+      <div className="tool-activity__head">
+        <Wrench size={12} />
+        <strong>Activity</strong>
+        <span>{activities.length}</span>
+      </div>
+      <div className="tool-activity__list">
+        {activities.map((activity) => (
+          <details
+            className={`tool-call tool-call--${activity.state}`}
+            key={activity.callId}
+          >
+            <summary>
+              <span className="tool-call__state" aria-hidden="true">
+                {activity.state === "running" || activity.state === "proposed"
+                  ? <LoaderCircle className="spin" size={13} />
+                  : activity.state === "succeeded"
+                    ? <Check size={13} />
+                    : <CircleStop size={12} />}
+              </span>
+              <span className="tool-call__copy">
+                <strong>{toolLabel(activity.name)}</strong>
+                <small>{toolStateLabel(activity)}</small>
+              </span>
+              {activity.durationMs !== undefined && <time>{formatDuration(activity.durationMs)}</time>}
+              <ChevronDown className="tool-call__chevron" size={12} />
+            </summary>
+            <div className="tool-call__details">
+              {activity.argumentsText && (
+                <div>
+                  <strong>Input</strong>
+                  <pre>{activity.argumentsText}</pre>
+                </div>
+              )}
+              {activity.result !== undefined && (
+                <div>
+                  <strong>Result</strong>
+                  <pre>{displayToolValue(activity.result)}</pre>
+                </div>
+              )}
+              {activity.error && <p role="alert">{activity.error}</p>}
+            </div>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function formatRate(rate: number | null): string {
@@ -151,7 +231,7 @@ const streamingMarkdownComponents: Components = {
 
 export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const chat = useChatSession();
-  const { messages, input, thinking, streaming } = chat;
+  const { messages, input, thinking, streaming, capabilities, agentMode } = chat;
   const [reasoningOpen, setReasoningOpen] = useState<Record<string, boolean>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showJump, setShowJump] = useState(false);
@@ -166,7 +246,32 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const modelMenuRef = useRef<HTMLDivElement | null>(null);
   const wasStreamingRef = useRef(streaming);
+  const capabilityRetryRef = useRef(0);
   const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    capabilityRetryRef.current = 0;
+    void chat.refreshCapabilities();
+  }, [snapshot.config.model.id, snapshot.config.model.path, snapshot.runtime.phase, snapshot.runtime.pid, snapshot.runtime.readiness]);
+
+  useEffect(() => {
+    if (snapshot.runtime.readiness !== "ready") {
+      capabilityRetryRef.current = 0;
+      return;
+    }
+    if (capabilities.status === "ready") {
+      capabilityRetryRef.current = 0;
+      return;
+    }
+    if (capabilities.status !== "unknown" && capabilities.status !== "error") return;
+    const attempt = capabilityRetryRef.current;
+    const delay = Math.min(30_000, 6_000 * (2 ** attempt));
+    const timer = window.setTimeout(() => {
+      capabilityRetryRef.current = Math.min(attempt + 1, 3);
+      void chat.refreshCapabilities();
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [capabilities.status, capabilities.reason, snapshot.runtime.readiness]);
 
   const loadLocalModels = useCallback(async () => {
     setModelsLoading(true);
@@ -222,9 +327,16 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
     if (!autoScrollRef.current) return;
     const frame = window.requestAnimationFrame(() => scrollToLatest(false));
     return () => window.cancelAnimationFrame(frame);
-  }, [chat.activeThreadId, latestAssistantContent?.content, latestAssistantContent?.reasoning, latestAssistantContent?.pending, latestAssistantContent?.sources?.length]);
+  }, [chat.activeThreadId, latestAssistantContent?.content, latestAssistantContent?.reasoning, latestAssistantContent?.blocks, latestAssistantContent?.pending, latestAssistantContent?.sources?.length]);
 
   const ready = snapshot.runtime.readiness === "ready";
+  const agentAvailable = capabilities.status === "ready" && capabilities.chatTools;
+  const agentActive = agentAvailable && agentMode;
+  const agentCapabilityMessage = capabilities.status === "error" || capabilities.status === "unknown"
+    ? "Tool capability could not be verified. DSBox will use standard chat."
+    : capabilities.status === "ready" && !capabilities.chatTools
+      ? "This model does not expose tool calling yet. DSBox will use standard chat."
+      : null;
   const preparing = ["preparing", "installing", "updating", "building", "downloading", "starting"].includes(snapshot.runtime.phase);
   const stopping = snapshot.runtime.phase === "stopping";
   const runtimeError = snapshot.runtime.phase === "error";
@@ -343,6 +455,8 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
     if (message.interrupted) return { state: "off", label: "Generation stopped" };
     if (!message.pending) return { state: "ready", label: "Complete" };
     if (chat.skillStage === "searching") return { state: "preparing", label: "Web search · Finding sources" };
+    const activeTool = messageToolActivities(message).find((activity) => activity.state === "running" || activity.state === "proposed");
+    if (activeTool) return { state: "tool", label: `Tool · ${toolLabel(activeTool.name)}` };
     if (message.content) return { state: "decode", label: "Decode · Writing" };
     if (message.reasoning) return { state: "thinking", label: "Thinking · Reasoning" };
     return { state: "prefill", label: "Prefill · Reading context" };
@@ -350,6 +464,8 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
 
   const stageElapsed = (message: ChatMessage): number | null => {
     if (!message.pending || !message.stats) return null;
+    const activeTool = messageToolActivities(message).find((activity) => activity.state === "running" || activity.state === "proposed");
+    if (activeTool) return now - (activeTool.startedAt ?? activeTool.createdAt);
     if (message.content) return now - (message.stats.answerStartedAt ?? message.stats.firstTokenAt ?? message.stats.startedAt);
     if (message.reasoning) return now - (message.stats.reasoningStartedAt ?? message.stats.firstTokenAt ?? message.stats.startedAt);
     return now - message.stats.startedAt;
@@ -424,8 +540,9 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
             </motion.div>
           ) : (
             <div className="message-list" role="log" aria-live="off" aria-label="Conversation">
-              {messages.map((message) => (
-                <motion.article
+              {messages.map((message) => {
+                const toolActivities = messageToolActivities(message);
+                return <motion.article
                   key={message.id}
                   className={`message message--${message.role} ${message.error ? "message--error" : ""}`}
                   aria-label={message.role === "user" ? "You" : "DSBox"}
@@ -467,6 +584,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                       </div>
                     )}
                     {message.skillNotice && <div className="message-skill-notice"><Globe2 size={12} /><span>{message.skillNotice}</span></div>}
+                    {message.role === "assistant" && <ToolActivityRail activities={toolActivities} />}
                     {message.content ? (
                       <div className="markdown-body">
                         <ReactMarkdown
@@ -479,7 +597,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                       </div>
                     ) : message.interrupted ? (
                       <div className="generation-stopped-copy">Generation stopped before output began.</div>
-                    ) : message.pending ? (
+                    ) : message.pending && !toolActivities.length ? (
                       <div className="typing"><i /><i /><i /></div>
                     ) : null}
                     {message.pending && message.content && <span className="stream-caret" />}
@@ -537,8 +655,8 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                       </div>
                     ) : null}
                   </div>
-                </motion.article>
-              ))}
+                </motion.article>;
+              })}
             </div>
           )}
         </AnimatePresence>
@@ -584,6 +702,12 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
             rows={1}
             disabled={!ready || streaming || modelSwitching}
           />
+          {agentCapabilityMessage && (
+            <div className="composer__capability" role="status">
+              <Wrench size={11} />
+              <span>{agentCapabilityMessage}</span>
+            </div>
+          )}
           <div className="composer__footer">
             <div className="composer__tool-group">
               <div className="model-picker" ref={modelMenuRef}>
@@ -658,6 +782,20 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                   )}
                 </AnimatePresence>
               </div>
+              <button
+                type="button"
+                className={`agent-toggle ${agentActive ? "agent-toggle--on" : ""}`}
+                onClick={() => chat.setAgentMode(!agentMode)}
+                disabled={!agentAvailable || streaming}
+                aria-pressed={agentActive}
+                title={agentAvailable
+                  ? `${capabilities.tools.length || "Available"} local tools · ${capabilities.maxSteps ?? 8} steps max`
+                  : capabilities.reason ?? "Tool calling is unavailable for the active model"}
+              >
+                {capabilities.status === "loading" ? <LoaderCircle className="spin" size={13} /> : <Wrench size={13} />}
+                <span>{capabilities.status === "loading" ? "Checking tools…" : agentAvailable ? (agentActive ? "Agent" : "Agent off") : "Chat only"}</span>
+                <i aria-hidden="true" />
+              </button>
               <button type="button" className={`thinking-toggle ${thinking ? "thinking-toggle--on" : ""}`} onClick={() => chat.setThinking(!thinking)} aria-pressed={thinking}>
                 <Brain size={13} /> <span>Thinking</span><i aria-hidden="true" />
               </button>

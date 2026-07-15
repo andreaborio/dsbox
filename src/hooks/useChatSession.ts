@@ -17,6 +17,8 @@ export function useChatSession() {
     ...snapshot,
     setInput: chatSessionStore.setInput,
     setThinking: chatSessionStore.setThinking,
+    setAgentMode: chatSessionStore.setAgentMode,
+    refreshCapabilities: chatSessionStore.refreshCapabilities,
     send: chatSessionStore.send,
     stop: chatSessionStore.stop,
     newThread: chatSessionStore.newThread,

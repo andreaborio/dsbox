@@ -15,6 +15,7 @@ import { ModelDownloadError, ModelDownloadManager } from "./model-downloads.js";
 import { CONTENT_SECURITY_POLICY } from "./security.js";
 import { assertTextOnlyInput, UnsupportedInputModalityError } from "./text-only.js";
 import { searchWeb } from "./web-search.js";
+import { handleAgentChat, resolveAgentCapabilities } from "./agent.js";
 
 export interface AppServices {
   store: ConfigStore;
@@ -291,6 +292,19 @@ export function createApp(services: AppServices) {
     response.json(makeSnapshot(services));
   });
 
+  app.get("/api/capabilities", asyncRoute(async (request, response) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    request.once("aborted", abort);
+    response.once("close", abort);
+    try {
+      response.json(await resolveAgentCapabilities(services, globalThis.fetch, controller.signal));
+    } finally {
+      request.off("aborted", abort);
+      response.off("close", abort);
+    }
+  }));
+
   app.get("/api/events", (request, response) => {
     response.setHeader("Content-Type", "text/event-stream");
     response.setHeader("Cache-Control", "no-cache, no-transform");
@@ -548,6 +562,10 @@ export function createApp(services: AppServices) {
 
   app.all("/api/chat", asyncRoute(async (request, response) => {
     await relayToDs4(request, response, services, "/v1/chat/completions", false, "chat");
+  }));
+
+  app.post("/api/agent/chat", asyncRoute(async (request, response) => {
+    await handleAgentChat(request, response, services, globalThis.fetch);
   }));
 
   app.use("/v1", asyncRoute(async (request, response) => {
