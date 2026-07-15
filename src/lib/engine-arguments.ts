@@ -13,6 +13,8 @@ export function isQwen35Model(config: Pick<DsboxConfig, "model">, modelArchitect
 const qwenManagedBooleanOptions = new Set([
   "--quality",
   "--warm-weights",
+  "--ssd-streaming",
+  "--ssd-streaming-cold",
   "--resident",
   "--no-ssd-streaming",
   "--cpu",
@@ -90,13 +92,16 @@ export function buildEngineArguments(config: DsboxConfig, modelArchitecture?: st
     "--port", String(config.server.internalPort)
   ];
 
-  if (config.streaming.enabled) {
+  // Qwen's validated Metal runtime owns the residency decision. With neither
+  // override present, DS4 keeps the model resident when its live memory and
+  // working-set preflight pass, and falls back to SSD streaming otherwise.
+  if (config.streaming.enabled && !qwen35) {
     args.push("--ssd-streaming");
-    if (!qwen35 && !advancedCacheOverride && config.streaming.cacheMode === "manual") {
+    if (!advancedCacheOverride && config.streaming.cacheMode === "manual") {
       args.push("--ssd-streaming-cache-experts", `${config.streaming.cacheSizeGb}GB`);
     }
     if (config.streaming.coldStart) args.push("--ssd-streaming-cold");
-    if (!qwen35 && config.streaming.preloadExperts !== null) {
+    if (config.streaming.preloadExperts !== null) {
       args.push("--ssd-streaming-preload-experts", String(config.streaming.preloadExperts));
     }
   }

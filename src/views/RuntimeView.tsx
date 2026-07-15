@@ -287,7 +287,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           <div className="technical-overview">
             <div><span>Channel</span><strong>{runtime.gitBranch ?? config.repository.branch}</strong></div>
             <div><span>Version</span><strong>{runtime.gitHead ?? "not installed"}</strong></div>
-            <div><span>Mode</span><strong>{config.streaming.enabled ? "Metal + SSD streaming" : "Metal resident"}</strong></div>
+            <div><span>Mode</span><strong>{qwenChatOnly ? "Metal AUTO" : config.streaming.enabled ? "Metal + SSD streaming" : "Metal resident"}</strong></div>
             <div><span>Context</span><strong>{config.server.contextTokens.toLocaleString("en-US")} tokens</strong></div>
           </div>
 

@@ -155,23 +155,26 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
             {advancedOpen && (
               <motion.div id="advanced-settings-content" className="settings-advanced__content" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}>
                 <div className="advanced-group">
-                  <div className="advanced-group__head"><div><h3>Performance</h3><p>DSBox defaults are tuned for SSD streaming on this Mac.</p></div><Zap size={16} /></div>
-                  <div className="setting-row"><span className="setting-row__icon"><HardDrive size={17} /></span><div><strong>Optimized SSD streaming</strong><p>Loads the useful parts of the model into memory and streams the rest when needed.</p></div><Toggle checked={draft.streaming.enabled} onChange={(enabled) => update("streaming", { ...draft.streaming, enabled })} label="Optimized SSD streaming" /></div>
-                  {draft.streaming.enabled && (
-                    <div className="nested-settings">
-                      {qwenManaged ? (
-                        <div className="managed-profile-row">
-                          <div><strong>Adaptive expert cache</strong><p>DSBox lets the Qwen runtime size its SSD-streaming cache from this Mac's live memory budget.</p></div>
-                          <span className="managed-setting-badge">Managed</span>
-                        </div>
-                      ) : (
-                        <>
+                  <div className="advanced-group__head"><div><h3>Performance</h3><p>{qwenManaged ? "Qwen uses DS4's guarded Metal AUTO residency on this Mac." : "DSBox defaults are tuned for SSD streaming on this Mac."}</p></div><Zap size={16} /></div>
+                  {qwenManaged ? (
+                    <>
+                      <div className="managed-profile-row">
+                        <div><strong>Metal AUTO residency</strong><p>Keeps the complete model resident when DS4's working-set and live-pressure checks pass, with an automatic SSD fallback otherwise.</p></div>
+                        <span className="managed-setting-badge">Managed</span>
+                      </div>
+                      <div className="privacy-note"><ShieldCheck size={15} /><p>DSBox also watches memory pressure and new swapout once per second while the runtime is active.</p></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="setting-row"><span className="setting-row__icon"><HardDrive size={17} /></span><div><strong>Optimized SSD streaming</strong><p>Loads the useful parts of the model into memory and streams the rest when needed.</p></div><Toggle checked={draft.streaming.enabled} onChange={(enabled) => update("streaming", { ...draft.streaming, enabled })} label="Optimized SSD streaming" /></div>
+                      {draft.streaming.enabled && (
+                        <div className="nested-settings">
                           <div className="segmented-control"><button className={draft.streaming.cacheMode === "auto" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "auto"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "auto" })}>Adaptive</button><button className={draft.streaming.cacheMode === "manual" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "manual"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "manual" })}>Custom</button></div>
                           {draft.streaming.cacheMode === "auto" && !advancedCacheOverride && <div className="privacy-note"><ShieldCheck size={15} /><p>DS4 sizes the expert cache from this Mac's live memory budget; DSBox stops it if pressure or new swapout crosses the safety limit.</p></div>}
                           {draft.streaming.cacheMode === "manual" && <Field label="Expert cache budget" hint="DS4 applies a safe cap"><div className="range-field"><input aria-label="Expert cache budget" type="range" min={8} max={manualCacheMaxGb} step={4} value={Math.min(draft.streaming.cacheSizeGb, manualCacheMaxGb)} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Expert cache budget in GB" type="number" min={1} max={manualCacheMaxGb} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}
-                        </>
+                        </div>
                       )}
-                    </div>
+                    </>
                   )}
                 </div>
 
@@ -205,8 +208,8 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
                     <Field label="Prefill chunk" hint="Automatic"><input placeholder="Automatic" type="number" min={1} value={draft.server.prefillChunk ?? ""} onChange={(event) => update("server", { ...draft.server, prefillChunk: event.target.value ? Number(event.target.value) : null })} /></Field>
                   </div>
                   <Field label="Metal power" hint={qwenManaged ? "Managed for Qwen" : undefined}><div className={`range-field range-field--power ${qwenManaged ? "range-field--managed" : ""}`}><input aria-label={qwenManaged ? "Metal power locked at 100 percent for Qwen" : "Metal power percentage"} type="range" min={1} max={100} value={qwenManaged ? 100 : draft.server.powerPercent} disabled={qwenManaged} onChange={(event) => update("server", { ...draft.server, powerPercent: Number(event.target.value) })} /><span>{qwenManaged ? 100 : draft.server.powerPercent}%</span></div></Field>
-                  <div className="inline-toggles"><div><span>Prepare model at startup</span>{qwenManaged ? <span className="managed-setting-badge" aria-label="Model preparation is managed by DSBox and off">Managed · off</span> : <Toggle checked={draft.server.warmWeights} onChange={(warmWeights) => update("server", { ...draft.server, warmWeights })} label="Prepare model at startup" />}</div><div><span>Cold start</span><Toggle checked={draft.streaming.coldStart} onChange={(coldStart) => update("streaming", { ...draft.streaming, coldStart })} label="Cold start" /></div></div>
-                  {qwenManaged && <div className="qwen-settings-note"><ShieldCheck size={15} /><p>Qwen's validated profile locks Metal power at 100% and omits generic quality and warm-up flags when DSBox launches the engine.</p></div>}
+                  <div className="inline-toggles"><div><span>Prepare model at startup</span>{qwenManaged ? <span className="managed-setting-badge" aria-label="Model preparation is managed by DSBox and off">Managed · off</span> : <Toggle checked={draft.server.warmWeights} onChange={(warmWeights) => update("server", { ...draft.server, warmWeights })} label="Prepare model at startup" />}</div>{qwenManaged ? <div><span>Residency</span><span className="managed-setting-badge" aria-label="Residency is managed automatically">Managed · AUTO</span></div> : <div><span>Cold start</span><Toggle checked={draft.streaming.coldStart} onChange={(coldStart) => update("streaming", { ...draft.streaming, coldStart })} label="Cold start" /></div>}</div>
+                  {qwenManaged && <div className="qwen-settings-note"><ShieldCheck size={15} /><p>Qwen's validated profile locks Metal power at 100%, lets DS4 choose resident or SSD from live memory safety, and omits incompatible quality and warm-up flags.</p></div>}
                   {draft.repository.branch.includes("glm52") && <div className="branch-warning"><AlertTriangle size={15} /><p>For GLM 5.2, keep Metal power at 100% and prefill on automatic unless you are running a controlled experiment.</p></div>}
                 </div>
 

@@ -59,6 +59,7 @@ export function MonitorView({ snapshot }: Props) {
   const fileCachePercent = latest?.memoryTotalBytes ? latest.memoryFileCacheBytes / latest.memoryTotalBytes * 100 : 0;
   const liveTokensPerSecond = snapshot.activity.stage === "idle" ? null : latest?.tokensPerSecond ?? null;
   const runtimeActive = ["starting", "running", "stopping"].includes(runtime.phase);
+  const qwenManaged = config.model.id === "qwen3.6-35b-a3b";
   const runtimeCache = runtimeActive
     ? argumentOptionValue(runtime.command, "--ssd-streaming-cache-experts")
     : null;
@@ -72,7 +73,9 @@ export function MonitorView({ snapshot }: Props) {
   } catch {
     // Invalid advanced arguments are reported when the user tries to start.
   }
-  const modelCacheLabel = runtimeActive
+  const modelCacheLabel = qwenManaged
+    ? "AUTO · resident/SSD"
+    : runtimeActive
     ? !runtimeStreaming
       ? "Not used"
       : runtimeCache
@@ -165,8 +168,8 @@ export function MonitorView({ snapshot }: Props) {
           <div className="io-facts">
             <div><span>Volume</span><strong>{latest ? formatBytes(latest.diskTotalBytes, 0) : "—"}</strong></div>
             <div><span>Model cache</span><strong>{modelCacheLabel}</strong></div>
-            <div><span>On-disk context</span><strong>{config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
-            <div><span>Mode</span><strong>{(runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
+            <div><span>On-disk context</span><strong>{qwenManaged ? "Unavailable" : config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
+            <div><span>Mode</span><strong>{qwenManaged ? "Metal AUTO" : (runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
           </div>
           <p className="metric-disclaimer"><Info size={13} /> macOS does not reliably expose per-process SSD throughput without internal instrumentation.</p>
         </article>

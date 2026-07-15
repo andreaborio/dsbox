@@ -13,6 +13,8 @@ import {
   parseFallbackModelFilename,
   parseVmStatSwapoutPages,
   qwen35LaunchEnvironment,
+  QWEN35_RUNTIME_BRANCH,
+  QWEN35_RUNTIME_COMMIT,
   remainingDownloadBytes,
   RuntimeManager,
   tokenizeArguments
@@ -78,6 +80,7 @@ describe("environment parser", () => {
       PATH: "/usr/bin",
       DS4_EXPERT_PROFILE: "/tmp/profile.json",
       DS4_METAL_STREAMING_PIN_NON_ROUTED: "1",
+      DS4_SERVER_STREAMING_DECODE_STATS: "1",
       DS4_QWEN_EXPERIMENTAL_METAL: "0"
     }, {
       DS4_EXPERT_HOTLIST: "1,2,3",
@@ -90,6 +93,7 @@ describe("environment parser", () => {
     const environment = qwen35LaunchEnvironment({ DS4_EXPERT_PROFILE: "x" }, { DS4_EXPERT_HOTLIST: "y" });
     expect(environment.DS4_EXPERT_PROFILE).toBeUndefined();
     expect(environment.DS4_EXPERT_HOTLIST).toBeUndefined();
+    expect(qwen35LaunchEnvironment({ DS4_SERVER_STREAMING_DECODE_STATS: "1" }, {}).DS4_SERVER_STREAMING_DECODE_STATS).toBeUndefined();
   });
 });
 
@@ -182,7 +186,7 @@ describe("engine arguments", () => {
     expect(args).toContain("--imatrix-every");
   });
 
-  it("applies the exact Qwen Metal and SSD compatibility profile", () => {
+  it("applies the exact Qwen Metal AUTO residency profile", () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     config.model.id = "qwen3.6-35b-a3b";
     config.model.path = "/models/Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf";
@@ -196,6 +200,8 @@ describe("engine arguments", () => {
     config.advanced.extraArgs = [
       "--power 12",
       "--quality",
+      "--ssd-streaming",
+      "--ssd-streaming-cold",
       "--ssd-streaming-cache-experts 700",
       "--ssd-streaming-preload-experts 200",
       "--mtp /models/draft.gguf",
@@ -209,7 +215,8 @@ describe("engine arguments", () => {
     const args = buildEngineArguments(config);
     expect(args.slice(args.indexOf("--power"), args.indexOf("--power") + 2)).toEqual(["--power", "100"]);
     expect(args).toContain("--metal");
-    expect(args).toContain("--ssd-streaming");
+    expect(args).not.toContain("--ssd-streaming");
+    expect(args).not.toContain("--ssd-streaming-cold");
     expect(args).toContain("--trace");
     expect(args).not.toContain("--quality");
     expect(args).not.toContain("--warm-weights");
@@ -237,6 +244,49 @@ describe("engine arguments", () => {
 });
 
 describe("Qwen one-click preparation", () => {
+  it("replaces an older Qwen-capable checkout with the qualified optimized runtime", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.repository.directory = "/work/ds4-qwen-support";
+    config.repository.branch = "feat/qwen-support";
+    config.model = {
+      path: "/models/Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf",
+      id: "qwen3.6-35b-a3b"
+    };
+    let current = structuredClone(config);
+    const store = {
+      homeDirectory: "/home/alice/.dsbox",
+      get: vi.fn(() => structuredClone(current)),
+      set: vi.fn(async (next: DsboxConfig) => {
+        current = structuredClone(next);
+        return structuredClone(current);
+      })
+    } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const internal = runtime as unknown as {
+      checkoutHasQualifiedQwenRuntime(directory: string): Promise<boolean>;
+      binaryHasQwenRuntime(directory: string): Promise<boolean>;
+      binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
+      ensureQwenRuntimeCheckout(config: DsboxConfig): Promise<DsboxConfig>;
+    };
+    vi.spyOn(internal, "checkoutHasQualifiedQwenRuntime").mockImplementation(async (directory) => directory === "/work/ds4-qwen-metal-opt");
+    vi.spyOn(internal, "binaryHasQwenRuntime").mockResolvedValue(true);
+    vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
+    vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([
+      { path: "/work/ds4-qwen-support", branch: "feat/qwen-support", head: "91d311d58" },
+      { path: "/work/ds4-qwen-metal-opt", branch: QWEN35_RUNTIME_BRANCH, head: QWEN35_RUNTIME_COMMIT.slice(0, 9) }
+    ]);
+    vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
+
+    const selected = await internal.ensureQwenRuntimeCheckout(config);
+
+    expect(QWEN35_RUNTIME_COMMIT).toMatch(/^[a-f0-9]{40}$/);
+    expect(selected.repository).toMatchObject({
+      directory: "/work/ds4-qwen-metal-opt",
+      branch: QWEN35_RUNTIME_BRANCH
+    });
+    expect(store.set).toHaveBeenCalledOnce();
+  });
+
   it("selects the Qwen-capable checkout before considering the default runtime install", async () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     config.model = {

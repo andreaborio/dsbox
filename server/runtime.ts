@@ -49,12 +49,15 @@ const fallbackModelVariables: Record<string, string> = {
 };
 
 const localModelInventoryVersion = 1;
+export const QWEN35_RUNTIME_BRANCH = "main";
+export const QWEN35_RUNTIME_COMMIT = "1fdfe080ea63c6ce066b5696fa5655c357141abb";
 const qwenUnsupportedEnvironmentKeys = [
   "DS4_EXPERT_PROFILE",
   "DS4_EXPERT_HOTLIST",
   "DS4_METAL_STREAMING_EXPERT_HOTLIST",
   "DS4_METAL_STREAMING_EXPERT_HOTLIST_PROFILE",
-  "DS4_METAL_STREAMING_PIN_NON_ROUTED"
+  "DS4_METAL_STREAMING_PIN_NON_ROUTED",
+  "DS4_SERVER_STREAMING_DECODE_STATS"
 ] as const;
 
 interface LocalModelInventoryRecord {
@@ -1786,6 +1789,11 @@ export class RuntimeManager {
     }
   }
 
+  private async checkoutHasQualifiedQwenRuntime(directory: string): Promise<boolean> {
+    return await this.checkoutHasQwenSource(directory)
+      && await this.runtimeIncludesCommit(directory, QWEN35_RUNTIME_COMMIT);
+  }
+
   private async binaryHasQwenRuntime(directory: string): Promise<boolean> {
     try {
       const binary = await readFile(path.join(directory, "ds4-server"));
@@ -1819,11 +1827,11 @@ export class RuntimeManager {
 
   private async ensureQwenRuntimeCheckout(config: ReturnType<ConfigStore["get"]>): Promise<ReturnType<ConfigStore["get"]>> {
     let selected = config;
-    if (!(await this.checkoutHasQwenSource(selected.repository.directory))) {
+    if (!(await this.checkoutHasQualifiedQwenRuntime(selected.repository.directory))) {
       let checkout: { path: string; branch: string | null; head: string | null } | null = null;
       for (const candidate of await this.discoveredCheckouts()) {
         if (candidate.path === selected.repository.directory) continue;
-        if (await this.checkoutHasQwenSource(candidate.path)) {
+        if (await this.checkoutHasQualifiedQwenRuntime(candidate.path)) {
           checkout = candidate;
           break;
         }
@@ -1834,14 +1842,21 @@ export class RuntimeManager {
         if (checkout.branch) next.repository.branch = checkout.branch;
         selected = await this.store.set(next);
         this.bus.publish({ type: "config", payload: selected });
-        this.log("info", "dsbox", `Using the Qwen-capable DS4 checkout at ${checkout.path}.`);
+        this.log("info", "dsbox", `Using the qualified Qwen DS4 checkout at ${checkout.path} (${QWEN35_RUNTIME_COMMIT.slice(0, 9)} or newer).`);
         await this.refresh();
       } else {
-        this.log("info", "git", "Checking the configured DS4 channel for the Qwen3.6 runtime.");
+        const next = structuredClone(selected);
+        next.repository.url = "https://github.com/andreaborio/ds4.git";
+        next.repository.branch = QWEN35_RUNTIME_BRANCH;
+        next.repository.directory = path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4-qwen35");
+        selected = await this.store.set(next);
+        this.bus.publish({ type: "config", payload: selected });
+        this.log("info", "git", `Preparing the qualified Qwen3.6 runtime at ${QWEN35_RUNTIME_COMMIT.slice(0, 9)} or newer.`);
+        await this.refresh();
         await this.installOrUpdate();
         selected = this.store.get();
-        if (!(await this.checkoutHasQwenSource(selected.repository.directory))) {
-          throw new Error("The configured DS4 channel does not include the Qwen3.6 runtime yet. Select a Qwen-capable checkout or update the DS4 channel.");
+        if (!(await this.checkoutHasQualifiedQwenRuntime(selected.repository.directory))) {
+          throw new Error(`The ${QWEN35_RUNTIME_BRANCH} channel does not include the qualified Qwen3.6 runtime ${QWEN35_RUNTIME_COMMIT.slice(0, 9)}`);
         }
       }
     }
@@ -1884,9 +1899,11 @@ export class RuntimeManager {
 
     const hasAdvancedCacheOverride = tokenizeArguments(config.advanced.extraArgs)
       .some((value) => optionName(value) === "--ssd-streaming-cache-experts");
-    const usesAdaptiveCache = config.streaming.enabled
-      && (qwen35 || config.streaming.cacheMode === "auto")
-      && (qwen35 || !hasAdvancedCacheOverride);
+    const usesAutomaticMemoryPlan = qwen35 || (
+      config.streaming.enabled
+      && config.streaming.cacheMode === "auto"
+      && !hasAdvancedCacheOverride
+    );
     const args = buildEngineArguments(config, selectedModel.architecture);
     const help = await this.detectHelp(binary, config.repository.directory);
     this.validateCapabilities(args, help);
@@ -1901,13 +1918,13 @@ export class RuntimeManager {
 
     this.clearAutomaticMemoryWatchdog();
     this.automaticMemoryGuard = null;
-    if (usesAdaptiveCache) {
+    if (usesAutomaticMemoryPlan) {
       const memory = await this.darwinMemorySafetySnapshot();
       if (!memory) {
-        throw new Error("Automatic cache could not read macOS memory pressure; refusing an unguarded launch");
+        throw new Error("Automatic memory planning could not read macOS memory pressure; refusing an unguarded launch");
       }
       if (memory.pressureLevel !== 1) {
-        throw new Error("Automatic cache requires normal macOS memory pressure before launch");
+        throw new Error("Automatic memory planning requires normal macOS memory pressure before launch");
       }
       this.automaticMemoryGuard = {
         baselineSwapoutPages: memory.swapoutPages,
@@ -1918,7 +1935,9 @@ export class RuntimeManager {
       this.log(
         "info",
         "dsbox",
-        "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+        qwen35
+          ? "DS4 Qwen AUTO residency enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+          : "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
       );
     }
 
@@ -1927,7 +1946,7 @@ export class RuntimeManager {
       binary,
       ...args
     ];
-    if (qwen35) this.log("info", "dsbox", "Qwen3.6 compatibility profile applied: Metal, SSD AUTO cache, power 100, and tool-free chat.");
+    if (qwen35) this.log("info", "dsbox", "Qwen3.6 profile applied: Metal AUTO residency, resident when safe with SSD fallback, power 100, and tool-free chat.");
     this.log("info", "dsbox", `$ ${command.map(shellDisplayArgument).join(" ")}`);
     this.setState({
       phase: "starting",
@@ -2114,12 +2133,34 @@ export class RuntimeManager {
   async discoveredCheckouts(): Promise<Array<{ path: string; branch: string | null; head: string | null }>> {
     const home = process.env.HOME ?? "";
     const configured = this.store.get().repository.directory;
+    const roots = [...new Set([
+      path.dirname(configured),
+      path.join(this.store.homeDirectory, "runtime"),
+      path.join(home, "Beep"),
+      path.join(home, "BEEP"),
+      path.join(home, "Documents"),
+      path.join(home, "Developer")
+    ])];
+    const nearby: string[] = [];
+    for (const root of roots) {
+      try {
+        const entries = await readdir(root, { withFileTypes: true });
+        for (const entry of entries) {
+          if ((!entry.isDirectory() && !entry.isSymbolicLink()) || !/(^|[-_.])ds4(?:[-_.]|$)/i.test(entry.name)) continue;
+          nearby.push(path.join(root, entry.name));
+        }
+      } catch {
+        // Discovery is best-effort; configured and managed paths remain below.
+      }
+    }
     const candidates = [...new Set([
       configured,
+      path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4-qwen35"),
       path.join(home, "Beep", "ds4"),
       path.join(home, "Beep", "ds4-qwen-support"),
       path.join(home, "Beep", "ds4-glm52-gold"),
-      path.join(home, "BEEP", "ds4")
+      path.join(home, "BEEP", "ds4"),
+      ...nearby.sort()
     ])];
     const found: Array<{ path: string; branch: string | null; head: string | null }> = [];
     for (const candidate of candidates) {

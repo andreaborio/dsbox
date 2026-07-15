@@ -9,7 +9,7 @@
 <p align="center">
   A polished Apple Silicon desktop app for running
   <a href="https://github.com/andreaborio/ds4">andreaborio/ds4</a>
-  with Metal, SSD streaming, local chat, coding-agent endpoints, and honest macOS telemetry.
+  with Metal AUTO residency, SSD streaming, local chat, coding-agent endpoints, and honest macOS telemetry.
 </p>
 
 <p align="center">
@@ -35,6 +35,7 @@
 - **One power control.** Once a model is selected, DSBox can prepare the checkout, build `ds4-server`, validate flags, start it, and wait for real readiness.
 - **Models without path hunting.** Scan the Mac, choose a GGUF with Finder, or review and download a Hugging Face variant inside DSBox.
 - **SSD streaming without artificial lockouts.** DSBox warns when a model may be very slow, but does not block an experiment merely because the GGUF is larger than unified memory.
+- **Resident when it safely fits.** Qwen3.6 uses DS4's guarded Metal AUTO planner, keeping the complete model resident when the working set and current pressure allow it and falling back to SSD otherwise.
 - **A complete local chat.** Threads, reasoning, stop control, automatic scrolling, syntax-highlighted code, one-click copy, and response-level prefill/generation timings.
 - **Bring your coding agent.** Stable OpenAI, Responses, and Anthropic-style loopback endpoints with ready-to-copy configurations.
 - **Telemetry that says what it knows.** Memory pressure, committed memory, swap, CPU, process RSS, disk, and generation speed are reported; unsupported GPU metrics remain `N/A`.
@@ -42,7 +43,7 @@
 ## Three steps
 
 1. **Choose a model.** Use a validated GGUF already on the Mac or explicitly confirm an in-app catalog download.
-2. **Turn on DSBox.** The Server screen prepares and launches DS4 with Metal and SSD streaming.
+2. **Turn on DSBox.** The Server screen prepares and launches DS4 with Metal and guarded automatic memory planning.
 3. **Chat or connect an agent.** Use the built-in interface, or copy the endpoint for Codex CLI, Claude Code, OpenCode, Pi, or another compatible client.
 
 | Models | Server |
@@ -152,6 +153,39 @@ codex --model <selected-model-id> -c model_provider=ds4
 DSBox does not pretend that “fits on SSD” means “will be fast.” A model larger than unified memory may run through DS4 SSD streaming, but speed depends on model structure, quantization, storage, thermal state, and cache warmth. Hardware guidance is advisory; insufficient disk space is the hard download blocker.
 
 Adaptive mode lets DS4 calculate its expert-cache budget from live model geometry and available memory. DSBox independently watches macOS pressure and swap activity while the runtime is active, and performs a safety stop if pressure becomes unsafe or required signals repeatedly disappear. Manual context, cache, KV-disk, trace, imatrix, flags, and environment controls remain available in Settings.
+
+For the validated Qwen3.6-35B-A3B path, DSBox requires DS4
+[`1fdfe08`](https://github.com/andreaborio/ds4/commit/1fdfe080ea63c6ce066b5696fa5655c357141abb)
+or newer and deliberately passes neither `--ssd-streaming` nor `--resident`.
+DS4 therefore admits full residency only after its own working-set and live
+memory-pressure checks, with SSD streaming as the safe fallback. DSBox keeps its
+independent one-second pressure and swapout watchdog armed in either outcome.
+
+<details>
+<summary><strong>Recorded Qwen3.6 reference results</strong></summary>
+
+On a MacBook Pro M5 Pro with 64 GB unified memory, the normalized 19.37 GiB
+`Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf` artifact ran fully resident on Metal. A
+balanced six-run serial/parallel router A/B improved median generation from
+37.00 to 62.96 t/s (+70.2%) with identical output hashes. Five quiet-desktop
+confirmations measured median prefill at 223.73 t/s and generation at 65.63 t/s;
+the same binary measured 50.20 t/s generation under active compositor and Codex
+GPU contention. The optimized Thinking sampler improved a short-context A/B
+from 39.71 to 58.59 t/s (+47.6%). At positions 1,428-1,628, parallel full-
+attention GQA improved an adjacent A/B from 36.18 to 44.06 t/s (+21.8%) with an
+identical response hash. A 504-token DSBox-like Thinking turn measured 320.30
+t/s prefill and 41.04 t/s generation while its attention prefix grew from 1,426
+to 1,930 tokens. These changes schedule sampling and attention more efficiently;
+they do not change or further quantize model weights. Every recorded process
+reported zero swaps. A final active-desktop parity check measured 46.61 versus
+46.54 t/s at short context and 33.03 versus 33.19 t/s at a 1,403-token prefix
+without/with Thinking, confirming that full-vocabulary sampling no longer adds
+a material decode penalty. These are bounded machine-local measurements, not
+guarantees for arbitrary prompts or foreground GPU load; the full methodology
+is in the DS4
+[`tests/qwen/README.md`](https://github.com/andreaborio/ds4/blob/1fdfe080ea63c6ce066b5696fa5655c357141abb/tests/qwen/README.md).
+
+</details>
 
 <details>
 <summary><strong>Recorded DeepSeek V4 Flash reference results</strong></summary>
