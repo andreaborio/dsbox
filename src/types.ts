@@ -244,10 +244,11 @@ export type LocalModelCompatibilityCode =
   | "standard_multipart"
   | "missing_ds4_metadata"
   | "unsupported_architecture"
-  | "invalid_gguf";
+  | "invalid_gguf"
+  | "legacy_unverified";
 
 export interface LocalModelCompatibility {
-  status: "compatible" | "unsupported";
+  status: "compatible" | "unsupported" | "unverified";
   code: LocalModelCompatibilityCode;
   reason: string | null;
 }

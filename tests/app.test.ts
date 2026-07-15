@@ -33,6 +33,13 @@ describe("DSBox API", () => {
     expect(response.body.system.appleSilicon).toBe(process.platform === "darwin" && process.arch === "arm64");
   });
 
+  it("delivers the browser security policy as an HTTP header", async () => {
+    const response = await request(createApp(services)).get("/api/health").expect(200);
+
+    expect(response.headers["content-security-policy"]).toContain("script-src 'self' blob:");
+    expect(response.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+  });
+
   it("does not present an incompatible model saved by an older DSBox version as ready", async () => {
     const incompatiblePath = path.join(home, "legacy-incompatible.gguf");
     await writeFile(incompatiblePath, createDs4GgufFixture({ includeVocabSize: false }));

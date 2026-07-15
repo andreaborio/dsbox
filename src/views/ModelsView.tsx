@@ -31,6 +31,12 @@ import { identifyModel } from "../lib/model-identity";
 import { currentDownload, downloadStageLabel, formatDownloadEta, resumableDownload } from "../lib/model-download-state";
 import { assessLocalModelHardware, assessModelHardware } from "../lib/model-hardware-advisor";
 import { catalogModelForVariant, catalogModelIsReady, chooseDefaultCatalogVariant } from "../lib/model-variants";
+import {
+  localModelIsRunnable,
+  normalizeLocalModelCandidate,
+  normalizeLocalModelCandidates,
+  normalizeLocalModelScanSnapshot
+} from "../lib/local-models";
 import type {
   AppSnapshot,
   CatalogModel,
@@ -86,7 +92,7 @@ function mergeCandidates(...groups: LocalModelCandidate[][]): LocalModelCandidat
 }
 
 function scanStageLabel(scan: LocalModelScanSnapshot): string {
-  const ready = scan.models.filter((model) => model.compatibility.status === "compatible").length;
+  const ready = scan.models.filter(localModelIsRunnable).length;
   if (scan.status === "idle") return "Find GGUF files on this Mac. Files stay where they are.";
   if (scan.status === "cancelled") return "Scan stopped";
   if (scan.status === "error") return "Scan could not finish";
@@ -119,8 +125,8 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     setLocalLoading(true);
     setLocalError(null);
     try {
-      const response = await apiRequest<{ models: LocalModelCandidate[] }>("/api/models/local");
-      setLocalModels(response.models);
+      const response = await apiRequest<{ models?: unknown }>("/api/models/local");
+      setLocalModels(normalizeLocalModelCandidates(response.models));
     } catch (reason) {
       setLocalError(reason instanceof Error ? reason.message : "Unable to check common model folders");
     } finally {
@@ -143,7 +149,8 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   useEffect(() => {
     void refreshLocalModels();
     void refreshCatalog();
-    void apiRequest<LocalModelScanSnapshot>("/api/models/local/scan")
+    void apiRequest<unknown>("/api/models/local/scan")
+      .then(normalizeLocalModelScanSnapshot)
       .then((result) => {
         setScan(result);
         if (result.models.length) setLocalModels((current) => mergeCandidates(current, result.models));
@@ -156,7 +163,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     let active = true;
     const poll = async () => {
       try {
-        const result = await apiRequest<LocalModelScanSnapshot>("/api/models/local/scan");
+        const result = normalizeLocalModelScanSnapshot(await apiRequest<unknown>("/api/models/local/scan"));
         if (!active) return;
         setScan(result);
         if (result.models.length) setLocalModels((current) => mergeCandidates(current, result.models));
@@ -180,9 +187,9 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     if (!normalizedQuery) return true;
     return [model.name, model.modelId, model.path].some((value) => value.toLowerCase().includes(normalizedQuery));
   }), [localModels, normalizedQuery]);
-  const readyLocalModels = visibleLocalModels.filter((model) => model.compatibility.status === "compatible");
-  const unsupportedLocalModels = visibleLocalModels.filter((model) => model.compatibility.status !== "compatible");
-  const totalReadyLocalModels = localModels.filter((model) => model.compatibility.status === "compatible").length;
+  const readyLocalModels = visibleLocalModels.filter(localModelIsRunnable);
+  const unsupportedLocalModels = visibleLocalModels.filter((model) => !localModelIsRunnable(model));
+  const totalReadyLocalModels = localModels.filter(localModelIsRunnable).length;
   const visibleCatalogModels = useMemo(() => [...(catalog?.models ?? [])]
     .sort((left, right) => Number(right.recommended) - Number(left.recommended) || left.label.localeCompare(right.label))
     .filter((model) => {
@@ -197,7 +204,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     setLocalError(null);
     setFinderMessage(null);
     try {
-      const result = await apiRequest<LocalModelScanSnapshot>("/api/models/local/scan", { method: "POST" });
+      const result = normalizeLocalModelScanSnapshot(await apiRequest<unknown>("/api/models/local/scan", { method: "POST" }));
       setScan(result);
     } catch (reason) {
       setLocalError(reason instanceof Error ? reason.message : "The scan could not start");
@@ -206,7 +213,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
 
   const stopScan = async () => {
     try {
-      const result = await apiRequest<LocalModelScanSnapshot>("/api/models/local/scan/cancel", { method: "POST" });
+      const result = normalizeLocalModelScanSnapshot(await apiRequest<unknown>("/api/models/local/scan/cancel", { method: "POST" }));
       setScan(result);
     } catch (reason) {
       setLocalError(reason instanceof Error ? reason.message : "The scan could not be stopped");
@@ -222,10 +229,12 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
       if (result.cancelled || !result.model) {
         return;
       }
-      setLocalModels((current) => mergeCandidates(current, [result.model!]));
-      setFinderMessage(result.model.compatibility.status === "compatible"
-        ? `${result.model.name} was added to your library and is ready to use.`
-        : `${result.model.name} was added to your library. This DS4 build cannot run it yet.`);
+      const model = normalizeLocalModelCandidate(result.model);
+      if (!model) throw new Error("DSBox returned an invalid local model");
+      setLocalModels((current) => mergeCandidates(current, [model]));
+      setFinderMessage(localModelIsRunnable(model)
+        ? `${model.name} was added to your library and is ready to use.`
+        : `${model.name} was added to your library. This DS4 build cannot run it yet.`);
     } catch (reason) {
       setLocalError(reason instanceof Error ? reason.message : "The selected file could not be added");
     } finally {
@@ -237,10 +246,11 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     setSelectingPath(model.path);
     setLocalError(null);
     try {
-      const selected = await apiRequest<LocalModelCandidate>("/api/models/local/select", {
+      const selected = normalizeLocalModelCandidate(await apiRequest<unknown>("/api/models/local/select", {
         method: "POST",
         body: JSON.stringify({ path: model.path })
-      });
+      }));
+      if (!selected) throw new Error("DSBox returned an invalid local model");
       setLocalModels((current) => mergeCandidates(current.map((candidate) => ({ ...candidate, selected: false })), [selected]));
       await controller.refresh();
     } catch (reason) {
@@ -346,7 +356,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   };
 
   const renderLocalModel = (model: LocalModelCandidate) => {
-    const unsupported = model.compatibility.status !== "compatible";
+    const unsupported = model.compatibility.status === "unsupported";
     const filename = model.path.split("/").at(-1) ?? model.name;
     const identity = identifyModel(model.modelId, model.name, filename, model.path);
     const assessment = unsupported ? null : assessLocalModelHardware(model, {
@@ -505,7 +515,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
                     <span className="local-scan-status__track"><i /></span>
                     <div className="local-scan-status__meta">
                       <span>{scan.progress.candidateFiles} files found</span>
-                      <span>{scan.models.filter((model) => model.compatibility.status === "compatible").length} ready to run</span>
+                      <span>{scan.models.filter(localModelIsRunnable).length} ready to run</span>
                     </div>
                   </>
                 )}

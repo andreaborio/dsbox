@@ -12,6 +12,7 @@ import { MetricsMonitor } from "./metrics.js";
 import { ModelSelectionError, ModelSwitchError, RuntimeManager, isTaskCancelledError } from "./runtime.js";
 import { ModelCatalog } from "./catalog.js";
 import { ModelDownloadError, ModelDownloadManager } from "./model-downloads.js";
+import { CONTENT_SECURITY_POLICY } from "./security.js";
 import { assertTextOnlyInput, UnsupportedInputModalityError } from "./text-only.js";
 import { searchWeb } from "./web-search.js";
 
@@ -261,6 +262,7 @@ export function createApp(services: AppServices) {
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Referrer-Policy", "no-referrer");
     response.setHeader("X-Frame-Options", "DENY");
+    response.setHeader("Content-Security-Policy", CONTENT_SECURITY_POLICY);
     if (!isLoopbackUrlHost(request.header("host") ?? "")) {
       response.status(403).json({ error: "Host not allowed" });
       return;

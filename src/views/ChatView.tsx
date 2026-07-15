@@ -32,6 +32,7 @@ import { BrandMark, Button, CopyButton, Modal } from "../components/ui";
 import { DsboxOrb, type DsboxOrbState } from "../components/DsboxOrb";
 import { apiRequest } from "../lib/api";
 import { formatBytes, formatModelName } from "../lib/format";
+import { localModelIsRunnable, normalizeLocalModelCandidates } from "../lib/local-models";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -170,8 +171,8 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const loadLocalModels = useCallback(async () => {
     setModelsLoading(true);
     try {
-      const response = await apiRequest<{ models: LocalModelCandidate[] }>("/api/models/local");
-      setLocalModels(response.models.filter((model) => model.compatibility.status === "compatible"));
+      const response = await apiRequest<{ models?: unknown }>("/api/models/local");
+      setLocalModels(normalizeLocalModelCandidates(response.models).filter(localModelIsRunnable));
       setModelError(null);
     } catch (reason) {
       setModelError(reason instanceof Error ? reason.message : "Installed models could not be loaded");
