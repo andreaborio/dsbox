@@ -155,7 +155,8 @@ Exit gate: test unitari completi, typecheck/build, sanitizer DS4, round-trip rea
 tool -> result -> risposta finale su entrambi i modelli. La patch DS4 e' stata
 pubblicata nel [draft PR #2](https://github.com/andreaborio/ds4/pull/2) e DSBox
 punta al relativo commit verificato; prima del rilascio stabile il PR va unito e
-il canale runtime riportato da `codex/qwen-tool-dialect` a `main`.
+il canale runtime riportato da `codex/qwen-tool-dialect` a `main`, usando come
+pin lo SHA effettivo su `main` che contiene la patch (merge o squash).
 
 ### P1 - Policy, approval e audit
 
@@ -246,8 +247,8 @@ Release gate iniziale:
 
 ## Ordine consigliato delle prossime integrazioni
 
-1. Unire il supporto Qwen DS4 e riportare il canale runtime DSBox a `main`,
-   conservando `fc1561f` come commit minimo.
+1. Unire il supporto Qwen DS4, riportare il canale runtime DSBox a `main` e
+   sostituire il pin con lo SHA effettivo risultante su `main`.
 2. Aggiungere run store + policy/approval + audit prima di qualunque write.
 3. Integrare MCP read-only con discovery differita.
 4. Aggiungere file read e citazioni/provenance.
