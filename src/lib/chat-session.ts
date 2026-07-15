@@ -30,6 +30,7 @@ export interface ChatSendRequest {
   content: string;
   model: string;
   maxTokens: number;
+  allowWebSearch?: boolean;
 }
 
 export interface ChatSessionSnapshot {
@@ -80,7 +81,7 @@ type OutgoingChatMessage =
 export function shouldAuthorizeAgentWebSearch(prompt: string): boolean {
   const text = prompt.toLowerCase().replace(/\s+/g, " ").trim();
   if (!text) return false;
-  return /\b(search(?: the)? web|web search|browse(?: the)? web|look (?:it |this )?up(?: online)?|find (?:it )?online|online sources?|cite (?:your |the )?sources?|citations?|cerca (?:sul )?web|cerca online|naviga (?:sul )?web|fonti online|cita (?:le )?fonti|citazioni)\b/i.test(text);
+  return /\b(search(?: the)? web|web search|browse(?: the)? web|look (?:it |this )?up(?: online)?|find (?:it )?online|online sources?|cite (?:your |the )?sources?|citations?|cerca (?:(?:(?:su|sul|nel) )?(?:web|internet)|online|(?:in|sulla|nella) rete)|naviga (?:sul )?web|fonti online|cita (?:le )?fonti|citazioni)\b/i.test(text);
 }
 
 export function shouldAutoEnableWebSearch(prompt: string): boolean {
@@ -830,7 +831,7 @@ export class ChatSessionStore {
     return true;
   };
 
-  send = async ({ content, model, maxTokens }: ChatSendRequest): Promise<void> => {
+  send = async ({ content, model, maxTokens, allowWebSearch = false }: ChatSendRequest): Promise<void> => {
     const prompt = content.trim();
     if (!prompt || this.snapshot.streaming) return;
 
@@ -916,7 +917,7 @@ export class ChatSessionStore {
         stream: true,
         stream_options: { include_usage: true }
       };
-      if (agentActive) body.allow_web_search = shouldAuthorizeAgentWebSearch(prompt);
+      if (agentActive) body.allow_web_search = allowWebSearch || shouldAuthorizeAgentWebSearch(prompt);
       if (!this.snapshot.thinking) body.thinking = { type: "disabled" };
       const response = await this.fetcher(agentActive ? "/api/agent/chat" : "/api/chat", {
         method: "POST",

@@ -232,6 +232,7 @@ const streamingMarkdownComponents: Components = {
 export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const chat = useChatSession();
   const { messages, input, thinking, streaming, capabilities, agentMode } = chat;
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState<Record<string, boolean>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showJump, setShowJump] = useState(false);
@@ -332,6 +333,8 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const ready = snapshot.runtime.readiness === "ready";
   const agentAvailable = capabilities.status === "ready" && capabilities.chatTools;
   const agentActive = agentAvailable && agentMode;
+  const webSearchAvailable = agentAvailable && capabilities.tools.includes("web_search");
+  const webSearchActive = agentActive && webSearchEnabled;
   const agentCapabilityMessage = capabilities.status === "error" || capabilities.status === "unknown"
     ? "Tool capability could not be verified. DSBox will use standard chat."
     : capabilities.status === "ready" && !capabilities.chatTools
@@ -347,6 +350,14 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const modelSwitchBlocked = streaming
     || modelSwitching
     || !["uninstalled", "idle", "running", "error"].includes(snapshot.runtime.phase);
+
+  useEffect(() => {
+    if (!agentActive || !webSearchAvailable) setWebSearchEnabled(false);
+  }, [agentActive, webSearchAvailable]);
+
+  useEffect(() => {
+    setWebSearchEnabled(false);
+  }, [chat.activeThreadId, snapshot.config.model.id, snapshot.config.model.path]);
 
   useEffect(() => {
     const wasStreaming = wasStreamingRef.current;
@@ -430,12 +441,15 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
     }
     autoScrollRef.current = true;
     setShowJump(false);
-    void chat.send({ content, model: snapshot.config.model.id, maxTokens: snapshot.config.server.maxOutputTokens });
+    const allowWebSearch = webSearchActive;
+    setWebSearchEnabled(false);
+    void chat.send({ content, model: snapshot.config.model.id, maxTokens: snapshot.config.server.maxOutputTokens, allowWebSearch });
     if (textAreaRef.current) textAreaRef.current.style.height = "auto";
   };
 
   const startNewThread = () => {
     if (streaming) return;
+    setWebSearchEnabled(false);
     chat.newThread();
     setReasoningOpen({});
     setHistoryOpen(false);
@@ -796,6 +810,27 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                 <span>{capabilities.status === "loading" ? "Checking tools…" : agentAvailable ? (agentActive ? "Agent" : "Agent off") : "Chat only"}</span>
                 <i aria-hidden="true" />
               </button>
+              {webSearchAvailable && (
+                <button
+                  type="button"
+                  className={`agent-toggle ${webSearchActive ? "agent-toggle--on" : ""}`}
+                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                  disabled={!agentActive || streaming}
+                  aria-pressed={webSearchActive}
+                  aria-label={webSearchActive ? "Web search on for the next request" : "Authorize web search for the next request"}
+                  title={webSearchActive
+                    ? "Web search is on for the next request only"
+                    : !agentActive
+                      ? "Turn on Agent to authorize web search"
+                      : streaming
+                        ? "Web search can be enabled after this response finishes"
+                        : "Authorize web_search for the next request only"}
+                >
+                  <Globe2 size={13} />
+                  <span>{webSearchActive ? "Web on" : "Web"}</span>
+                  <i aria-hidden="true" />
+                </button>
+              )}
               <button type="button" className={`thinking-toggle ${thinking ? "thinking-toggle--on" : ""}`} onClick={() => chat.setThinking(!thinking)} aria-pressed={thinking}>
                 <Brain size={13} /> <span>Thinking</span><i aria-hidden="true" />
               </button>

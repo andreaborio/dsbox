@@ -99,10 +99,39 @@ describe("persistent chat session", () => {
   it("authorizes agent web access only when the user asks for web research explicitly", () => {
     expect(shouldAuthorizeAgentWebSearch("Search the web and cite your sources")).toBe(true);
     expect(shouldAuthorizeAgentWebSearch("Cerca sul web e cita le fonti")).toBe(true);
+    expect(shouldAuthorizeAgentWebSearch("cerca su web")).toBe(true);
+    expect(shouldAuthorizeAgentWebSearch("cerca nel web")).toBe(true);
+    expect(shouldAuthorizeAgentWebSearch("cerca in rete")).toBe(true);
+    expect(shouldAuthorizeAgentWebSearch("cerca sulla rete")).toBe(true);
     expect(shouldAuthorizeAgentWebSearch("Look it up")).toBe(true);
     expect(shouldAuthorizeAgentWebSearch("What is the latest Qwen release?")).toBe(false);
     expect(shouldAuthorizeAgentWebSearch("What is the weather today?")).toBe(false);
     expect(shouldAuthorizeAgentWebSearch("Summarize https://example.com")).toBe(false);
+    expect(shouldAuthorizeAgentWebSearch("cerca nei file del progetto")).toBe(false);
+  });
+
+  it("combines a one-request Web toggle with explicit prompt intent without retaining it across threads", async () => {
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const fetcher = vi.fn(async (input: string, init: RequestInit) => {
+      if (input === "/api/capabilities") {
+        return Response.json({ chat: { tools: true }, tools: [{ name: "web_search" }] });
+      }
+      if (input !== "/api/agent/chat") throw new Error(`Unexpected request: ${input}`);
+      requestBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return new Response([
+        `event: agent\ndata: ${JSON.stringify({ type: "run.completed", finishReason: "stop", steps: 0 })}\n\n`,
+        "data: [DONE]\n\n"
+      ].join(""), { status: 200, headers: { "content-type": "text/event-stream" } });
+    });
+    const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
+    await store.refreshCapabilities();
+
+    await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32, allowWebSearch: true });
+    store.newThread();
+    await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32 });
+    await store.send({ content: "cerca su web", model: "local-model", maxTokens: 32 });
+
+    expect(requestBodies.map((body) => body.allow_web_search)).toEqual([true, false, true]);
   });
 
   it("uses the canonical agent endpoint when the active runtime advertises chat tools", async () => {

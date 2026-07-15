@@ -205,7 +205,7 @@ The table below uses the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF and the i
 - Inference, models, configuration, and thread history stay on the Mac. Threads use browser/Electron local storage; they are not encrypted or synchronized.
 - The control plane and internal DS4 server bind to loopback only. Mutating control actions require a custom header, and optional Bearer/`x-api-key` gateway authentication is available.
 - DSBox is currently text-only. Image, audio, video, and file parts are rejected before they can reach DS4.
-- Automatic web search is intentionally transparent in the composer, but it is not fully offline: when the local router detects an explicit or time-sensitive search request, a normalized query of at most 400 characters is sent to DuckDuckGo Lite. Search failure falls back to local inference.
+- Web search is not fully offline. In Agent mode it is authorized for one request by the visible **Web** control or explicit wording such as `search the web`, `cerca su web`, or `cerca online`; standard chat also routes clearly time-sensitive requests through the local search classifier. A normalized query of at most 400 characters is sent to DuckDuckGo Lite, and search failure falls back to local inference.
 - Metal utilization remains `N/A` because macOS does not expose a reliable per-process value without elevated tooling. DSBox does not use `sudo` or `powermetrics`.
 - The community DMG is ad-hoc signed and not notarized. A fully trusted first launch requires Apple Developer ID signing and notarization.
 
