@@ -748,7 +748,16 @@ export class ChatSessionStore {
         method: "GET",
         headers: { "x-dsbox-control": "1" }
       });
-      const payload = await response.json().catch(() => null) as unknown;
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Tool capabilities returned a non-JSON response. DSBox may be connected to an older backend.");
+      }
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error("Tool capabilities returned malformed JSON.");
+      }
       if (!response.ok) {
         const record = asRecord(payload);
         const error = asRecord(record?.error);

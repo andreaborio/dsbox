@@ -433,6 +433,23 @@ describe("persistent chat session", () => {
     expect(store.getSnapshot().messages.at(-1)?.content).toBe("Standard chat");
   });
 
+  it("reports an older backend explicitly when capabilities returns HTML", async () => {
+    const fetcher = vi.fn(async () => new Response("<!doctype html><title>Old DSBox</title>", {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" }
+    }));
+    const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
+
+    const capabilities = await store.refreshCapabilities();
+
+    expect(capabilities).toMatchObject({
+      status: "error",
+      chatTools: false,
+      reason: "Tool capabilities returned a non-JSON response. DSBox may be connected to an older backend."
+    });
+    expect(store.getSnapshot().capabilities).toEqual(capabilities);
+  });
+
   it("does not reuse stale tool capability while a model refresh is pending", async () => {
     const requests: string[] = [];
     let capabilityCalls = 0;

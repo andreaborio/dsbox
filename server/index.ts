@@ -10,7 +10,16 @@ if (host !== "127.0.0.1" && host !== "localhost") {
 
 const services = await createServices(port);
 const app = createApp(services);
-const server = app.listen(port, host, () => {
+const server = app.listen(port, host, (error?: Error) => {
+  if (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    process.stderr.write(
+      `DSBox could not listen on http://${host}:${port}${code ? ` (${code})` : ""}: ${error.message}\n`
+    );
+    process.exitCode = 1;
+    setImmediate(() => process.exit(1));
+    return;
+  }
   services.runtime.log("success", "dsbox", `DSBox is ready at http://${host}:${port}`);
   services.metrics.start();
   if (process.env.DSBOX_OPEN_BROWSER === "1" && process.platform === "darwin") {

@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppSnapshot, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
 import { Button, CopyButton, StatusPill } from "../components/ui";
+import { getQwenAdapterCompatibility, resolveQwenAdapter, type AgentAdapterId } from "../lib/agent-adapters";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -28,9 +29,7 @@ interface Props {
   onNavigate: (view: ViewId) => void;
 }
 
-type AdapterId = "codex" | "claude" | "opencode" | "pi" | "generic";
-
-const adapterMeta: Array<{ id: AdapterId; name: string; detail: string; icon: typeof Bot }> = [
+const adapterMeta: Array<{ id: AgentAdapterId; name: string; detail: string; icon: typeof Bot }> = [
   { id: "codex", name: "Codex CLI", detail: "Responses API", icon: Command },
   { id: "claude", name: "Claude Code", detail: "Anthropic Messages", icon: Bot },
   { id: "opencode", name: "OpenCode", detail: "Chat Completions", icon: TerminalSquare },
@@ -41,11 +40,11 @@ const adapterMeta: Array<{ id: AdapterId; name: string; detail: string; icon: ty
 export function AgentsView({ snapshot, onNavigate }: Props) {
   const { config, runtime, system } = snapshot;
   const isQwen = config.model.id === "qwen3.6-35b-a3b";
-  const [adapter, setAdapter] = useState<AdapterId>(() => isQwen ? "generic" : "codex");
+  const [adapter, setAdapter] = useState<AgentAdapterId>(() => isQwen ? "generic" : "codex");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"ok" | "error" | null>(null);
   const testSequence = useRef(0);
-  const adapterBeforeQwen = useRef<AdapterId>("codex");
+  const adapterBeforeQwen = useRef<AgentAdapterId>("codex");
   const wasQwen = useRef(isQwen);
   const base = system.openAiBaseUrl;
   const root = system.anthropicBaseUrl;
@@ -55,7 +54,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     if (isQwen && !wasQwen.current) {
       setAdapter((current) => {
         adapterBeforeQwen.current = current;
-        return "generic";
+        return resolveQwenAdapter(current);
       });
     } else if (!isQwen && wasQwen.current) {
       setAdapter(adapterBeforeQwen.current);
@@ -69,7 +68,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     setTestResult(null);
   }, [base, model, runtime.phase]);
 
-  const snippets = useMemo<Record<AdapterId, { file: string; description: string; code: string; run?: string }>>(() => ({
+  const snippets = useMemo<Record<AgentAdapterId, { file: string; description: string; code: string; run?: string }>>(() => ({
     codex: {
       file: "~/.codex/config.toml",
       description: "Codex uses the fork's native Responses endpoint, with streamed text and tool calls.",
@@ -135,15 +134,15 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     generic: {
       file: "Terminal",
       description: isQwen
-        ? "A tool-free Chat Completions request supported by the selected Qwen runtime. Streaming is disabled here for readability."
+        ? "This example is text-only with streaming disabled for readability. The Qwen endpoint also supports streaming, tools, tool_choice, and multiple tool calls."
         : "A minimal OpenAI Chat Completions request with streaming disabled for readability.",
       code: `curl ${base}/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer ${config.gateway.apiKey}' \\\n  -d '${JSON.stringify({ model, messages: [{ role: "user", content: "Write hello world in Rust." }], stream: false })}'`
     }
   }), [base, config.gateway.apiKey, config.server.contextTokens, config.server.maxOutputTokens, isQwen, model, root]);
 
-  const activeAdapter = isQwen ? "generic" : adapter;
+  const activeAdapter = isQwen ? resolveQwenAdapter(adapter) : adapter;
   const current = snippets[activeAdapter];
-  const activeAdapterName = isQwen
+  const activeAdapterName = isQwen && activeAdapter === "generic"
     ? "Chat Completions"
     : adapterMeta.find((item) => item.id === activeAdapter)?.name;
 
@@ -168,7 +167,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
 
   const endpoints = isQwen
     ? [
-        { label: "Chat Completions", protocol: "Tool-free OpenAI API", url: `${base}/chat/completions`, icon: MessagesSquare },
+        { label: "Chat Completions", protocol: "OpenAI API · tools and streaming", url: `${base}/chat/completions`, icon: MessagesSquare },
         { label: "Gateway status", protocol: "Model availability", url: `${base}/models`, icon: Zap }
       ]
     : [
@@ -183,7 +182,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         <div>
           <span className="eyebrow"><Link2 size={13} /> {isQwen ? "Local API" : "Local connection"}</span>
           <h2>{isQwen ? "Connect through Chat Completions." : "Connect your preferred coding agent."}</h2>
-          <p>{isQwen ? "Use DSBox Chat or copy the local endpoint into an app that sends text-only, tool-free requests." : "Choose your tool and copy the ready-to-use configuration. DSBox handles the address, model, and security."}</p>
+          <p>{isQwen ? "Use DSBox Chat or connect compatible apps and coding agents through OpenAI Chat Completions with streaming, tools, and multiple tool calls." : "Choose your tool and copy the ready-to-use configuration. DSBox handles the address, model, and security."}</p>
         </div>
         <div className="agents-intro__status panel">
           <StatusPill phase={runtime.phase} />
@@ -210,8 +209,8 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         <section className="qwen-capability panel" aria-label="Qwen connection capabilities">
           <span className="qwen-capability__icon"><MessagesSquare size={17} /></span>
           <div>
-            <div><strong>Qwen3.6 · Chat only</strong><span>Text</span></div>
-            <p>This DS4 runtime supports tool-free <code>/v1/chat/completions</code>. Coding-agent tool protocols and Anthropic Messages are unavailable for this model.</p>
+            <div><strong>Qwen3.6 · Agent ready</strong><span>Tools</span></div>
+            <p>This DS4 runtime supports OpenAI-compatible <code>/v1/chat/completions</code> with streaming, tools, <code>tool_choice</code>, and multiple tool calls. Responses API and Anthropic Messages are not exposed.</p>
           </div>
         </section>
       )}
@@ -231,23 +230,24 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
 
       <section className="connector-workbench panel">
         <aside className="connector-list">
-          <div className="connector-list__heading">{isQwen ? "Connection type" : "Choose an agent"}</div>
+          <div className="connector-list__heading">Choose an agent</div>
           {adapterMeta.map((item) => {
             const Icon = item.icon;
-            const unavailable = isQwen && item.id !== "generic";
+            const compatibility = isQwen ? getQwenAdapterCompatibility(item.id) : { available: true, unavailableReason: null };
+            const unavailable = !compatibility.available;
             const displayName = isQwen && item.id === "generic" ? "Chat Completions" : item.name;
             return (
               <button
                 className={`${activeAdapter === item.id ? "active" : ""} ${unavailable ? "connector-list__item--unavailable" : ""}`}
                 onClick={() => setAdapter(item.id)}
                 key={item.id}
-                aria-label={unavailable ? `${item.name} is unavailable for Qwen3.6` : displayName}
+                aria-label={unavailable ? `${item.name} is unavailable for Qwen3.6: ${compatibility.unavailableReason}` : displayName}
                 aria-pressed={activeAdapter === item.id}
-                title={unavailable ? `${item.name} requires coding-agent protocol support` : displayName}
+                title={unavailable ? `${item.name}: ${compatibility.unavailableReason}` : displayName}
                 disabled={unavailable}
               >
                 <span><Icon size={17} /></span>
-                <div><strong>{displayName}</strong><small>{unavailable ? "Requires tool support" : item.detail}</small></div>
+                <div><strong>{displayName}</strong><small>{compatibility.unavailableReason ?? item.detail}</small></div>
                 {unavailable ? <em>Unavailable</em> : <ChevronRight size={14} />}
               </button>
             );
@@ -293,7 +293,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         </article>
       </section>
 
-      <div className="compatibility-note"><CircleAlert size={14} /><p>{isQwen ? "Qwen3.6 currently supports DSBox Chat and tool-free Chat Completions only." : "These configuration snippets automatically use the model selected in DSBox."}</p></div>
+      <div className="compatibility-note"><CircleAlert size={14} /><p>{isQwen ? "Qwen3.6 supports DSBox Chat and OpenAI-compatible Chat Completions with tools; Codex and Claude Code require protocols this runtime does not expose." : "These configuration snippets automatically use the model selected in DSBox."}</p></div>
     </div>
   );
 }

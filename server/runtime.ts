@@ -1946,7 +1946,7 @@ export class RuntimeManager {
       binary,
       ...args
     ];
-    if (qwen35) this.log("info", "dsbox", "Qwen3.6 profile applied: Metal AUTO residency, resident when safe with SSD fallback, power 100, and tool-free chat.");
+    if (qwen35) this.log("info", "dsbox", "Qwen3.6 profile applied: Metal AUTO residency, resident when safe with SSD fallback, power 100, and tool-enabled chat.");
     this.log("info", "dsbox", `$ ${command.map(shellDisplayArgument).join(" ")}`);
     this.setState({
       phase: "starting",
@@ -2009,7 +2009,7 @@ export class RuntimeManager {
           "success",
           "dsbox",
           qwen35
-            ? "ds4-server is ready for Qwen chat and tool-free Chat Completions."
+            ? "ds4-server is ready for Qwen chat and tool-enabled Chat Completions."
             : "ds4-server is ready for chat and coding agents."
         );
         this.setState({ phase: "running", readiness: "ready", currentTask: null });
