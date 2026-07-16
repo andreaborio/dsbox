@@ -135,9 +135,12 @@ describe("model-neutral agent API", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["deepseek-v4-flash", "qwen3.6-35b-a3b"])(
-    "runs the same canonical tool loop for %s and preserves call_id and usage",
-    async (modelId) => {
+  it.each([
+    { modelId: "deepseek-v4-flash", reasoningField: "reasoning_content" },
+    { modelId: "qwen3.6-35b-a3b", reasoningField: "reasoning" }
+  ] as const)(
+    "runs the same canonical tool loop for $modelId and preserves call_id, reasoning, and usage",
+    async ({ modelId, reasoningField }) => {
       const config = services.store.get();
       config.model.id = modelId;
       await services.store.set(config);
@@ -156,7 +159,7 @@ describe("model-neutral agent API", () => {
         completion += 1;
         if (completion === 1) {
           return sseResponse([
-            { choices: [{ delta: { reasoning_content: "I should inspect it." } }] },
+            { choices: [{ delta: { [reasoningField]: "I should inspect it." } }] },
             {
               choices: [{
                 delta: {
@@ -440,6 +443,13 @@ describe("model-neutral agent API", () => {
       expect(payload.messages.filter((message) => message.role === "tool").map(
         (message) => message.tool_call_id
       )).toEqual(["call_web_0", "call_web_1", "call_web_2", "call_web_3", "call_web_4"]);
+      const toolPayloads = payload.messages
+        .filter((message) => message.role === "tool")
+        .map((message) => JSON.parse(String(message.content)) as {
+          result: { citationFormat: string; results: Array<{ sourceId: string }> };
+        });
+      expect(toolPayloads.map((tool) => tool.result.results[0]?.sourceId)).toEqual(["S1", "S2", "S3", "S4", "S5"]);
+      expect(toolPayloads[0]?.result.citationFormat).toContain("[S1]");
       return sseResponse([{
         choices: [{ delta: { content: "Five searches complete." }, finish_reason: "stop" }]
       }]);
@@ -460,6 +470,9 @@ describe("model-neutral agent API", () => {
     expect(events.filter((event) => event.type === "tool_call.result").map(
       (event) => event.callId
     )).toEqual(["call_web_0", "call_web_1", "call_web_2", "call_web_3", "call_web_4"]);
+    expect(events.filter((event) => event.type === "tool_call.result").map(
+      (event) => (event.result as { results: Array<{ sourceId: string }> }).results[0]?.sourceId
+    )).toEqual(["S1", "S2", "S3", "S4", "S5"]);
     expect(events.at(-1)).toMatchObject({ type: "run.completed", steps: 2 });
   });
 

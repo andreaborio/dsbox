@@ -1,4 +1,4 @@
-import { Check, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useChatSession } from "../hooks/useChatSession";
@@ -148,7 +148,6 @@ export function ChatSidebarThreads({ onOpenChat }: Props) {
   return (
     <section className="sidebar-chats" aria-label="Local chat history">
       <div className="sidebar-chats__head">
-        <span>Chats</span>
         <button type="button" onClick={startNewThread} disabled={chat.streaming || chat.messages.length === 0} aria-label="New chat" title={chat.streaming ? "Stop generation before starting a new chat" : "New chat"}><Plus size={15} /></button>
       </div>
       <label className="sidebar-chat-search">
@@ -223,8 +222,6 @@ export function ChatSidebarThreads({ onOpenChat }: Props) {
           <div className="sidebar-chats__empty"><Search size={15} /><span>No matching chats</span></div>
         )}
       </div>
-
-      <div className="sidebar-chats__privacy"><ShieldCheck size={12} /><span>Local only · this Mac</span></div>
 
       {threadMenu && menuThread && createPortal(
         <div

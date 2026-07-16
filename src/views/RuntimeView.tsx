@@ -24,8 +24,10 @@ import type { DsboxController } from "../hooks/useDsbox";
 import { apiRequest } from "../lib/api";
 import { shellDisplayArgument } from "../lib/arguments";
 import { formatBytes, formatDuration, formatModelName, timeLabel } from "../lib/format";
+import { identifyModel } from "../lib/model-identity";
 import { currentDownload, formatDownloadEta } from "../lib/model-download-state";
 import { BrandMark, Button, CopyButton, StatusPill } from "../components/ui";
+import { ModelIdentityIcon } from "../components/ModelIdentityIcon";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -113,6 +115,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
     ? Math.round((activeDownload.downloadedBytes / Math.max(activeDownload.totalBytes, 1)) * 100)
     : null;
   const qwenManaged = config.model.id === "qwen3.6-35b-a3b";
+  const modelIdentity = identifyModel(config.model.id, config.model.path);
   const checkoutChangeAllowed = ["uninstalled", "idle", "error"].includes(runtime.phase) && !activeDownload;
   const phaseCopy = qwenManaged && runtime.phase === "running"
     ? { ...copyByPhase.running, description: "Qwen is ready for private chat and OpenAI-compatible agents with tools and streaming." }
@@ -214,7 +217,9 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           aria-label={visibleCopy.action}
         >
           <span className="power-control__ring" />
-          <BrandMark size="hero" />
+          <span className={`power-control__model power-control__model--${modelIdentity}`}>
+            {runtime.modelPresent ? <ModelIdentityIcon identity={modelIdentity} fallback={<BrandMark size="hero" />} /> : <BrandMark size="hero" />}
+          </span>
         </motion.button>
         <h2>{visibleCopy.title}</h2>
         <p>{visibleCopy.description}</p>
@@ -258,7 +263,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
         </div>
         <div className="automatic-facts">
           <div><span><Cpu size={15} /> This Mac</span><strong>{system.cpuModel.replace(/^Apple\s*/i, "")} · {formatBytes(system.totalMemoryBytes, 0)}</strong></div>
-          <div><span><Gauge size={15} /> Model</span><strong>{modelName}</strong></div>
+          <div><span><Gauge size={15} /> Model</span><strong className="automatic-model-name"><i className={`automatic-model-name__icon automatic-model-name__icon--${modelIdentity}`}><ModelIdentityIcon identity={modelIdentity} fallback={<HardDrive size={14} />} /></i>{modelName}</strong></div>
           <div><span><MemoryStick size={15} /> Memory</span><strong>Automatically balanced</strong></div>
           <div><span><ShieldCheck size={15} /> Privacy</span><strong>Stays on your Mac</strong></div>
         </div>

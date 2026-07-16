@@ -5,6 +5,7 @@ import {
   reduceAgentStreamEvent,
   shouldAuthorizeAgentWebSearch,
   shouldAutoEnableWebSearch,
+  webSearchSourcesFromResult,
   type AgentStreamState,
   type ChatStorage
 } from "../src/lib/chat-session.js";
@@ -67,6 +68,49 @@ describe("persistent chat session", () => {
     });
   });
 
+  it("preserves the causal order when reasoning resumes after a tool call", () => {
+    let state: AgentStreamState = { content: "", reasoning: "", blocks: [] };
+    state = reduceAgentStreamEvent(state, { type: "reasoning.delta", step: 1, text: "Plan the lookup." }, 1_000);
+    state = reduceAgentStreamEvent(state, { type: "tool_call.created", step: 1, callId: "call-web", name: "web_search" }, 1_100);
+    state = reduceAgentStreamEvent(state, { type: "tool_call.started", step: 1, callId: "call-web", name: "web_search" }, 1_200);
+    state = reduceAgentStreamEvent(state, {
+      type: "tool_call.result",
+      step: 1,
+      callId: "call-web",
+      name: "web_search",
+      result: { results: [{ title: "Source", url: "https://example.com", snippet: "Evidence" }] }
+    }, 1_600);
+    state = reduceAgentStreamEvent(state, { type: "reasoning.delta", step: 2, text: "Check the evidence." }, 1_700);
+    state = reduceAgentStreamEvent(state, { type: "text.delta", step: 2, text: "Here is the answer." }, 1_800);
+
+    expect(state.blocks.map((block) => block.type)).toEqual([
+      "reasoning",
+      "tool_call",
+      "reasoning",
+      "text"
+    ]);
+    expect(state.blocks[0]).toEqual({ type: "reasoning", text: "Plan the lookup." });
+    expect(state.blocks[1]).toMatchObject({
+      type: "tool_call",
+      activity: { callId: "call-web", state: "succeeded", step: 1 }
+    });
+    expect(state.blocks[2]).toEqual({ type: "reasoning", text: "Check the evidence." });
+    expect(state.reasoning).toBe("Plan the lookup.Check the evidence.");
+    expect(state.content).toBe("Here is the answer.");
+  });
+
+  it("normalizes and de-duplicates web sources from object and serialized tool results", () => {
+    const results = [
+      { title: " Example  source ", url: "https://example.com/source", snippet: "  Fresh   context ", sourceId: "s7" },
+      { title: "Duplicate", url: "https://example.com/source", snippet: "Ignored" },
+      { title: "Unsafe", url: "javascript:alert(1)", snippet: "Ignored" }
+    ];
+
+    expect(webSearchSourcesFromResult(JSON.stringify({ result: { results } }))).toEqual([
+      { title: "Example source", url: "https://example.com/source", snippet: "Fresh context", citationId: "S7" }
+    ]);
+  });
+
   it("accepts the canonical lifecycle aliases used by streamed tool providers", () => {
     let state: AgentStreamState = { content: "", reasoning: "", blocks: [] };
     state = reduceAgentStreamEvent(state, { type: "tool_call.created", call_id: "call-alias", name: "open_url" }, 2_000);
@@ -121,7 +165,7 @@ describe("persistent chat session", () => {
     expect(shouldAuthorizeAgentWebSearch("cerca nei file del progetto")).toBe(false);
   });
 
-  it("uses the explicit Web availability selected by the UI", async () => {
+  it("uses the persisted Web preference as the only Agent egress gate", async () => {
     const requestBodies: Array<Record<string, unknown>> = [];
     const fetcher = vi.fn(async (input: string, init: RequestInit) => {
       if (input === "/api/capabilities") {
@@ -137,10 +181,13 @@ describe("persistent chat session", () => {
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
     await store.refreshCapabilities();
 
-    await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32, allowWebSearch: true });
+    store.setWebSearchEnabled(true);
+    await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32, allowWebSearch: false });
     store.newThread();
-    await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32 });
-    await store.send({ content: "cerca su web", model: "local-model", maxTokens: 32, allowWebSearch: true });
+    store.setWebSearchEnabled(false);
+    await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32, allowWebSearch: true });
+    store.setWebSearchEnabled(true);
+    await store.send({ content: "cerca su web", model: "local-model", maxTokens: 32 });
 
     expect(requestBodies.map((body) => body.allow_web_search)).toEqual([true, false, true]);
   });
@@ -256,8 +303,10 @@ describe("persistent chat session", () => {
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
     await store.refreshCapabilities();
 
+    store.setWebSearchEnabled(false);
     await store.send({ content: "Tell me the latest runtime state", model: "local-model", maxTokens: 128 });
-    await store.send({ content: "Search the web and continue", model: "local-model", maxTokens: 128, allowWebSearch: true });
+    store.setWebSearchEnabled(true);
+    await store.send({ content: "Search the web and continue", model: "local-model", maxTokens: 128 });
 
     expect(requestBodies[0].allow_web_search).toBe(false);
     expect(requestBodies[1].allow_web_search).toBe(true);
@@ -426,9 +475,14 @@ describe("persistent chat session", () => {
         headers: { "content-type": "text/event-stream" }
       });
     });
-    const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
+    const storage = new MemoryStorage();
+    const store = new ChatSessionStore({ fetcher, storage, createId: ids() });
     await store.refreshCapabilities();
     await store.send({ content: "Search the web for DSBox", model: "local-model", maxTokens: 64 });
+
+    expect(store.getSnapshot().messages.at(-1)?.sources).toEqual(webResult.results);
+    expect(new ChatSessionStore({ fetcher, storage, createId: ids() }).getSnapshot().messages.at(-1)?.sources).toEqual(webResult.results);
+
     await store.send({ content: "Summarize that result", model: "local-model", maxTokens: 64 });
 
     const messages = bodies[1].messages as Array<Record<string, unknown>>;
@@ -892,7 +946,13 @@ describe("persistent chat session", () => {
     });
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
 
+    store.setWebSearchEnabled(false);
     await store.send({ content: "What is the latest release?", model: "test", maxTokens: 32 });
+    expect(requests).toEqual(["/api/chat"]);
+
+    requests.length = 0;
+    store.setWebSearchEnabled(true);
+    await store.send({ content: "What is the latest release now?", model: "test", maxTokens: 32 });
     expect(requests).toEqual(["/api/skills/web-search", "/api/chat"]);
 
     requests.length = 0;

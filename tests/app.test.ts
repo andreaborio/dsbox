@@ -79,6 +79,33 @@ describe("DSBox API", () => {
     await request(createApp(services)).post("/api/runtime/start").expect(403);
   });
 
+  it("blocks web-search egress unless the request carries the explicit gate", async () => {
+    const externalFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      '<a class="result-link" href="https://example.com">Example</a><td class="result-snippet">Current result</td>',
+      { status: 200 }
+    ));
+    try {
+      const app = createApp(services);
+      const blocked = await request(app)
+        .post("/api/skills/web-search")
+        .set("x-dsbox-control", "1")
+        .send({ query: "current example" })
+        .expect(403);
+      expect(blocked.body).toMatchObject({ code: "web_search_blocked" });
+      expect(externalFetch).not.toHaveBeenCalled();
+
+      const allowed = await request(app)
+        .post("/api/skills/web-search")
+        .set("x-dsbox-control", "1")
+        .send({ query: "current example", allow_web_search: true })
+        .expect(200);
+      expect(allowed.body.results[0]).toMatchObject({ title: "Example", url: "https://example.com/" });
+      expect(externalFetch).toHaveBeenCalledOnce();
+    } finally {
+      externalFetch.mockRestore();
+    }
+  });
+
   it("rejects non-loopback Host and Origin headers", async () => {
     const app = createApp(services);
     await request(app).get("/api/health").set("Host", "attacker.example").expect(403);

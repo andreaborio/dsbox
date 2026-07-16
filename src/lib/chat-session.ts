@@ -12,6 +12,7 @@ const LEGACY_CHAT_STORAGE_KEY = "dsbox:chat";
 const MAX_THREADS = 24;
 const MAX_MESSAGES_PER_THREAD = 100;
 const MAX_AGENT_WIRE_HISTORY = 199;
+const MAX_MESSAGE_SOURCES = 24;
 export const DEFAULT_WEB_SEARCH_ENABLED = true;
 
 export interface ChatStorage {
@@ -31,6 +32,7 @@ export interface ChatSendRequest {
   content: string;
   model: string;
   maxTokens: number;
+  /** @deprecated Web access is controlled by the persisted session preference. */
   allowWebSearch?: boolean;
 }
 
@@ -62,6 +64,7 @@ export interface AgentStreamState {
   content: string;
   reasoning: string;
   blocks: ChatMessageBlock[];
+  sources?: ChatSource[];
 }
 
 interface CanonicalToolCall {
@@ -177,6 +180,52 @@ function parseJson(text: string): unknown {
   }
 }
 
+function boundedText(value: unknown, limit: number): string {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, limit) : "";
+}
+
+/**
+ * Normalizes the model-neutral result emitted by both Qwen and DeepSeek tool
+ * runs. JSON text is accepted as well because some OpenAI-compatible runtimes
+ * serialize tool outputs before streaming them.
+ */
+export function webSearchSourcesFromResult(value: unknown): ChatSource[] {
+  const decoded = typeof value === "string" ? parseJson(value) : value;
+  const root = asRecord(decoded);
+  const nested = asRecord(root?.result);
+  const candidates = Array.isArray(root?.results)
+    ? root.results
+    : Array.isArray(nested?.results) ? nested.results : [];
+  const sources: ChatSource[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const record = asRecord(candidate);
+    const title = boundedText(record?.title, 300);
+    const url = boundedText(record?.url, 2_048);
+    if (!title || !url) continue;
+    let canonicalUrl: string;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+      canonicalUrl = parsed.href;
+    } catch {
+      continue;
+    }
+    if (seen.has(canonicalUrl)) continue;
+    seen.add(canonicalUrl);
+    const rawCitationId = boundedText(record?.sourceId ?? record?.citationId, 32).toUpperCase();
+    const citationId = /^S[1-9]\d*$/.test(rawCitationId) ? rawCitationId : undefined;
+    sources.push({ title, url, snippet: boundedText(record?.snippet, 2_000), ...(citationId ? { citationId } : {}) });
+    if (sources.length >= MAX_MESSAGE_SOURCES) break;
+  }
+  return sources;
+}
+
+function mergeChatSources(current: ChatSource[] | undefined, incoming: ChatSource[]): ChatSource[] {
+  if (!incoming.length) return current ?? [];
+  return webSearchSourcesFromResult({ results: [...(current ?? []), ...incoming] });
+}
+
 function appendStreamBlock(blocks: ChatMessageBlock[], type: "text" | "reasoning", delta: string): ChatMessageBlock[] {
   if (!delta) return blocks;
   const last = blocks.at(-1);
@@ -247,6 +296,7 @@ export function reduceAgentStreamEvent(state: AgentStreamState, rawEvent: unknow
   });
 
   let blocks = state.blocks;
+  let sources = state.sources;
   if (type === "tool_call.created") {
     const argumentsText = jsonText(suppliedArguments);
     blocks = upsertToolActivity(blocks, callId, makeActivity, (activity) => ({
@@ -290,6 +340,9 @@ export function reduceAgentStreamEvent(state: AgentStreamState, rawEvent: unknow
     }));
   } else if (type === "tool_result.completed" || type === "tool_call.result") {
     const result = eventValue(event, "result", "output", "content");
+    const existing = blocks.find((block) => block.type === "tool_call" && block.activity.callId === callId);
+    const resolvedName = name === "Tool" && existing?.type === "tool_call" ? existing.activity.name : name;
+    if (resolvedName === "web_search") sources = mergeChatSources(sources, webSearchSourcesFromResult(result));
     blocks = upsertToolActivity(blocks, callId, makeActivity, (activity) => {
       const completedAt = receivedAt;
       return {
@@ -320,7 +373,7 @@ export function reduceAgentStreamEvent(state: AgentStreamState, rawEvent: unknow
     });
   }
 
-  return blocks === state.blocks ? state : { ...state, blocks };
+  return blocks === state.blocks && sources === state.sources ? state : { ...state, blocks, sources };
 }
 
 function cancelRunningTools(blocks: ChatMessageBlock[], completedAt: number): ChatMessageBlock[] {
@@ -415,6 +468,15 @@ function isChatMessageBlock(value: unknown): value is ChatMessageBlock {
   return block.type === "tool_call" && isChatToolActivity(block.activity);
 }
 
+function isChatSource(value: unknown): value is ChatSource {
+  if (!value || typeof value !== "object") return false;
+  const source = value as Partial<ChatSource>;
+  return typeof source.title === "string"
+    && typeof source.url === "string"
+    && typeof source.snippet === "string"
+    && (source.citationId === undefined || typeof source.citationId === "string");
+}
+
 function isChatMessage(value: unknown): value is ChatMessage {
   if (!value || typeof value !== "object") return false;
   const message = value as Partial<ChatMessage>;
@@ -426,6 +488,7 @@ function isChatMessage(value: unknown): value is ChatMessage {
     && (message.pending === undefined || typeof message.pending === "boolean")
     && (message.error === undefined || typeof message.error === "boolean")
     && (message.interrupted === undefined || typeof message.interrupted === "boolean")
+    && (message.sources === undefined || (Array.isArray(message.sources) && message.sources.every(isChatSource)))
     && (message.blocks === undefined || (Array.isArray(message.blocks) && message.blocks.every(isChatMessageBlock)));
 }
 
@@ -852,7 +915,7 @@ export class ChatSessionStore {
     return true;
   };
 
-  send = async ({ content, model, maxTokens, allowWebSearch = false }: ChatSendRequest): Promise<void> => {
+  send = async ({ content, model, maxTokens }: ChatSendRequest): Promise<void> => {
     const prompt = content.trim();
     if (!prompt || this.snapshot.streaming) return;
 
@@ -862,6 +925,7 @@ export class ChatSessionStore {
     const agentActive = this.snapshot.agentMode
       && this.snapshot.capabilities.status === "ready"
       && this.snapshot.capabilities.chatTools;
+    const webSearchEnabled = this.snapshot.webSearchEnabled;
     const user: ChatMessage = { id: this.createId(), role: "user", content: prompt, createdAt: startedAt };
     const assistant: ChatMessage = {
       id: this.createId(),
@@ -881,7 +945,7 @@ export class ChatSessionStore {
 
     const nextMessages = [...thread.messages, user, assistant].slice(-MAX_MESSAGES_PER_THREAD);
     this.replaceThread(threadId, nextMessages, titleFromPrompt(thread.title === "New chat" ? prompt : thread.title), startedAt, false);
-    const autoSearchEnabled = !agentActive && shouldAutoEnableWebSearch(prompt);
+    const autoSearchEnabled = webSearchEnabled && !agentActive && shouldAutoEnableWebSearch(prompt);
     this.commit({ ...this.snapshot, input: "", streaming: true, skillStage: autoSearchEnabled ? "searching" : "idle" });
     this.persist();
 
@@ -890,6 +954,7 @@ export class ChatSessionStore {
     let fullContent = "";
     let fullReasoning = "";
     let blocks: ChatMessageBlock[] = [];
+    let sources: ChatSource[] = [];
     let stats = assistant.stats!;
     let searchStartedAt: number | null = null;
 
@@ -908,12 +973,12 @@ export class ChatSessionStore {
           const searchResponse = await this.fetcher("/api/skills/web-search", {
             method: "POST",
             headers: { "content-type": "application/json", "x-dsbox-control": "1" },
-            body: JSON.stringify({ query: prompt }),
+            body: JSON.stringify({ query: prompt, allow_web_search: webSearchEnabled }),
             signal: abort.signal
           });
           const searchPayload = await searchResponse.json().catch(() => null) as { error?: string; provider?: string; results?: ChatSource[] } | null;
           if (!searchResponse.ok) throw new Error(searchPayload?.error ?? `Web search unavailable (${searchResponse.status})`);
-          const sources = Array.isArray(searchPayload?.results) ? searchPayload.results.filter((source) => source && typeof source.title === "string" && typeof source.url === "string").slice(0, 6) : [];
+          sources = webSearchSourcesFromResult(searchPayload).slice(0, 6);
           if (!sources.length) throw new Error("Web search returned no usable sources");
           stats = { ...stats, webSearchMs: Math.max(0, this.now() - searchStartedAt) };
           updateAssistant({ sources, stats });
@@ -938,7 +1003,7 @@ export class ChatSessionStore {
         stream: true,
         stream_options: { include_usage: true }
       };
-      if (agentActive) body.allow_web_search = allowWebSearch;
+      if (agentActive) body.allow_web_search = webSearchEnabled;
       if (!this.snapshot.thinking) body.thinking = { type: "disabled" };
       const response = await this.fetcher(agentActive ? "/api/agent/chat" : "/api/chat", {
         method: "POST",
@@ -987,16 +1052,17 @@ export class ChatSessionStore {
         if (type) {
           const previousContent = fullContent;
           const previousReasoning = fullReasoning;
-          const next = reduceAgentStreamEvent({ content: fullContent, reasoning: fullReasoning, blocks }, event, receivedAt);
+          const next = reduceAgentStreamEvent({ content: fullContent, reasoning: fullReasoning, blocks, sources }, event, receivedAt);
           fullContent = next.content;
           fullReasoning = next.reasoning;
           blocks = next.blocks;
+          sources = next.sources ?? sources;
           const contentDelta = fullContent.slice(previousContent.length);
           const reasoningDelta = fullReasoning.slice(previousReasoning.length);
           if ((contentDelta || reasoningDelta || type === "tool_call.created") && stats.firstTokenAt === null) stats = { ...stats, firstTokenAt: receivedAt };
           if (reasoningDelta && stats.reasoningStartedAt === null) stats = { ...stats, reasoningStartedAt: receivedAt };
           if (contentDelta && stats.answerStartedAt === null) stats = { ...stats, answerStartedAt: receivedAt };
-          updateAssistant({ content: fullContent, reasoning: fullReasoning, blocks, pending: true, stats });
+          updateAssistant({ content: fullContent, reasoning: fullReasoning, blocks, sources, pending: true, stats });
           return;
         }
         const choices = Array.isArray(event.choices) ? event.choices : [];
@@ -1047,6 +1113,7 @@ export class ChatSessionStore {
         content: fullContent || (hasToolActivity ? "" : "The response completed without any visible text."),
         reasoning: fullReasoning,
         blocks,
+        sources,
         pending: false,
         stats
       }, true);
@@ -1056,7 +1123,7 @@ export class ChatSessionStore {
       stats = finalizeStats(stats, completedAt);
       if (isAbortError(reason, abort.signal)) {
         blocks = cancelRunningTools(blocks, completedAt);
-        updateAssistant({ content: fullContent, reasoning: fullReasoning, blocks, pending: false, interrupted: true, stats }, true);
+        updateAssistant({ content: fullContent, reasoning: fullReasoning, blocks, sources, pending: false, interrupted: true, stats }, true);
       } else {
         const message = reason instanceof Error ? reason.message : String(reason);
         blocks = failRunningTools(blocks, completedAt, message);
@@ -1064,6 +1131,7 @@ export class ChatSessionStore {
           content: message,
           reasoning: fullReasoning,
           blocks,
+          sources,
           pending: false,
           error: true,
           stats

@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CirclePower,
   CircleStop,
+  HardDrive,
   MessageCircleMore,
   PanelLeftClose,
   PanelLeftOpen,
@@ -14,11 +15,13 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { ChatSidebarThreads } from "./components/ChatSidebarThreads";
+import { ModelIdentityIcon } from "./components/ModelIdentityIcon";
 import { Onboarding } from "./components/Onboarding";
 import { BrandMark } from "./components/ui";
 import { chatSessionStore, useActiveChatTitle, useChatStreaming } from "./hooks/useChatSession";
 import { useDsbox } from "./hooks/useDsbox";
 import { formatModelName } from "./lib/format";
+import { identifyModel } from "./lib/model-identity";
 import { currentDownload, downloadStageLabel, resumableDownload } from "./lib/model-download-state";
 import type { ViewId } from "./types";
 
@@ -96,6 +99,7 @@ export default function App() {
   const latest = snapshot.metrics.at(-1);
   const activeDownload = currentDownload(snapshot.downloads);
   const interruptedDownload = activeDownload ? null : resumableDownload(snapshot.downloads);
+  const runtimeModelIdentity = identifyModel(snapshot.config.model.id, snapshot.config.model.path);
   return (
     <div className={`app-shell ${sidebarCollapsed ? "app-shell--collapsed" : ""}`}>
       <aside className="sidebar">
@@ -123,7 +127,6 @@ export default function App() {
         </div>
 
         <nav className="sidebar__nav" aria-label="Primary navigation">
-          <div className="nav-label">Workspace</div>
           {navigation.map((item) => {
             const Icon = item.icon;
             return (
@@ -165,10 +168,13 @@ export default function App() {
 
         <button className="sidebar__runtime" onClick={() => setView("runtime")} aria-label={`Server: ${snapshot.runtime.phase === "running" ? "on" : "off"}`}>
           <div className="sidebar__runtime-head">
-            <span className={`status-orb status-orb--${snapshot.runtime.phase}`} />
+            <span className={`sidebar__runtime-model sidebar__runtime-model--${runtimeModelIdentity}`} aria-hidden="true">
+              {snapshot.runtime.modelPresent ? <ModelIdentityIcon identity={runtimeModelIdentity} fallback={<HardDrive size={14} />} /> : <HardDrive size={14} />}
+              <i className={`status-orb status-orb--${snapshot.runtime.phase}`} />
+            </span>
             <div>
               <strong>{snapshot.runtime.modelPresent ? formatModelName(snapshot.config.model.id) : "Choose a model"}</strong>
-              <span>{activeDownload ? downloadStageLabel(activeDownload.stage) : interruptedDownload ? downloadStageLabel(interruptedDownload.stage) : snapshot.runtime.phase === "running" ? "Ready on your Mac" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "DSBox is off" : "Local file or DSBox catalog")}</span>
+              <span>{activeDownload ? downloadStageLabel(activeDownload.stage) : interruptedDownload ? downloadStageLabel(interruptedDownload.stage) : snapshot.runtime.phase === "running" ? "Ready" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "DSBox is off" : "Choose a local file or catalog model")}</span>
             </div>
           </div>
           <ChevronRight size={15} />

@@ -390,6 +390,8 @@ export interface ChatSource {
   title: string;
   url: string;
   snippet: string;
+  /** Stable run-scoped identifier emitted by the Agent gateway (for example S3). */
+  citationId?: string;
 }
 
 export interface ChatResponseStats {

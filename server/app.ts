@@ -545,6 +545,10 @@ export function createApp(services: AppServices) {
   }));
 
   app.post("/api/skills/web-search", asyncRoute(async (request, response) => {
+    if (request.body?.allow_web_search !== true) {
+      response.status(403).json({ code: "web_search_blocked", error: "Web search is disabled for this request" });
+      return;
+    }
     const controller = new AbortController();
     const abort = () => controller.abort();
     request.once("aborted", abort);
