@@ -1,22 +1,41 @@
-## DSBox 0.2.3
+## DSBox 0.2.5
 
-This release makes the model library immediately clear: models DS4 can run stay
-prominent, while incompatible Hugging Face sources remain available as quiet,
-read-only references.
+This release expands Qwen and agent workflows and refreshes the DSBox desktop
+interface with clearer state, safer navigation, and selectable color palettes.
 
-### What changed
+### Runtime and agent upgrades
 
-- Split the catalog into a prominent DS4-ready group and a secondary reference
-  group for unsupported repositories.
-- Made the `DS4 ready` filter capability-based, so incomplete or unsupported
-  non-Unsloth entries cannot appear as runnable models.
-- Replaced full-size incompatible cards with compact neutral rows that show the
-  exact compatibility reason and a source link, without misleading performance
-  estimates or download controls.
-- Added a dedicated `Other sources` view for provenance without mixing those
-  repositories into the installable catalog.
-- Kept local GGUF scanning, Finder selection, downloads, and runtime behavior
-  unchanged.
+- Added Qwen runtime support and model identities, and moved Qwen execution to
+  the mainline Metal AUTO runtime configuration.
+- Added dual-model agent chat with explicit Web search control and more robust,
+  request-gated automatic search.
+- Fixed stale startup and capability states, improved legacy model responses,
+  and removed a redundant DeepSeek catalog mirror.
+
+### Interface and reliability
+
+- Added an Appearance picker with Follow system, DSBox Light, DSBox Dark, Nord,
+  and Solarized Dark. Theme changes apply immediately, persist across launches,
+  and never restart the local model.
+- Applied the saved appearance before React renders and extended semantic tokens
+  across application chrome, code surfaces, terminals, selections, scrollbars,
+  overlays, and charts.
+- Reworked the Server power control into one clear action and made Agents report
+  Offline, Starting, or Ready from the actual runtime and readiness state.
+- Clarified Activity so host telemetry stays distinct from runtime metrics, and
+  response speed appears only when DSBox has measured it.
+- Added explicit live-update connection states. After a sustained SSE
+  interruption, DSBox warns that visible values may be out of date while it
+  reconnects automatically.
+- Protected unsaved engine settings when leaving Settings, with Cancel, Discard,
+  and Save options, including restart handling when the runtime is active.
+- Improved first-run onboarding with dialog semantics, keyboard focus handling,
+  Escape support, and an explicit Continue without a model choice.
+- Kept unavailable or incompatible models collapsed by default while preserving
+  session preference and temporarily revealing search matches.
+- Restored the last open page, preloaded views after startup, replaced the
+  generic loading message with stable skeletons, and refined sidebar labels,
+  disabled-state explanations, tooltips, and collapsed chat controls.
 
 ### macOS community build
 

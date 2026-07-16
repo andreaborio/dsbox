@@ -18,7 +18,7 @@ import {
   Zap
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AppSnapshot, ViewId } from "../types";
+import type { AppSnapshot, RuntimeState, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
 import { Button, CopyButton, StatusPill } from "../components/ui";
 import { getQwenAdapterCompatibility, resolveQwenAdapter, type AgentAdapterId } from "../lib/agent-adapters";
@@ -37,6 +37,58 @@ const adapterMeta: Array<{ id: AgentAdapterId; name: string; detail: string; ico
   { id: "generic", name: "Generic", detail: "cURL / SDK", icon: Network }
 ];
 
+export type AgentConnectionState = "offline" | "loading" | "ready";
+
+export interface AgentConnectionPresentation {
+  state: AgentConnectionState;
+  capabilityTitle: string;
+  capabilityBadge: string;
+  capabilityDescription: string;
+  actionLabel: string;
+}
+
+export function resolveAgentConnectionPresentation(
+  runtime: Pick<RuntimeState, "phase" | "readiness">,
+  isQwen: boolean
+): AgentConnectionPresentation {
+  const state: AgentConnectionState = runtime.phase === "running" && runtime.readiness === "ready"
+    ? "ready"
+    : runtime.readiness === "loading" || ["preparing", "installing", "updating", "building", "downloading", "starting", "stopping"].includes(runtime.phase)
+      ? "loading"
+      : "offline";
+  const runtimeName = isQwen ? "Qwen3.6" : "Agent gateway";
+
+  if (state === "ready") {
+    return {
+      state,
+      capabilityTitle: `${runtimeName} · Agent ready`,
+      capabilityBadge: "Tools",
+      capabilityDescription: isQwen
+        ? "The active runtime supports OpenAI-compatible /v1/chat/completions with streaming, tools, tool_choice, and multiple tool calls. Responses API and Anthropic Messages are not exposed."
+        : "The local gateway is ready for compatible coding agents.",
+      actionLabel: isQwen ? "Check gateway" : "Test connection"
+    };
+  }
+
+  if (state === "loading") {
+    return {
+      state,
+      capabilityTitle: `${runtimeName} · Starting`,
+      capabilityBadge: "Loading",
+      capabilityDescription: "DSBox is preparing the selected model. Agent connections become available when startup completes.",
+      actionLabel: "Starting…"
+    };
+  }
+
+  return {
+    state,
+    capabilityTitle: `${runtimeName} · Configured`,
+    capabilityBadge: "Offline",
+    capabilityDescription: "The connection details are ready. Turn on DSBox before an agent can use the local model.",
+    actionLabel: "Open server"
+  };
+}
+
 export function AgentsView({ snapshot, onNavigate }: Props) {
   const { config, runtime, system } = snapshot;
   const isQwen = config.model.id === "qwen3.6-35b-a3b";
@@ -49,6 +101,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
   const base = system.openAiBaseUrl;
   const root = system.anthropicBaseUrl;
   const model = config.model.id;
+  const connection = resolveAgentConnectionPresentation(runtime, isQwen);
 
   useEffect(() => {
     if (isQwen && !wasQwen.current) {
@@ -66,7 +119,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     testSequence.current += 1;
     setTesting(false);
     setTestResult(null);
-  }, [base, model, runtime.phase]);
+  }, [base, model, runtime.phase, runtime.readiness]);
 
   const snippets = useMemo<Record<AgentAdapterId, { file: string; description: string; code: string; run?: string }>>(() => ({
     codex: {
@@ -147,6 +200,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     : adapterMeta.find((item) => item.id === activeAdapter)?.name;
 
   const testConnection = async () => {
+    if (connection.state !== "ready") return;
     const sequence = ++testSequence.current;
     setTesting(true);
     setTestResult(null);
@@ -187,9 +241,28 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         <div className="agents-intro__status panel">
           <StatusPill phase={runtime.phase} />
           <div><span>Address</span><strong>{system.gatewayBaseUrl.replace("http://", "")}</strong></div>
-          <button className={testResult === "error" ? "connection-test--error" : ""} onClick={() => void testConnection()} disabled={testing} aria-live="polite">
-            {testing ? <RefreshCw size={14} className="spin" /> : testResult === "ok" ? <CircleCheck size={14} /> : testResult === "error" ? <Unplug size={14} /> : <Play size={14} />}
-            {testing ? "Checking…" : testResult === "ok" ? (isQwen ? "Gateway ready" : "Ready") : testResult === "error" ? "Unavailable" : (isQwen ? "Check gateway" : "Test connection")}
+          <button
+            className={testResult === "error" ? "connection-test--error" : ""}
+            onClick={() => connection.state === "offline" ? onNavigate("runtime") : void testConnection()}
+            disabled={testing || connection.state === "loading"}
+            aria-live="polite"
+          >
+            {connection.state === "loading" || testing
+              ? <RefreshCw size={14} className="spin" />
+              : testResult === "ok"
+                ? <CircleCheck size={14} />
+                : testResult === "error"
+                  ? <Unplug size={14} />
+                  : <Play size={14} />}
+            {connection.state !== "ready"
+              ? connection.actionLabel
+              : testing
+                ? "Checking…"
+                : testResult === "ok"
+                  ? (isQwen ? "Gateway ready" : "Ready")
+                  : testResult === "error"
+                    ? "Unavailable"
+                    : connection.actionLabel}
           </button>
         </div>
       </section>
@@ -206,11 +279,11 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
       )}
 
       {isQwen && (
-        <section className="qwen-capability panel" aria-label="Qwen connection capabilities">
+        <section className={`qwen-capability qwen-capability--${connection.state} panel`} aria-label="Qwen connection capabilities">
           <span className="qwen-capability__icon"><MessagesSquare size={17} /></span>
           <div>
-            <div><strong>Qwen3.6 · Agent ready</strong><span>Tools</span></div>
-            <p>This DS4 runtime supports OpenAI-compatible <code>/v1/chat/completions</code> with streaming, tools, <code>tool_choice</code>, and multiple tool calls. Responses API and Anthropic Messages are not exposed.</p>
+            <div><strong>{connection.capabilityTitle}</strong><span>{connection.capabilityBadge}</span></div>
+            <p>{connection.capabilityDescription}</p>
           </div>
         </section>
       )}

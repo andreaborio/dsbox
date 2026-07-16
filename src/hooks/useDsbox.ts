@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppSnapshot, DsboxConfig, ServerEvent } from "../types";
 import { apiRequest, postAction } from "../lib/api";
+import {
+  initialLiveConnectionState,
+  transitionLiveConnection,
+  type LiveConnectionStatus
+} from "../lib/live-connection";
 
 export interface DsboxController {
   snapshot: AppSnapshot | null;
   connected: boolean;
+  connectionStatus: LiveConnectionStatus;
+  lastEventAt: number | null;
   busyAction: string | null;
   error: string | null;
   clearError: () => void;
@@ -15,7 +22,7 @@ export interface DsboxController {
 
 export function useDsbox(): DsboxController {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [connection, setConnection] = useState(initialLiveConnectionState);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,9 +34,10 @@ export function useDsbox(): DsboxController {
   useEffect(() => {
     void refresh().catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
     const events = new EventSource("/api/events");
-    events.onopen = () => setConnected(true);
-    events.onerror = () => setConnected(false);
+    events.onopen = () => setConnection((current) => transitionLiveConnection(current, { type: "opened", at: Date.now() }));
+    events.onerror = () => setConnection((current) => transitionLiveConnection(current, { type: "error" }));
     events.addEventListener("dsbox", (raw) => {
+      setConnection((current) => transitionLiveConnection(current, { type: "message", at: Date.now() }));
       const event = JSON.parse((raw as MessageEvent<string>).data) as ServerEvent;
       setSnapshot((current) => {
         if (event.type === "snapshot") return event.payload;
@@ -90,7 +98,9 @@ export function useDsbox(): DsboxController {
 
   return {
     snapshot,
-    connected,
+    connected: connection.status === "live",
+    connectionStatus: connection.status,
+    lastEventAt: connection.lastEventAt,
     busyAction,
     error,
     clearError: () => setError(null),

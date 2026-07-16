@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Box, Cpu, HardDrive, Search, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { formatBytes } from "../lib/format";
 import type { AppSnapshot } from "../types";
 import { BrandMark } from "./ui";
@@ -8,24 +8,90 @@ import { BrandMark } from "./ui";
 export function Onboarding({
   snapshot,
   onChooseLocal,
-  onChooseCatalog
+  onChooseCatalog,
+  onDismiss
 }: {
   snapshot: AppSnapshot;
   onChooseLocal: () => void;
   onChooseCatalog: () => void;
+  onDismiss: () => void;
 }) {
   const [step, setStep] = useState<"welcome" | "model">("welcome");
   const latest = snapshot.metrics.at(-1);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const onDismissRef = useRef(onDismiss);
+  const titleId = useId();
+  const descriptionId = useId();
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const background = [...document.querySelectorAll<HTMLElement>(".sidebar, .main-area")];
+    background.forEach((element) => element.setAttribute("inert", ""));
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onDismissRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])"
+      )];
+      if (!focusable.length) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      background.forEach((element) => element.removeAttribute("inert"));
+      previousFocus?.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => dialogRef.current?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [step]);
 
   return (
-    <motion.div className="onboarding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div
+      ref={dialogRef}
+      className="onboarding"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      tabIndex={-1}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
       <div className="onboarding__aurora" aria-hidden="true"><i /><i /><i /></div>
+      <button className="onboarding__skip" onClick={onDismiss}>Continue without a model</button>
       <AnimatePresence mode="wait" initial={false}>
         {step === "welcome" ? (
           <motion.section className="onboarding__step onboarding__welcome" key="welcome" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}>
             <BrandMark size="hero" />
-            <h1>Your own AI.<br />Entirely on this Mac.</h1>
-            <p>Requests sent to DSBox are processed locally. Your selected model and runtime stay under your control.</p>
+            <h1 id={titleId}>Your own AI.<br />Entirely on this Mac.</h1>
+            <p id={descriptionId}>Requests sent to DSBox are processed locally. Your selected model and runtime stay under your control.</p>
             <div className="onboarding-hardware">
               <div className="onboarding-hardware__head"><ShieldCheck size={14} /><span>This Mac</span></div>
               <div className="onboarding-hardware__grid">
@@ -41,8 +107,8 @@ export function Onboarding({
           <motion.section className="onboarding__step onboarding__models" key="model" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}>
             <button className="onboarding__back" onClick={() => setStep("welcome")}><ArrowLeft size={15} /> Back</button>
             <span className="eyebrow">Choose how to add a model</span>
-            <h1>Start with a model source.</h1>
-            <p>Nothing downloads and the server never starts until you explicitly ask for it.</p>
+            <h1 id={titleId}>Start with a model source.</h1>
+            <p id={descriptionId}>Nothing downloads and the server never starts until you explicitly ask for it.</p>
             <div className="onboarding-model-grid">
               <button onClick={onChooseLocal}>
                 <span className="onboarding-model-grid__icon"><HardDrive size={20} /></span>

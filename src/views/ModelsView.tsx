@@ -30,6 +30,11 @@ import { formatBytes, formatModelName } from "../lib/format";
 import { identifyModel } from "../lib/model-identity";
 import { currentDownload, downloadStageLabel, formatDownloadEta, resumableDownload } from "../lib/model-download-state";
 import { assessLocalModelHardware, assessModelHardware } from "../lib/model-hardware-advisor";
+import {
+  readUnavailableModelsDisclosurePreference,
+  unavailableModelsDisclosureIsOpen,
+  writeUnavailableModelsDisclosurePreference
+} from "../lib/models-disclosure-preference";
 import { catalogModelForVariant, catalogModelIsReady, chooseDefaultCatalogVariant } from "../lib/model-variants";
 import {
   localModelIsRunnable,
@@ -118,7 +123,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   const [finderMessage, setFinderMessage] = useState<string | null>(null);
   const [downloadModel, setDownloadModel] = useState<CatalogModel | null>(null);
   const [discardDownloadId, setDiscardDownloadId] = useState<string | null>(null);
-  const [unsupportedOpen, setUnsupportedOpen] = useState(true);
+  const [unsupportedOpen, setUnsupportedOpen] = useState(() => readUnavailableModelsDisclosurePreference(window.sessionStorage));
   const reduceMotion = useReducedMotion();
 
   const refreshLocalModels = useCallback(async () => {
@@ -183,6 +188,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   const runtimeBusy = Boolean(activeDownload) || ["preparing", "installing", "updating", "building", "downloading", "starting", "running", "stopping"].includes(snapshot.runtime.phase);
   const downloadActive = Boolean(activeDownload);
   const normalizedQuery = query.trim().toLowerCase();
+  const effectiveUnsupportedOpen = unavailableModelsDisclosureIsOpen(unsupportedOpen, normalizedQuery);
   const visibleLocalModels = useMemo(() => localModels.filter((model) => {
     if (!normalizedQuery) return true;
     return [model.name, model.modelId, model.path].some((value) => value.toLowerCase().includes(normalizedQuery));
@@ -199,6 +205,13 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     }), [catalog, normalizedQuery]);
   const readyCatalogModels = visibleCatalogModels.filter((model) => catalogModelIsReady(model, snapshot.system.totalMemoryBytes));
   const unsupportedCatalogModels = visibleCatalogModels.filter((model) => !catalogModelIsReady(model, snapshot.system.totalMemoryBytes));
+
+  const toggleUnsupportedModels = () => {
+    if (normalizedQuery) return;
+    const nextOpen = !unsupportedOpen;
+    setUnsupportedOpen(nextOpen);
+    writeUnavailableModelsDisclosurePreference(window.sessionStorage, nextOpen);
+  };
 
   const startScan = async () => {
     setLocalError(null);
@@ -546,13 +559,19 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
                 </div>
 
                 {unsupportedLocalModels.length > 0 && (
-                  <div className={`local-library-group local-library-group--unsupported ${unsupportedOpen || normalizedQuery ? "local-library-group--open" : ""}`}>
-                    <button className="local-library-group__toggle" onClick={() => setUnsupportedOpen((open) => !open)} aria-expanded={unsupportedOpen || Boolean(normalizedQuery)}>
+                  <div className={`local-library-group local-library-group--unsupported ${effectiveUnsupportedOpen ? "local-library-group--open" : ""}`}>
+                    <button
+                      type="button"
+                      className="local-library-group__toggle"
+                      onClick={toggleUnsupportedModels}
+                      aria-expanded={effectiveUnsupportedOpen}
+                      disabled={Boolean(normalizedQuery)}
+                    >
                       <div><h3>Unavailable in this DS4 build</h3><p>Saved in your library and rechecked after runtime updates.</p></div>
                       <span>{unsupportedLocalModels.length}<ChevronDown size={14} /></span>
                     </button>
                     <AnimatePresence initial={false}>
-                      {(unsupportedOpen || Boolean(normalizedQuery)) && (
+                      {effectiveUnsupportedOpen && (
                         <motion.div className="local-results local-results--unsupported" initial={reduceMotion ? false : { opacity: 0, y: -2 }} animate={{ opacity: 1, y: 0 }} exit={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: -2 }} transition={reduceMotion ? { duration: 0 } : { duration: 0.14 }}>
                           {unsupportedLocalModels.map(renderLocalModel)}
                         </motion.div>

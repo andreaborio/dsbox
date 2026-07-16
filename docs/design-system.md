@@ -29,7 +29,18 @@ Import primitives from the barrel:
 import { Badge, Button, InlineNotice, Progress, Surface } from "./design-system";
 ```
 
-No provider is required. Light mode is the default. A future themed subtree can set `data-ds-color-scheme="dark"` on its root element. The design-system selectors use a `ds-` prefix and CSS layers, so legacy unlayered styles can coexist during migration.
+No provider is required. `src/theme/bootstrap.ts` restores the saved appearance before React renders, and `src/theme/runtime.ts` keeps the document attributes synchronized. The design-system selectors use a `ds-` prefix and CSS layers, so legacy unlayered styles can coexist during migration.
+
+## Themes
+
+Appearance is intentionally separate from the engine configuration and never requires Save or a runtime restart. The versioned preference lives in `localStorage` under `dsbox:appearance-theme:v1`.
+
+- `data-ds-theme` identifies the resolved palette: `dsbox-light`, `dsbox-dark`, `nord`, or `solarized-dark`.
+- `data-ds-theme-preference` preserves the user choice, including `system`.
+- `data-ds-color-scheme` controls native light/dark form rendering.
+- `data-ds-theme-ready` is set only after bootstrap has applied the palette.
+
+Add a theme by registering its metadata in `src/theme/registry.ts` and overriding semantic roles in `src/design-system/themes.css`. Do not put palette values in components or view CSS. Run `npm run check:theme-colors` and the contrast tests after every palette change.
 
 ## Token model
 
@@ -55,6 +66,9 @@ The typed exports in `tokens.ts` mirror the CSS variables in `tokens.css`.
 | Text | primary, secondary, tertiary, disabled, inverse, accent, success, advisory, danger |
 | Border | subtle, default, strong, focus |
 | Status | success, advisory, danger, info and matching soft backgrounds |
+| Utility | selection, scrollbar, overlay, highlight, shadow |
+| Code and terminal | background, raised surface, border, text, muted text |
+| Data | four theme-aware chart series |
 | Type | caption 11px, metadata 12px, chrome 13px, body 14px, chat 15px |
 | Layout | 232px sidebar, 60px top bar, 760px reading/composer width |
 | Control | 32px small, 36px default, 40px large, 40px minimum hit target |
@@ -188,7 +202,7 @@ Recommended model card hierarchy:
 - Keep a minimum 40px pointer target and 44px for menu rows.
 - Use icon plus text or an explicit accessible label; color is never the only state signal.
 - Progress bars require a meaningful label and determinate values when known.
-- Check text and icon contrast in both token themes.
+- Check text and icon contrast in every registered theme.
 - Never disable zoom or suppress platform keyboard behavior.
 - Motion duration tokens become zero when reduced motion is requested. Indeterminate spinners slow down instead of flashing.
 
@@ -200,6 +214,7 @@ Recommended model card hierarchy:
 4. Replace download and resource bars with `Progress`.
 5. Convert settings rows and menus to `MenuRow` and `Surface`.
 6. Apply type roles and the 760px chat/composer width.
-7. Remove the migrated legacy CSS only after screenshot and keyboard verification.
+7. Keep legacy literal colors wrapped in `light-dark()` until the owning component moves entirely to semantic tokens.
+8. Remove migrated legacy CSS only after screenshot and keyboard verification.
 
 Verify each tranche at 1280×720, 1440×900, and 1728×1117, plus keyboard-only and reduced-motion operation.

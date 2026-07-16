@@ -1,8 +1,28 @@
-import { defineConfig } from "vite";
+import { defineConfig, type HtmlTagDescriptor, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { CONTENT_SECURITY_POLICY } from "./server/security.js";
 
 const DEFAULT_DSBOX_PORT = 4242;
+export const REACT_REFRESH_PREAMBLE_URL = "/@id/@vitejs/plugin-react/preamble";
+
+export function reactRefreshPreambleTags(): HtmlTagDescriptor[] {
+  return [{
+    tag: "script",
+    attrs: { type: "module", src: REACT_REFRESH_PREAMBLE_URL },
+    injectTo: "head-prepend"
+  }];
+}
+
+function reactRefreshPreambleFallback(): Plugin {
+  return {
+    name: "dsbox:external-react-refresh-preamble",
+    apply: "serve",
+    transformIndexHtml: {
+      order: "post",
+      handler: reactRefreshPreambleTags
+    }
+  };
+}
 
 export function resolveDsboxDevProxyTarget(rawPort?: string): string {
   const value = rawPort?.trim();
@@ -18,7 +38,7 @@ export function resolveDsboxDevProxyTarget(rawPort?: string): string {
 export default defineConfig(() => {
   const proxyTarget = resolveDsboxDevProxyTarget(process.env.DSBOX_PORT);
   return {
-    plugins: [react()],
+    plugins: [react(), reactRefreshPreambleFallback()],
     server: {
       host: "127.0.0.1",
       port: 5173,

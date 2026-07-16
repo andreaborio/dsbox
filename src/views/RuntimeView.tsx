@@ -209,21 +209,28 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
     <div className="server-page page-scroll">
       <section className={`power-panel panel power-panel--${activeDownload ? "downloading" : runtime.phase}`} aria-live="polite">
         <div className="power-panel__status"><StatusPill phase={activeDownload ? "downloading" : runtime.phase} /></div>
-        <motion.button
+        <motion.div
           className={`power-control ${runtime.phase === "running" ? "power-control--on" : ""} ${busy ? "power-control--busy" : ""}`}
-          onClick={power}
-          disabled={busy}
-          whileTap={busy ? undefined : { scale: 0.96 }}
-          aria-label={visibleCopy.action}
+          aria-hidden="true"
         >
           <span className="power-control__ring" />
           <span className={`power-control__model power-control__model--${modelIdentity}`}>
             {runtime.modelPresent ? <ModelIdentityIcon identity={modelIdentity} fallback={<BrandMark size="hero" />} /> : <BrandMark size="hero" />}
           </span>
-        </motion.button>
+        </motion.div>
         <h2>{visibleCopy.title}</h2>
         <p>{visibleCopy.description}</p>
-        <strong className="power-panel__action">{visibleCopy.action}</strong>
+        {busy
+          ? <strong className="power-panel__state">{visibleCopy.action}</strong>
+          : (
+            <Button
+              variant={runtime.phase === "running" ? "secondary" : "primary"}
+              className="power-panel__action"
+              onClick={power}
+            >
+              {visibleCopy.action}
+            </Button>
+          )}
         {activeDownload && (
           <div className="simple-progress simple-progress--download" role="progressbar" aria-label="Model download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
             <span style={{ width: `${progress}%` }} />

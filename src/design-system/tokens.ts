@@ -53,6 +53,32 @@ export const color = {
     dangerSoft: cssVar("color-status-danger-soft"),
     info: cssVar("color-status-info"),
     infoSoft: cssVar("color-status-info-soft")
+  },
+  utility: {
+    selection: cssVar("color-selection"),
+    scrollbar: cssVar("color-scrollbar"),
+    overlay: cssVar("color-overlay"),
+    highlight: cssVar("color-highlight"),
+    shadow: cssVar("color-shadow")
+  },
+  code: {
+    background: cssVar("color-code-bg"),
+    raised: cssVar("color-code-raised"),
+    border: cssVar("color-code-border"),
+    text: cssVar("color-code-text"),
+    muted: cssVar("color-code-muted")
+  },
+  terminal: {
+    background: cssVar("color-terminal-bg"),
+    raised: cssVar("color-terminal-raised"),
+    text: cssVar("color-terminal-text"),
+    muted: cssVar("color-terminal-muted")
+  },
+  data: {
+    one: cssVar("color-data-1"),
+    two: cssVar("color-data-2"),
+    three: cssVar("color-data-3"),
+    four: cssVar("color-data-4")
   }
 } as const;
 

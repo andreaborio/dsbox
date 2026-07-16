@@ -128,6 +128,12 @@ export function ChatSidebarThreads({ onOpenChat }: Props) {
   }, [threadMenu]);
 
   const menuThread = threadMenu ? chat.threads.find((thread) => thread.id === threadMenu.threadId) ?? null : null;
+  const newThreadDisabled = chat.streaming || chat.messages.length === 0;
+  const newThreadTitle = chat.streaming
+    ? "Stop generation before starting a new chat"
+    : chat.messages.length === 0
+      ? "This chat is already empty"
+      : "Start a new chat";
 
   const moveMenuFocus = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -148,7 +154,16 @@ export function ChatSidebarThreads({ onOpenChat }: Props) {
   return (
     <section className="sidebar-chats" aria-label="Local chat history">
       <div className="sidebar-chats__head">
-        <button type="button" onClick={startNewThread} disabled={chat.streaming || chat.messages.length === 0} aria-label="New chat" title={chat.streaming ? "Stop generation before starting a new chat" : "New chat"}><Plus size={15} /></button>
+        <span>Chats</span>
+        <button
+          type="button"
+          onClick={startNewThread}
+          disabled={newThreadDisabled}
+          aria-label={newThreadDisabled ? `New chat unavailable: ${newThreadTitle}` : "New chat"}
+          title={newThreadTitle}
+        >
+          <Plus size={15} />
+        </button>
       </div>
       <label className="sidebar-chat-search">
         <Search size={13} />

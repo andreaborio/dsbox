@@ -10,6 +10,7 @@ import {
   FolderGit2,
   HardDrive,
   KeyRound,
+  Palette,
   RotateCcw,
   Save,
   ShieldCheck,
@@ -17,18 +18,29 @@ import {
   Terminal,
   Zap
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, CopyButton, Field, Select, Toggle } from "../components/ui";
 import type { DsboxController } from "../hooks/useDsbox";
 import { hasArgumentOption, shellDisplayArgument } from "../lib/arguments";
 import { buildEngineArguments } from "../lib/engine-arguments";
 import { formatModelName } from "../lib/format";
+import { SYSTEM_THEME_SWATCHES, THEME_REGISTRY, type ThemePreference } from "../theme/registry";
+import { themeRuntime } from "../theme/runtime";
+import { useTheme } from "../theme/useTheme";
 import type { AppSnapshot, DsboxConfig, ViewId } from "../types";
 
 interface Props {
   snapshot: AppSnapshot;
   controller: DsboxController;
   onNavigate: (view: ViewId) => void;
+  onNavigationGuardChange: (guard: SettingsNavigationGuard | null) => void;
+}
+
+export interface SettingsNavigationGuard {
+  isDirty: () => boolean;
+  save: () => Promise<void>;
+  discard: () => void;
+  requiresRestart: boolean;
 }
 
 const conversationPresets = [
@@ -55,12 +67,13 @@ function cloneConfig(config: DsboxConfig): DsboxConfig {
   return structuredClone(config);
 }
 
-export function SettingsView({ snapshot, controller, onNavigate }: Props) {
+export function SettingsView({ snapshot, controller, onNavigate, onNavigationGuardChange }: Props) {
   const [draft, setDraft] = useState(() => cloneConfig(snapshot.config));
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const theme = useTheme();
 
   useEffect(() => {
     setDraft(cloneConfig(snapshot.config));
@@ -78,7 +91,7 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
     setSaved(false);
   };
 
-  const save = async () => {
+  const save = useCallback(async () => {
     setSaving(true);
     try {
       await controller.saveConfig(draft);
@@ -87,7 +100,28 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
     } finally {
       setSaving(false);
     }
-  };
+  }, [controller, draft]);
+
+  const saveAndApply = useCallback(async () => {
+    await save();
+    if (runtimeActive) await controller.action("Restart runtime", "/api/runtime/restart");
+  }, [controller, runtimeActive, save]);
+
+  const discard = useCallback(() => {
+    setDraft(cloneConfig(snapshot.config));
+    setSaved(false);
+  }, [snapshot.config]);
+
+  useEffect(() => {
+    const guard: SettingsNavigationGuard = {
+      isDirty: () => dirty,
+      save: saveAndApply,
+      discard,
+      requiresRestart: runtimeActive
+    };
+    onNavigationGuardChange(guard);
+    return () => onNavigationGuardChange(null);
+  }, [dirty, discard, onNavigationGuardChange, runtimeActive, saveAndApply]);
 
   const commandPreview = useMemo(() => {
     try {
@@ -104,6 +138,32 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
   return (
     <div className="settings-simple page-scroll">
       <div className="settings-simple__inner">
+        <section className="settings-simple-card settings-appearance panel" aria-labelledby="appearance-settings-title">
+          <div className="settings-simple-card__head">
+            <div><h2 id="appearance-settings-title">Appearance</h2><p>Choose a palette instantly. This never restarts the local model.</p></div>
+            <Palette size={17} />
+          </div>
+          <div className="theme-picker" role="radiogroup" aria-label="Color theme">
+            <ThemeChoice
+              preference="system"
+              label="Follow system"
+              description="Uses the macOS light or dark appearance."
+              swatches={SYSTEM_THEME_SWATCHES}
+              selected={theme.preference === "system"}
+            />
+            {THEME_REGISTRY.map((definition) => (
+              <ThemeChoice
+                key={definition.id}
+                preference={definition.id}
+                label={definition.label}
+                description={definition.description}
+                swatches={definition.swatches}
+                selected={theme.preference === definition.id}
+              />
+            ))}
+          </div>
+        </section>
+
         <div className="settings-context">
           <div><span className="eyebrow">Current model</span><strong>{formatModelName(snapshot.config.model.id)}</strong><p>Model discovery and downloads live in one dedicated place.</p></div>
           <Button variant="secondary" onClick={() => onNavigate("models")}>Manage models</Button>
@@ -250,9 +310,39 @@ export function SettingsView({ snapshot, controller, onNavigate }: Props) {
       <div className="settings-savebar">
         <div className="settings-savebar__inner">
           <div>{runtimeActive && dirty ? <><AlertTriangle size={15} /><span>Restart required to apply changes</span></> : saved ? <><Check size={15} /><span>Configuration saved</span></> : dirty ? <><span className="unsaved-dot" /><span>Unsaved changes</span></> : <><ShieldCheck size={15} /><span>Configuration in sync</span></>}</div>
-          {dirty && <div><Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => setDraft(cloneConfig(snapshot.config))}>Reset</Button>{runtimeActive ? <Button variant="primary" icon={<Save size={15} />} loading={saving} onClick={() => { void save().then(() => controller.action("Restart runtime", "/api/runtime/restart")).catch(() => undefined); }}>Save and restart</Button> : <Button variant="primary" icon={<Save size={15} />} loading={saving} onClick={() => void save().catch(() => undefined)}>Save changes</Button>}</div>}
+          {dirty && <div><Button variant="ghost" icon={<RotateCcw size={14} />} onClick={discard}>Reset</Button><Button variant="primary" icon={<Save size={15} />} loading={saving} onClick={() => void saveAndApply().catch(() => undefined)}>{runtimeActive ? "Save and restart" : "Save changes"}</Button></div>}
         </div>
       </div>
     </div>
+  );
+}
+
+function ThemeChoice({
+  preference,
+  label,
+  description,
+  swatches,
+  selected
+}: {
+  preference: ThemePreference;
+  label: string;
+  description: string;
+  swatches: readonly [string, string, string, string];
+  selected: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={`theme-choice ${selected ? "theme-choice--selected" : ""}`}
+      role="radio"
+      aria-checked={selected}
+      onClick={() => themeRuntime.setPreference(preference)}
+    >
+      <span className="theme-choice__swatches" aria-hidden="true">
+        {swatches.map((swatch, index) => <i key={`${swatch}-${index}`} style={{ backgroundColor: swatch }} />)}
+      </span>
+      <span className="theme-choice__copy"><strong>{label}</strong><small>{description}</small></span>
+      <span className="theme-choice__check" aria-hidden="true"><Check size={13} /></span>
+    </button>
   );
 }

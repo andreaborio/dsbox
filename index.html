@@ -6,6 +6,14 @@
     <meta name="theme-color" content="#f7f7f5" />
     <meta name="description" content="DSBox — launch and operate andreaborio/ds4 on Apple Silicon." />
     <title>DSBox</title>
+    <style>
+      html:not([data-ds-theme-ready]) { background: #fcfcfb; }
+      html:not([data-ds-theme-ready]) body { visibility: hidden; }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-ds-theme-ready]) { background: #171716; }
+      }
+    </style>
+    <script type="module" src="/src/theme/bootstrap.ts"></script>
   </head>
   <body>
     <div id="root"></div>

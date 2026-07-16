@@ -17,7 +17,7 @@ import {
   X
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { AppSnapshot, LogEntry, ViewId } from "../types";
+import type { AppSnapshot, InferenceStage, LogEntry, RuntimeState, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
 import { argumentOptionValue, tokenizeArguments } from "../lib/arguments";
 import { formatBytes, formatPercent, timeLabel } from "../lib/format";
@@ -30,6 +30,69 @@ interface Props {
 }
 
 type LogFilter = "all" | LogEntry["source"] | "warnings";
+
+export interface MonitorPresentation {
+  state: "offline" | "loading" | "ready";
+  title: string;
+  description: string;
+  modelStatus: string;
+  responseSpeed: string;
+  responseFoot: string;
+}
+
+export function resolveMonitorPresentation(
+  runtime: Pick<RuntimeState, "phase" | "readiness">,
+  activityStage: InferenceStage,
+  tokensPerSecond: number | null
+): MonitorPresentation {
+  const ready = runtime.phase === "running" && runtime.readiness === "ready";
+  const loading = !ready && (
+    runtime.readiness === "loading"
+    || ["preparing", "installing", "updating", "building", "downloading", "starting", "stopping"].includes(runtime.phase)
+  );
+
+  if (!ready && !loading) {
+    return {
+      state: "offline",
+      title: "System resources. DSBox is off.",
+      description: "Memory, CPU, and disk values describe this Mac. Runtime metrics remain off until DSBox starts.",
+      modelStatus: "Offline",
+      responseSpeed: "Off",
+      responseFoot: "Runtime inactive"
+    };
+  }
+
+  if (loading) {
+    return {
+      state: "loading",
+      title: "System resources while DSBox starts.",
+      description: "Host telemetry stays live while the selected model is prepared.",
+      modelStatus: runtime.phase === "stopping" ? "Stopping" : "Loading",
+      responseSpeed: runtime.phase === "stopping" ? "Stopping…" : "Loading…",
+      responseFoot: "Available when ready"
+    };
+  }
+
+  const stageLabel = activityStage === "idle"
+    ? "Waiting"
+    : activityStage === "prefill"
+      ? "Prefill"
+      : activityStage === "thinking"
+        ? "Thinking"
+        : "Decode";
+  return {
+    state: "ready",
+    title: "System resources and DSBox activity.",
+    description: "Host telemetry and measured model activity are shown separately, with no fabricated estimates.",
+    modelStatus: stageLabel,
+    responseSpeed: activityStage === "idle"
+      ? "Waiting"
+      : tokensPerSecond === null
+        ? "Measuring…"
+        : `${tokensPerSecond.toFixed(2)} t/s`,
+    responseFoot: activityStage === "idle" ? "Waiting for a response" : "Measured by DSBox"
+  };
+}
 
 function cacheLabel(value: string): string {
   if (value.toUpperCase().endsWith("GB")) return value;
@@ -59,6 +122,7 @@ export function MonitorView({ snapshot }: Props) {
   const fileCachePercent = latest?.memoryTotalBytes ? latest.memoryFileCacheBytes / latest.memoryTotalBytes * 100 : 0;
   const liveTokensPerSecond = snapshot.activity.stage === "idle" ? null : latest?.tokensPerSecond ?? null;
   const runtimeActive = ["starting", "running", "stopping"].includes(runtime.phase);
+  const presentation = resolveMonitorPresentation(runtime, snapshot.activity.stage, liveTokensPerSecond);
   const qwenManaged = config.model.id === "qwen3.6-35b-a3b";
   const runtimeCache = runtimeActive
     ? argumentOptionValue(runtime.command, "--ssd-streaming-cache-experts")
@@ -91,33 +155,33 @@ export function MonitorView({ snapshot }: Props) {
     <div className="monitor-page page-scroll">
       <section className="monitor-summary">
         <div>
-          <span className="eyebrow"><Activity size={13} /> Real-time updates</span>
-          <h2>What DSBox is using.</h2>
-          <p>Memory, CPU, disk space, and model speed, with no fabricated estimates.</p>
+          <span className="eyebrow"><Activity size={13} /> System telemetry</span>
+          <h2>{presentation.title}</h2>
+          <p>{presentation.description}</p>
         </div>
         <div className="monitor-summary__status panel">
           <StatusPill phase={runtime.phase} />
           <div><small>Process</small><strong>{runtime.pid ?? "—"}</strong></div>
-          <div><small>Engine</small><strong>Metal</strong></div>
-          <div><small>Model status</small><strong>{snapshot.activity.stage === "idle" ? "Waiting" : snapshot.activity.stage === "prefill" ? "Prefill" : snapshot.activity.stage === "thinking" ? "Thinking" : "Decode"}</strong></div>
+          <div><small>Engine</small><strong>{presentation.state === "offline" ? "—" : "Metal"}</strong></div>
+          <div><small>Model status</small><strong>{presentation.modelStatus}</strong></div>
         </div>
       </section>
 
       <section className="monitor-cards">
         <article className="resource-card panel">
           <div className="resource-card__head"><span><MemoryStick size={17} /></span><div><small>Committed memory</small><strong>{latest ? formatBytes(latest.memoryUsedBytes) : "—"}<em> / {latest ? formatBytes(latest.memoryTotalBytes) : "—"}</em></strong></div><b>{formatPercent(memoryPercent)}</b></div>
-          <Sparkline values={memoryValues} max={100} color="#6658d3" height={74} />
+          <Sparkline values={memoryValues} max={100} color="var(--ds-color-data-1)" height={74} />
           <div className="resource-card__foot"><span>Pressure {pressure === null || pressure === undefined ? "N/A" : formatPercent(pressure)}</span><span>Cache {latest ? formatBytes(latest.memoryFileCacheBytes) : "—"}</span></div>
         </article>
         <article className="resource-card panel">
           <div className="resource-card__head"><span><Cpu size={17} /></span><div><small>System CPU</small><strong>{latest ? formatPercent(latest.systemCpuPercent, 1) : "—"}</strong></div></div>
-          <Sparkline values={cpuValues} max={100} color="#1e8b68" />
-          <div className="resource-card__foot"><span>DS4 {latest && runtime.pid ? formatPercent(latest.processCpuPercent, 1) : "—"}</span><span>Load {latest?.loadAverage.toFixed(2) ?? "—"}</span></div>
+          <Sparkline values={cpuValues} max={100} color="var(--ds-color-data-2)" />
+          <div className="resource-card__foot"><span>Runtime {latest && runtime.pid ? formatPercent(latest.processCpuPercent, 1) : "—"}</span><span>Load {latest?.loadAverage.toFixed(2) ?? "—"}</span></div>
         </article>
         <article className="resource-card panel">
-          <div className="resource-card__head"><span><Gauge size={17} /></span><div><small>Response speed</small><strong>{liveTokensPerSecond !== null ? `${liveTokensPerSecond.toFixed(2)} t/s` : "Waiting"}</strong></div></div>
-          <Sparkline values={tokenValues} color="#d17832" />
-          <div className="resource-card__foot"><span>Measured by DSBox</span><span>not estimated</span></div>
+          <div className="resource-card__head"><span><Gauge size={17} /></span><div><small>Response speed</small><strong>{presentation.responseSpeed}</strong></div></div>
+          <Sparkline values={tokenValues} color="var(--ds-color-data-4)" />
+          <div className="resource-card__foot"><span>{presentation.responseFoot}</span><span>{presentation.state === "ready" ? "not estimated" : "—"}</span></div>
         </article>
         <article className="resource-card panel">
           <div className="resource-card__head"><span><HardDrive size={17} /></span><div><small>Free space</small><strong>{latest ? formatBytes(latest.diskFreeBytes, 0) : "—"}</strong></div></div>
@@ -139,7 +203,7 @@ export function MonitorView({ snapshot }: Props) {
               <small>{latest ? `${formatBytes(latest.memoryUsedBytes)} of ${formatBytes(latest.memoryTotalBytes)}` : "No samples"}</small>
             </div>
             <div>
-              <span><i className="legend-dot legend-dot--process" />ds4 process <strong>{latest && runtime.pid ? formatBytes(latest.processRssBytes) : "—"}</strong></span>
+              <span><i className="legend-dot legend-dot--process" />Runtime process <strong>{latest && runtime.pid ? formatBytes(latest.processRssBytes) : "—"}</strong></span>
               <div className="progress-bar progress-bar--process"><i style={{ width: `${latest && latest.memoryTotalBytes ? Math.min(100, latest.processRssBytes / latest.memoryTotalBytes * 100) : 0}%` }} /></div>
               <small>Child process RSS, not allocated Metal memory</small>
             </div>

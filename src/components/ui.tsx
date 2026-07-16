@@ -226,7 +226,7 @@ export function Modal({
 
 export function Sparkline({
   values,
-  color = "#181817",
+  color = "var(--ds-color-data-1)",
   height = 56,
   max
 }: {
