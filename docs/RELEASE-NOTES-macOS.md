@@ -1,41 +1,26 @@
-## DSBox 0.2.5
+## DSBox 0.2.6
 
-This release expands Qwen and agent workflows and refreshes the DSBox desktop
-interface with clearer state, safer navigation, and selectable color palettes.
+This patch makes long model downloads easier to follow and refreshes the public
+product guide with current DSBox screens and agent behavior.
 
-### Runtime and agent upgrades
+### Model download visibility
 
-- Added Qwen runtime support and model identities, and moved Qwen execution to
-  the mainline Metal AUTO runtime configuration.
-- Added dual-model agent chat with explicit Web search control and more robust,
-  request-gated automatic search.
-- Fixed stale startup and capability states, improved legacy model responses,
-  and removed a redundant DeepSeek catalog mirror.
+- When a model download starts or resumes, Models now scrolls the existing
+  progress panel into view automatically.
+- Progress updates do not repeatedly move the page, and keyboard focus remains
+  where the user left it.
+- Reopening Models while a download is active brings its progress back into
+  view, with reduced-motion preferences respected.
 
-### Interface and reliability
+### Documentation refresh
 
-- Added an Appearance picker with Follow system, DSBox Light, DSBox Dark, Nord,
-  and Solarized Dark. Theme changes apply immediately, persist across launches,
-  and never restart the local model.
-- Applied the saved appearance before React renders and extended semantic tokens
-  across application chrome, code surfaces, terminals, selections, scrollbars,
-  overlays, and charts.
-- Reworked the Server power control into one clear action and made Agents report
-  Offline, Starting, or Ready from the actual runtime and readiness state.
-- Clarified Activity so host telemetry stays distinct from runtime metrics, and
-  response speed appears only when DSBox has measured it.
-- Added explicit live-update connection states. After a sustained SSE
-  interruption, DSBox warns that visible values may be out of date while it
-  reconnects automatically.
-- Protected unsaved engine settings when leaving Settings, with Cancel, Discard,
-  and Save options, including restart handling when the runtime is active.
-- Improved first-run onboarding with dialog semantics, keyboard focus handling,
-  Escape support, and an explicit Continue without a model choice.
-- Kept unavailable or incompatible models collapsed by default while preserving
-  session preference and temporarily revealing search matches.
-- Restored the last open page, preloaded views after startup, replaced the
-  generic loading message with stable skeletons, and refined sidebar labels,
-  disabled-state explanations, tooltips, and collapsed chat controls.
+- Replaced the main product screenshots with a current seven-screen walkthrough
+  of Chat, Models, Server, Agent mode, coding-agent connections, Activity, and
+  selectable color palettes.
+- Documented the boundary between DSBox's bounded built-in agent loop and
+  external coding agents that own their own tools, permissions, and workspace.
+- Clarified capability detection, Web search boundaries, tool limits, protocol
+  availability, telemetry, and the current single-selected-model architecture.
 
 ### macOS community build
 
