@@ -41,6 +41,41 @@ interface Props {
   onNavigate: (view: ViewId) => void;
 }
 
+interface WebSearchControlOptions {
+  agentAvailable: boolean;
+  agentActive: boolean;
+  tools: readonly string[];
+  preference: boolean;
+  streaming: boolean;
+}
+
+export interface WebSearchControlState {
+  visible: boolean;
+  requestEnabled: boolean;
+  pressed: boolean;
+  disabled: boolean;
+  label: "Web on" | "Web off";
+  ariaLabel: string;
+  title: string;
+}
+
+export function resolveWebSearchControl(options: WebSearchControlOptions): WebSearchControlState {
+  const available = options.agentAvailable && options.tools.includes("web_search");
+  const state = options.preference ? "on" : "off";
+  const action = options.preference ? "off" : "on";
+  return {
+    visible: available,
+    requestEnabled: available && options.agentActive && options.preference,
+    pressed: options.preference,
+    disabled: options.streaming,
+    label: options.preference ? "Web on" : "Web off",
+    ariaLabel: `Turn web search ${action}`,
+    title: options.agentActive
+      ? `Web search is ${state} for agent requests. Click to turn it ${action}.`
+      : `Web search is ${state} and will be applied when Agent is on. Click to turn it ${action}.`
+  };
+}
+
 const suggestions = [
   { icon: Code2, title: "Explore a codebase", prompt: "Help me understand a codebase and identify the most important areas to read first." },
   { icon: Database, title: "Design a system", prompt: "Design a robust architecture, explain the trade-offs, and provide a concrete implementation plan." },
@@ -231,8 +266,7 @@ const streamingMarkdownComponents: Components = {
 
 export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const chat = useChatSession();
-  const { messages, input, thinking, streaming, capabilities, agentMode } = chat;
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const { messages, input, thinking, streaming, capabilities, agentMode, webSearchEnabled } = chat;
   const [reasoningOpen, setReasoningOpen] = useState<Record<string, boolean>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showJump, setShowJump] = useState(false);
@@ -333,8 +367,13 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const ready = snapshot.runtime.readiness === "ready";
   const agentAvailable = capabilities.status === "ready" && capabilities.chatTools;
   const agentActive = agentAvailable && agentMode;
-  const webSearchAvailable = agentAvailable && capabilities.tools.includes("web_search");
-  const webSearchActive = agentActive && webSearchEnabled;
+  const webSearchControl = resolveWebSearchControl({
+    agentAvailable,
+    agentActive,
+    tools: capabilities.tools,
+    preference: webSearchEnabled,
+    streaming
+  });
   const agentCapabilityMessage = capabilities.status === "error" || capabilities.status === "unknown"
     ? "Tool capability could not be verified. DSBox will use standard chat."
     : capabilities.status === "ready" && !capabilities.chatTools
@@ -350,14 +389,6 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const modelSwitchBlocked = streaming
     || modelSwitching
     || !["uninstalled", "idle", "running", "error"].includes(snapshot.runtime.phase);
-
-  useEffect(() => {
-    if (!agentActive || !webSearchAvailable) setWebSearchEnabled(false);
-  }, [agentActive, webSearchAvailable]);
-
-  useEffect(() => {
-    setWebSearchEnabled(false);
-  }, [chat.activeThreadId, snapshot.config.model.id, snapshot.config.model.path]);
 
   useEffect(() => {
     const wasStreaming = wasStreamingRef.current;
@@ -441,15 +472,13 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
     }
     autoScrollRef.current = true;
     setShowJump(false);
-    const allowWebSearch = webSearchActive;
-    setWebSearchEnabled(false);
+    const allowWebSearch = webSearchControl.requestEnabled;
     void chat.send({ content, model: snapshot.config.model.id, maxTokens: snapshot.config.server.maxOutputTokens, allowWebSearch });
     if (textAreaRef.current) textAreaRef.current.style.height = "auto";
   };
 
   const startNewThread = () => {
     if (streaming) return;
-    setWebSearchEnabled(false);
     chat.newThread();
     setReasoningOpen({});
     setHistoryOpen(false);
@@ -803,31 +832,25 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                 disabled={!agentAvailable || streaming}
                 aria-pressed={agentActive}
                 title={agentAvailable
-                  ? `${capabilities.tools.length || "Available"} local tools · ${capabilities.maxSteps ?? 8} steps max`
+                  ? `${capabilities.tools.length || "Available"} tools · ${capabilities.maxSteps ?? 8} steps max`
                   : capabilities.reason ?? "Tool calling is unavailable for the active model"}
               >
                 {capabilities.status === "loading" ? <LoaderCircle className="spin" size={13} /> : <Wrench size={13} />}
                 <span>{capabilities.status === "loading" ? "Checking tools…" : agentAvailable ? (agentActive ? "Agent" : "Agent off") : "Chat only"}</span>
                 <i aria-hidden="true" />
               </button>
-              {webSearchAvailable && (
+              {webSearchControl.visible && (
                 <button
                   type="button"
-                  className={`agent-toggle ${webSearchActive ? "agent-toggle--on" : ""}`}
-                  onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                  disabled={!agentActive || streaming}
-                  aria-pressed={webSearchActive}
-                  aria-label={webSearchActive ? "Web search on for the next request" : "Authorize web search for the next request"}
-                  title={webSearchActive
-                    ? "Web search is on for the next request only"
-                    : !agentActive
-                      ? "Turn on Agent to authorize web search"
-                      : streaming
-                        ? "Web search can be enabled after this response finishes"
-                        : "Authorize web_search for the next request only"}
+                  className={`agent-toggle ${webSearchControl.pressed ? "agent-toggle--on" : ""}`}
+                  onClick={() => chat.setWebSearchEnabled(!webSearchEnabled)}
+                  disabled={webSearchControl.disabled}
+                  aria-pressed={webSearchControl.pressed}
+                  aria-label={webSearchControl.ariaLabel}
+                  title={webSearchControl.title}
                 >
                   <Globe2 size={13} />
-                  <span>{webSearchActive ? "Web on" : "Web"}</span>
+                  <span>{webSearchControl.label}</span>
                   <i aria-hidden="true" />
                 </button>
               )}

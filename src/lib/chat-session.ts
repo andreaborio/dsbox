@@ -12,6 +12,7 @@ const LEGACY_CHAT_STORAGE_KEY = "dsbox:chat";
 const MAX_THREADS = 24;
 const MAX_MESSAGES_PER_THREAD = 100;
 const MAX_AGENT_WIRE_HISTORY = 199;
+export const DEFAULT_WEB_SEARCH_ENABLED = true;
 
 export interface ChatStorage {
   getItem(key: string): string | null;
@@ -42,6 +43,7 @@ export interface ChatSessionSnapshot {
   skillStage: "idle" | "searching";
   streaming: boolean;
   agentMode: boolean;
+  webSearchEnabled: boolean;
   capabilities: ChatCapabilities;
 }
 
@@ -98,6 +100,9 @@ interface PersistedThreads {
   version: 1;
   activeThreadId: string;
   threads: ChatThread[];
+  preferences?: {
+    webSearchEnabled?: boolean;
+  };
 }
 
 type StreamRecord = Record<string, unknown>;
@@ -667,7 +672,19 @@ function canonicalHistory(
   agentActive: boolean,
   maxWireMessages = Number.POSITIVE_INFINITY
 ): OutgoingChatMessage[] {
-  const eligible = messages.filter((message) => !message.pending && !message.error && !message.interrupted);
+  const eligible = messages.filter((message, index) => {
+    if (message.pending || message.error || message.interrupted) return false;
+    if (message.role === "assistant") return true;
+
+    // A failed/interrupted assistant is intentionally not replayed. Drop its
+    // user prompt as well so retrying in the same thread cannot produce two
+    // consecutive user messages or teach the model from an incomplete turn.
+    const reply = messages[index + 1];
+    return reply?.role === "assistant"
+      && !reply.pending
+      && !reply.error
+      && !reply.interrupted;
+  });
   if (!agentActive) return eligible.map(({ role, content }) => ({ role, content }));
 
   // One persisted assistant message can expand to assistant.tool_calls, many
@@ -739,6 +756,10 @@ export class ChatSessionStore {
   setAgentMode = (agentMode: boolean): void => {
     if (agentMode && !this.snapshot.capabilities.chatTools) return;
     this.commit({ ...this.snapshot, agentMode });
+  };
+
+  setWebSearchEnabled = (webSearchEnabled: boolean): void => {
+    this.commit({ ...this.snapshot, webSearchEnabled }, true);
   };
 
   refreshCapabilities = async (): Promise<ChatCapabilities> => {
@@ -860,8 +881,8 @@ export class ChatSessionStore {
 
     const nextMessages = [...thread.messages, user, assistant].slice(-MAX_MESSAGES_PER_THREAD);
     this.replaceThread(threadId, nextMessages, titleFromPrompt(thread.title === "New chat" ? prompt : thread.title), startedAt, false);
-    const webSearchEnabled = !agentActive && shouldAutoEnableWebSearch(prompt);
-    this.commit({ ...this.snapshot, input: "", streaming: true, skillStage: webSearchEnabled ? "searching" : "idle" });
+    const autoSearchEnabled = !agentActive && shouldAutoEnableWebSearch(prompt);
+    this.commit({ ...this.snapshot, input: "", streaming: true, skillStage: autoSearchEnabled ? "searching" : "idle" });
     this.persist();
 
     const abort = new AbortController();
@@ -881,7 +902,7 @@ export class ChatSessionStore {
 
     try {
       const outgoing: OutgoingChatMessage[] = [...history];
-      if (webSearchEnabled) {
+      if (autoSearchEnabled) {
         searchStartedAt = this.now();
         try {
           const searchResponse = await this.fetcher("/api/skills/web-search", {
@@ -917,7 +938,7 @@ export class ChatSessionStore {
         stream: true,
         stream_options: { include_usage: true }
       };
-      if (agentActive) body.allow_web_search = allowWebSearch || shouldAuthorizeAgentWebSearch(prompt);
+      if (agentActive) body.allow_web_search = allowWebSearch;
       if (!this.snapshot.thinking) body.thinking = { type: "disabled" };
       const response = await this.fetcher(agentActive ? "/api/agent/chat" : "/api/chat", {
         method: "POST",
@@ -1059,6 +1080,7 @@ export class ChatSessionStore {
     const createdAt = this.now();
     let threads: ChatThread[] = [];
     let activeThreadId = "";
+    let webSearchEnabled = DEFAULT_WEB_SEARCH_ENABLED;
     try {
       const raw = this.storage?.getItem(THREADS_STORAGE_KEY);
       if (raw) {
@@ -1069,6 +1091,9 @@ export class ChatSessionStore {
             messages: thread.messages.filter(isChatMessage).slice(-MAX_MESSAGES_PER_THREAD).map((message) => restoreMessageStats(message, createdAt))
           }));
           activeThreadId = typeof parsed.activeThreadId === "string" ? parsed.activeThreadId : "";
+          if (typeof parsed.preferences?.webSearchEnabled === "boolean") {
+            webSearchEnabled = parsed.preferences.webSearchEnabled;
+          }
         }
       }
       if (!threads.length) {
@@ -1098,6 +1123,7 @@ export class ChatSessionStore {
       skillStage: "idle",
       streaming: false,
       agentMode: true,
+      webSearchEnabled,
       capabilities: defaultCapabilities()
     };
   }
@@ -1134,7 +1160,12 @@ export class ChatSessionStore {
         stats: message.stats ? finalizeStats(message.stats, this.now()) : message.stats
       } : message)
     }));
-    const payload: PersistedThreads = { version: 1, activeThreadId: this.snapshot.activeThreadId, threads };
+    const payload: PersistedThreads = {
+      version: 1,
+      activeThreadId: this.snapshot.activeThreadId,
+      threads,
+      preferences: { webSearchEnabled: this.snapshot.webSearchEnabled }
+    };
     try {
       this.storage.setItem(THREADS_STORAGE_KEY, JSON.stringify(payload));
       this.storage.removeItem(LEGACY_CHAT_STORAGE_KEY);

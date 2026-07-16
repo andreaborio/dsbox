@@ -267,11 +267,11 @@ describe("model-neutral agent API", () => {
       }
       completion += 1;
       const payload = JSON.parse(String(init?.body)) as {
-        tools: Array<{ function: { name: string } }>;
+        tools: Array<{ function: { name: string; description: string } }>;
         messages: Array<Record<string, unknown>>;
       };
-      expect(payload.tools.map((tool) => tool.function.name)).toEqual(["runtime_status", "model_info"]);
       if (completion === 1) {
+        expect(payload.tools.map((tool) => tool.function.name)).toEqual(["runtime_status", "model_info"]);
         return sseResponse([{
           choices: [{
             delta: {
@@ -285,6 +285,8 @@ describe("model-neutral agent API", () => {
           }]
         }]);
       }
+      expect(payload.tools.map((tool) => tool.function.name)).toEqual(["web_search", "runtime_status", "model_info"]);
+      expect(payload.tools[0]?.function.description).toContain("Unavailable for this request");
       expect(JSON.parse(String(payload.messages.at(-1)?.content))).toMatchObject({
         ok: false,
         error: { code: "tool_permission_denied", retryable: false }
@@ -309,6 +311,78 @@ describe("model-neutral agent API", () => {
       error: expect.objectContaining({ code: "tool_permission_denied", retryable: false })
     }));
     expect(events.some((event) => event.type === "tool_call.started")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "run.completed", steps: 2 });
+  });
+
+  it("keeps historical web tool calls parseable while permission remains denied", async () => {
+    let webRequests = 0;
+    let completion = 0;
+    const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/v1/models")) {
+        return Response.json({ object: "list", data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }] });
+      }
+      if (url.includes("duckduckgo.com")) {
+        webRequests += 1;
+        return new Response("unexpected web request", { status: 500 });
+      }
+      completion += 1;
+      const payload = JSON.parse(String(init?.body)) as {
+        tools: Array<{ function: { name: string; description: string } }>;
+        messages: Array<Record<string, unknown>>;
+      };
+      const webTool = payload.tools.find((tool) => tool.function.name === "web_search");
+      expect(webTool?.function.description).toContain("Unavailable for this request");
+      if (completion === 1) {
+        return sseResponse([{
+          choices: [{
+            delta: { tool_calls: [{
+              index: 0,
+              id: "call_historical_web",
+              function: { name: "web_search", arguments: "{\"query\":\"Germany GDP 2023\"}" }
+            }] },
+            finish_reason: "tool_calls"
+          }]
+        }]);
+      }
+      expect(JSON.parse(String(payload.messages.at(-1)?.content))).toMatchObject({
+        ok: false,
+        error: { code: "tool_permission_denied" }
+      });
+      return sseResponse([{ choices: [{ delta: { content: "Web search is disabled." }, finish_reason: "stop" }] }]);
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const response = await request(createApp(services))
+      .post("/api/agent/chat")
+      .set("x-dsbox-control", "1")
+      .send({
+        messages: [
+          { role: "user", content: "Search the weather" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [{
+              id: "call_previous_web",
+              type: "function",
+              function: { name: "web_search", arguments: "{\"query\":\"weather\"}" }
+            }]
+          },
+          { role: "tool", tool_call_id: "call_previous_web", content: "{\"ok\":true}" },
+          { role: "assistant", content: "It was sunny." },
+          { role: "user", content: "Now search Germany GDP" }
+        ],
+        allow_web_search: false
+      })
+      .expect(200);
+
+    const events = agentEvents(response.text);
+    expect(webRequests).toBe(0);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool_call.failed",
+      callId: "call_historical_web",
+      error: expect.objectContaining({ code: "tool_permission_denied" })
+    }));
     expect(events.at(-1)).toMatchObject({ type: "run.completed", steps: 2 });
   });
 

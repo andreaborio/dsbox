@@ -26,6 +26,17 @@ function frame(payload: unknown): Uint8Array {
 }
 
 describe("persistent chat session", () => {
+  it("persists a Web opt-out across store recreation", () => {
+    const storage = new MemoryStorage();
+    const first = new ChatSessionStore({ storage, createId: ids() });
+    expect(first.getSnapshot().webSearchEnabled).toBe(true);
+
+    first.setWebSearchEnabled(false);
+    const restored = new ChatSessionStore({ storage, createId: ids() });
+
+    expect(restored.getSnapshot().webSearchEnabled).toBe(false);
+  });
+
   it("reduces canonical Qwen/DeepSeek agent events into model-neutral tool activity", () => {
     let state: AgentStreamState = { content: "", reasoning: "", blocks: [] };
     state = reduceAgentStreamEvent(state, { type: "reasoning.delta", text: "checking" }, 1_000);
@@ -110,7 +121,7 @@ describe("persistent chat session", () => {
     expect(shouldAuthorizeAgentWebSearch("cerca nei file del progetto")).toBe(false);
   });
 
-  it("combines a one-request Web toggle with explicit prompt intent without retaining it across threads", async () => {
+  it("uses the explicit Web availability selected by the UI", async () => {
     const requestBodies: Array<Record<string, unknown>> = [];
     const fetcher = vi.fn(async (input: string, init: RequestInit) => {
       if (input === "/api/capabilities") {
@@ -129,9 +140,34 @@ describe("persistent chat session", () => {
     await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32, allowWebSearch: true });
     store.newThread();
     await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32 });
-    await store.send({ content: "cerca su web", model: "local-model", maxTokens: 32 });
+    await store.send({ content: "cerca su web", model: "local-model", maxTokens: 32, allowWebSearch: true });
 
     expect(requestBodies.map((body) => body.allow_web_search)).toEqual([true, false, true]);
+  });
+
+  it("drops the failed user turn before retrying in the same thread", async () => {
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const fetcher = vi.fn(async (input: string, init: RequestInit) => {
+      if (input === "/api/capabilities") {
+        return Response.json({ chat: { tools: true }, tools: [{ name: "web_search" }] });
+      }
+      if (input !== "/api/agent/chat") throw new Error(`Unexpected request: ${input}`);
+      requestBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      const event = requestBodies.length === 1
+        ? { type: "run.error", error: { code: "model_generation_failed", message: "Malformed call", retryable: true } }
+        : { type: "run.completed", finishReason: "stop", steps: 0 };
+      return new Response(`event: agent\ndata: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" }
+      });
+    });
+    const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
+    await store.refreshCapabilities();
+
+    await store.send({ content: "Broken request", model: "local-model", maxTokens: 32, allowWebSearch: true });
+    await store.send({ content: "Retry cleanly", model: "local-model", maxTokens: 32, allowWebSearch: true });
+
+    expect(requestBodies[1].messages).toEqual([{ role: "user", content: "Retry cleanly" }]);
   });
 
   it("uses the canonical agent endpoint when the active runtime advertises chat tools", async () => {
@@ -221,7 +257,7 @@ describe("persistent chat session", () => {
     await store.refreshCapabilities();
 
     await store.send({ content: "Tell me the latest runtime state", model: "local-model", maxTokens: 128 });
-    await store.send({ content: "Search the web and continue", model: "local-model", maxTokens: 128 });
+    await store.send({ content: "Search the web and continue", model: "local-model", maxTokens: 128, allowWebSearch: true });
 
     expect(requestBodies[0].allow_web_search).toBe(false);
     expect(requestBodies[1].allow_web_search).toBe(true);

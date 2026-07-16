@@ -229,12 +229,19 @@ function internalBaseUrl(services: AgentServices): string {
   return `http://${config.server.internalHost}:${config.server.internalPort}`;
 }
 
-function modelTools(allowWebSearch: boolean): Array<Record<string, unknown>> {
-  return toolDefinitions.filter((tool) => allowWebSearch || tool.name !== "web_search").map((tool) => ({
+function historyUsesTool(messages: AgentMessage[], name: ToolName): boolean {
+  return messages.some((message) => message.role === "assistant"
+    && message.tool_calls?.some((call) => call.function.name === name));
+}
+
+function modelTools(allowWebSearch: boolean, includeHistoricalWebSearch = false): Array<Record<string, unknown>> {
+  return toolDefinitions.filter((tool) => allowWebSearch || includeHistoricalWebSearch || tool.name !== "web_search").map((tool) => ({
     type: "function",
     function: {
       name: tool.name,
-      description: tool.description,
+      description: tool.name === "web_search" && !allowWebSearch
+        ? `${tool.description} Unavailable for this request; do not call it.`
+        : tool.description,
       parameters: tool.inputSchema,
       strict: true
     }
@@ -948,7 +955,14 @@ export async function handleAgentChat(
       const upstreamBody: Record<string, unknown> = {
         model,
         messages,
-        tools: modelTools(input.allow_web_search),
+        // Keep schemas referenced by prior assistant turns parseable even when
+        // their permission is off now. The executor still denies web_search
+        // before any network request, but DS4 can return a structured call
+        // instead of rejecting a valid historical tool name as malformed.
+        tools: modelTools(
+          input.allow_web_search,
+          historyUsesTool(messages, "web_search")
+        ),
         tool_choice: "auto",
         stream: true,
         stream_options: { include_usage: true },

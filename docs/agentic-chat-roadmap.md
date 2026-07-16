@@ -117,7 +117,9 @@ Ogni evento include `runId`, sequenza e `step`; gli eventi tool includono
 - massimo 8 tool round;
 - massimo 3 tool eseguiti in parallelo;
 - timeout e limiti di output per runtime e tool;
-- `web_search` assente dal prompt salvo consenso esplicito nella richiesta;
+- `web_search` attivo di default in Agent mode, con opt-out persistente visibile;
+- opt-out applicato nell'executor prima della rete; gli schemi web gia' citati
+  nella history restano solo per rendere il transcript parsabile;
 - risultati web marcati come dati non fidati anche nei turn successivi;
 - nessun `open_url`: prima servono difese SSRF, redirect e DNS rebinding;
 - stop/reload convertono tool pending in `canceled`.
@@ -145,7 +147,7 @@ Deliverable:
 - capability probe e fallback standard chat;
 - Agent IR SSE e history persistibile;
 - loop multi-step comune Qwen/DeepSeek;
-- `runtime_status`, `model_info`, `web_search` con consenso;
+- `runtime_status`, `model_info`, `web_search` automatico con opt-out;
 - UI activity card, stato, durata, input/result e cancel;
 - parser Qwen schema-aware in DS4 e regressione reale DeepSeek;
 - limiti di fan-out, concorrenza, timeout e dimensione;

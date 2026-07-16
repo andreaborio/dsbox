@@ -18,6 +18,7 @@ export function useChatSession() {
     setInput: chatSessionStore.setInput,
     setThinking: chatSessionStore.setThinking,
     setAgentMode: chatSessionStore.setAgentMode,
+    setWebSearchEnabled: chatSessionStore.setWebSearchEnabled,
     refreshCapabilities: chatSessionStore.refreshCapabilities,
     send: chatSessionStore.send,
     stop: chatSessionStore.stop,
