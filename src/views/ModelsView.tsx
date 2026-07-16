@@ -19,7 +19,7 @@ import {
   ShieldCheck,
   Trash2
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModelDownloadDialog } from "../components/ModelDownloadDialog";
 import { ModelIdentityIcon } from "../components/ModelIdentityIcon";
 import { Button, Modal } from "../components/ui";
@@ -28,7 +28,13 @@ import type { DsboxController } from "../hooks/useDsbox";
 import { apiRequest } from "../lib/api";
 import { formatBytes, formatModelName } from "../lib/format";
 import { identifyModel } from "../lib/model-identity";
-import { currentDownload, downloadStageLabel, formatDownloadEta, resumableDownload } from "../lib/model-download-state";
+import {
+  currentDownload,
+  downloadStageLabel,
+  formatDownloadEta,
+  resumableDownload,
+  shouldRevealActiveDownload
+} from "../lib/model-download-state";
 import { assessLocalModelHardware, assessModelHardware } from "../lib/model-hardware-advisor";
 import {
   readUnavailableModelsDisclosurePreference,
@@ -124,6 +130,8 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   const [downloadModel, setDownloadModel] = useState<CatalogModel | null>(null);
   const [discardDownloadId, setDiscardDownloadId] = useState<string | null>(null);
   const [unsupportedOpen, setUnsupportedOpen] = useState(() => readUnavailableModelsDisclosurePreference(window.sessionStorage));
+  const downloadBannerRef = useRef<HTMLElement | null>(null);
+  const previousActiveDownloadIdRef = useRef<string | null>(null);
   const reduceMotion = useReducedMotion();
 
   const refreshLocalModels = useCallback(async () => {
@@ -185,6 +193,22 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
 
   const activeDownload = currentDownload(snapshot.downloads);
   const pausedDownload = activeDownload ? null : resumableDownload(snapshot.downloads);
+
+  useEffect(() => {
+    const activeId = activeDownload?.id ?? null;
+    const shouldReveal = shouldRevealActiveDownload(previousActiveDownloadIdRef.current, activeId);
+    previousActiveDownloadIdRef.current = activeId;
+    if (!shouldReveal) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      downloadBannerRef.current?.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start"
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeDownload?.id, reduceMotion]);
+
   const runtimeBusy = Boolean(activeDownload) || ["preparing", "installing", "updating", "building", "downloading", "starting", "running", "stopping"].includes(snapshot.runtime.phase);
   const downloadActive = Boolean(activeDownload);
   const normalizedQuery = query.trim().toLowerCase();
@@ -446,7 +470,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
         </div>
 
         {activeDownload && (
-          <section className="model-task-banner" aria-label="Active model download">
+          <section ref={downloadBannerRef} className="model-task-banner" aria-label="Active model download">
             <span className="model-task-banner__icon"><Download size={17} /></span>
             <div className="model-task-banner__body">
               <div className="model-task-banner__head">

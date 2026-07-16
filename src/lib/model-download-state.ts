@@ -1,4 +1,4 @@
-import type { ModelDownloadSnapshot, ModelDownloadStage } from "../types";
+import type { ModelDownloadSnapshot, ModelDownloadStage } from "../types.js";
 
 const ACTIVE_STAGES = new Set<ModelDownloadStage>([
   "queued",
@@ -17,6 +17,10 @@ export function currentDownload(downloads: ModelDownloadSnapshot[] | undefined):
 
 export function resumableDownload(downloads: ModelDownloadSnapshot[] | undefined): ModelDownloadSnapshot | null {
   return downloads?.find((download) => download.stage === "paused" || download.stage === "error") ?? null;
+}
+
+export function shouldRevealActiveDownload(previousId: string | null, activeId: string | null): boolean {
+  return activeId !== null && activeId !== previousId;
 }
 
 export function downloadStageLabel(stage: ModelDownloadStage): string {
