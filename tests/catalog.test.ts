@@ -203,6 +203,67 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.recommended).toBeNull();
   });
 
+  it("hides the redundant DSBox DeepSeek mirror while keeping other DSBox catalog entries", async () => {
+    const mirrorRepository = "andreaborio/DeepSeek-V4-Flash-DS4-GGUF";
+    const qwenRepository = "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF";
+    const mirrorRevision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const qwenRevision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestedUrl(input);
+      if (url.includes("/api/models?")) {
+        return jsonResponse([
+          { id: mirrorRepository, sha: mirrorRevision },
+          { id: qwenRepository, sha: qwenRevision }
+        ]);
+      }
+      if (url === `https://huggingface.co/api/models/${mirrorRepository}/revision/${mirrorRevision}?blobs=true`) {
+        return jsonResponse({
+          id: mirrorRepository,
+          sha: mirrorRevision,
+          tags: ["ds4", "deepseek-v4"],
+          siblings: [{ rfilename: "mirror.gguf", lfs: { size: 1024, sha256: "a".repeat(64) } }]
+        });
+      }
+      if (url === `https://huggingface.co/${mirrorRepository}/resolve/${mirrorRevision}/dsbox.json`) {
+        return jsonResponse({
+          schemaVersion: 1,
+          status: "stable",
+          file: "mirror.gguf",
+          minimumMemoryGb: 64,
+          modelId: "deepseek-v4-flash",
+          runtimeBranch: "main",
+          runtimeCommit: "c".repeat(40),
+          recommended: false
+        });
+      }
+      if (url === `https://huggingface.co/api/models/${qwenRepository}/revision/${qwenRevision}?blobs=true`) {
+        return jsonResponse({
+          id: qwenRepository,
+          sha: qwenRevision,
+          tags: ["ds4", "qwen3.6", "experimental"],
+          siblings: [{ rfilename: "qwen.gguf", lfs: { size: 2048, sha256: "b".repeat(64) } }]
+        });
+      }
+      if (url === `https://huggingface.co/${qwenRepository}/resolve/${qwenRevision}/dsbox.json`) {
+        return jsonResponse({
+          schemaVersion: 1,
+          status: "experimental",
+          file: "qwen.gguf",
+          minimumMemoryGb: 16,
+          modelId: "qwen3.6-35b-a3b",
+          runtimeBranch: "main",
+          runtimeCommit: "d".repeat(40)
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+
+    expect(catalog.models.map((model) => model.repository)).not.toContain(mirrorRepository);
+    expect(catalog.models.map((model) => model.repository)).toContain(qwenRepository);
+  });
+
   it("does not substitute another GGUF when the manifest names a missing file", async () => {
     const repository = "andreaborio/broken-manifest-model";
     const revision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";

@@ -11,6 +11,9 @@ import type {
 
 const AUTHOR = "andreaborio" as const;
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const HIDDEN_REPOSITORIES = new Set([
+  "andreaborio/DeepSeek-V4-Flash-DS4-GGUF"
+]);
 
 interface CatalogSourceDefinition extends CatalogSource {
   filter?: string;
@@ -495,6 +498,7 @@ export class ModelCatalog {
       }));
       if (sourceResults.every((result) => result === null)) throw new Error("Every model source is unavailable");
       const models = sourceResults.flatMap((result) => result ?? [])
+        .filter((model) => !HIDDEN_REPOSITORIES.has(model.repository))
         .sort((left, right) => Number(right.recommended) - Number(left.recommended)
           || left.publisher.localeCompare(right.publisher)
           || left.label.localeCompare(right.label));
