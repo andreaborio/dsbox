@@ -28,7 +28,7 @@
 
 ![DSBox local chat](docs/media/01-chat.jpg)
 
-<p align="center"><sub>A local-first workspace with persistent threads, a compact model switcher, optional reasoning, and a clean Codex-style interface.</sub></p>
+<p align="center"><sub>Private local chat with persistent threads, syntax-highlighted code, model controls, and timings measured by DS4.</sub></p>
 
 ## Why DSBox
 
@@ -37,19 +37,73 @@
 - **SSD streaming without artificial lockouts.** DSBox warns when a model may be very slow, but does not block an experiment merely because the GGUF is larger than unified memory.
 - **Resident when it safely fits.** Qwen3.6 uses DS4's guarded Metal AUTO planner, keeping the complete model resident when the working set and current pressure allow it and falling back to SSD otherwise.
 - **A complete local chat.** Threads, reasoning, stop control, automatic scrolling, syntax-highlighted code, one-click copy, and response-level prefill/generation timings.
-- **Bring your coding agent.** Stable OpenAI, Responses, and Anthropic-style loopback endpoints with ready-to-copy configurations.
+- **A bounded agent loop.** Agent mode can inspect the local runtime and model, optionally search the web, and show reasoning, tool activity, results, and sources as they stream.
+- **Bring your coding agent.** The Agents screen exposes model-aware loopback endpoints, copy-ready configurations, and honest unavailable states when the active runtime lacks a required protocol.
+- **Editor-inspired palettes.** Follow macOS or switch instantly between DSBox Light, DSBox Dark, Nord, and Solarized Dark without restarting the model.
 - **Telemetry that says what it knows.** Memory pressure, committed memory, swap, CPU, process RSS, disk, and generation speed are reported; unsupported GPU metrics remain `N/A`.
 
 ## Three steps
 
 1. **Choose a model.** Use a validated GGUF already on the Mac or explicitly confirm an in-app catalog download.
 2. **Turn on DSBox.** The Server screen prepares and launches DS4 with Metal and guarded automatic memory planning.
-3. **Chat or connect an agent.** Use the built-in interface, or copy the endpoint for Codex CLI, Claude Code, OpenCode, Pi, or another compatible client.
+3. **Chat or connect an agent.** Use the built-in interface, or choose a client the active runtime actually supports; the Agents screen shows the available protocols.
 
-| Models | Server |
-| --- | --- |
-| ![DSBox model catalog](docs/media/02-models.jpg) | ![DSBox server power screen](docs/media/03-server.jpg) |
-| Browse revision-pinned sources, compare variants, and see hardware guidance before downloading. | A single power surface keeps startup, adaptive defaults, runtime state, and safe shutdown understandable. |
+![DSBox model catalog](docs/media/02-models.jpg)
+
+<p align="center"><sub>Browse revision-pinned sources, compare hardware guidance, and keep unsupported layouts clearly separated.</sub></p>
+
+![DSBox server power screen](docs/media/03-server.jpg)
+
+<p align="center"><sub>One power surface prepares Metal, applies guarded automatic memory planning, and reports real readiness.</sub></p>
+
+## Agentic chat and coding-agent connections
+
+DSBox has two related agent surfaces, with a deliberately different owner for each loop:
+
+| Surface | Who owns the agent loop | What DSBox provides |
+| --- | --- | --- |
+| **Agent mode in DSBox Chat** | DSBox | A bounded, streamed loop with visible reasoning, tool calls, results, timing, and sources. |
+| **Agents screen** | The connected client | A stable loopback model gateway plus model-aware endpoints and copy-ready configuration. The client owns its tools, permissions, workspace access, and network policy. |
+
+### Built-in Agent mode
+
+DSBox enables Agent mode only after the active runtime advertises tool support through `/v1/models` or accepts a harmless capability probe. If support is unavailable or cannot be verified, chat falls back to standard local inference instead of pretending that tools work.
+
+The current read-only tool registry is intentionally small:
+
+- `runtime_status` reads DS4 lifecycle and inference activity on this Mac;
+- `model_info` reads the model exposed by the active runtime;
+- `web_search` sends a bounded query to DuckDuckGo Lite and returns source-labelled snippets.
+
+Tool arguments are schema-validated before execution. One run is capped at eight tool rounds, eight calls per model turn, 24 calls overall, and three concurrent executions. Stop cancels active model and tool requests. Turning Web off blocks `web_search` in the executor before any network request; when it is on, only the normalized search query leaves the Mac and returned snippets are treated as untrusted source material.
+
+The model-neutral loop works with supported Qwen3.6 and DeepSeek V4 Flash runtimes, but DSBox still serves one selected model at a time. This is not two-model orchestration. The built-in loop also does not currently get filesystem access, a shell, code-writing permissions, browser control, MCP, background runs, approvals, or sub-agents.
+
+![DSBox built-in agent mode](docs/media/04-agent-chat.jpg)
+
+<p align="center"><sub>A bounded local loop with visible reasoning, local and network tool calls, explicit sources, and real timings.</sub></p>
+
+### External coding agents
+
+The **Agents** screen reads the selected runtime's actual protocol surface and disables incompatible clients. In the current Qwen3.6 path, OpenAI Chat Completions supports streaming, tools, `tool_choice`, and multiple tool calls; Responses and Anthropic Messages are not exposed, so Codex CLI and Claude Code are shown as unavailable while compatible clients such as OpenCode, Pi, and direct Chat Completions remain usable.
+
+![DSBox coding-agent connections](docs/media/05-agents.jpg)
+
+<p align="center"><sub>Connect compatible coding tools through a loopback gateway, with protocol limits shown for the active model instead of hidden.</sub></p>
+
+## Themes and honest observability
+
+Activity keeps host telemetry separate from measured model activity. It reports committed memory, memory pressure, cache, system and runtime CPU, disk space, runtime phase, and response speed from DS4. It does not invent unsupported GPU-utilization figures.
+
+![DSBox live activity](docs/media/06-activity.jpg)
+
+<p align="center"><sub>Live macOS resources and measured model throughput, shown separately and without fabricated estimates.</sub></p>
+
+Appearance includes five instant choices: Follow system, DSBox Light, DSBox Dark, Nord, and Solarized Dark. They change the workspace without restarting the local model. These are curated built-in palettes inspired by editor themes, not a VS Code theme-file importer.
+
+![DSBox color palettes](docs/media/07-themes.jpg)
+
+<p align="center"><sub>Switch between the original DSBox workspace and editor-inspired dark palettes without interrupting the runtime.</sub></p>
 
 ## Models, made transparent
 
@@ -119,20 +173,20 @@ npm run dev
 - UI: `http://127.0.0.1:5173`
 - Gateway and control plane: `http://127.0.0.1:4242`
 
-## Coding-agent endpoints
+## Coding-agent endpoint reference
 
-The public loopback gateway stays stable even if the internal DS4 port changes.
+The public loopback gateway stays stable even if the internal DS4 port changes. Route availability still follows the selected DS4 runtime; the **Agents** screen is the source of truth for what can be used now.
 
-| Protocol | Base URL | Endpoint |
+| Protocol | Endpoint | Availability |
 | --- | --- | --- |
-| OpenAI Chat | `http://127.0.0.1:4242/v1` | `/chat/completions` |
-| OpenAI Responses | `http://127.0.0.1:4242/v1` | `/responses` |
-| Anthropic Messages | `http://127.0.0.1:4242` | `/v1/messages` |
-| Model discovery | `http://127.0.0.1:4242/v1` | `/models` |
+| OpenAI Chat | `http://127.0.0.1:4242/v1/chat/completions` | Supported by the current Qwen3.6 path, including streaming and tools. |
+| OpenAI Responses | `http://127.0.0.1:4242/v1/responses` | Only when the selected runtime exposes Responses; current Qwen3.6 does not. |
+| Anthropic Messages | `http://127.0.0.1:4242/v1/messages` | Only when the selected runtime exposes Anthropic Messages; current Qwen3.6 does not. |
+| Model discovery | `http://127.0.0.1:4242/v1/models` | Reports the model and capabilities exposed by the active runtime. |
 
 The **Agents** screen generates configurations using the currently selected model and gateway settings. If gateway authentication is enabled, copy the real key from Settings instead of using a placeholder.
 
-Example Codex provider:
+When the Agents screen marks Codex CLI as available, an example provider is:
 
 ```toml
 [model_providers.ds4]
@@ -213,11 +267,11 @@ The table below uses the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF and the i
 
 ```mermaid
 flowchart LR
-    UI["React + Electron UI"] -->|"control API + SSE"| CP["DSBox control plane"]
+    UI["React + Electron UI"] -->|"control, chat, and agent events"| CP["DSBox control plane"]
     HF["Hugging Face sources"] -->|"revision-pinned downloads"| CP
-    CP -->|"argv spawn + lifecycle"| DS4["ds4-server · Metal"]
-    UI -->|"local chat"| GW["Gateway · 127.0.0.1:4242"]
-    AG["Coding agent"] -->|"OpenAI / Responses / Anthropic"| GW
+    CP -->|"argv spawn, chat, and bounded tool loop"| DS4["ds4-server · Metal"]
+    CP -->|"optional web_search query"| WEB["DuckDuckGo Lite"]
+    AG["External coding agent"] -->|"runtime-supported protocol"| GW["Gateway · 127.0.0.1:4242"]
     GW -->|"text requests + streamed responses"| DS4
     DS4 --> SSD["GGUF · expert cache · KV disk"]
     CP -->|"macOS metrics + logs"| UI
