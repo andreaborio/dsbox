@@ -1,26 +1,38 @@
-## DSBox 0.2.6
+## DSBox 0.2.7
 
-This patch makes long model downloads easier to follow and refreshes the public
-product guide with current DSBox screens and agent behavior.
+This release adds explicit support for DS4 ExpertMajor model artifacts and
+keeps their runtime boundary visible from discovery through local selection.
 
-### Model download visibility
+### DS4 ExpertMajor models
 
-- When a model download starts or resumes, Models now scrolls the existing
-  progress panel into view automatically.
-- Progress updates do not repeatedly move the page, and keyboard focus remains
-  where the user left it.
-- Reopening Models while a download is active brings its progress back into
-  view, with reduced-motion preferences respected.
+- Recognizes the native `ds4.expert_major.v1` Qwen and
+  `ds4.expert_major.v2` DeepSeek tensor layouts during the lightweight GGUF
+  preflight.
+- Shows ExpertMajor files as **DS4 only** in Discover, the download review, and
+  the local Library instead of presenting them as portable llama.cpp GGUFs.
+- Requires ExpertMajor manifests to publish an exact format declaration and a
+  pinned `andreaborio/ds4` runtime commit, with file checksums supplied by the
+  pinned Hugging Face LFS metadata, before DSBox enables download.
+- Prepares the unified ExpertMajor runtime before download and rechecks it for
+  Finder, Library, and transactional live model switches.
+- Keeps experimental artifacts out of the DSBox recommendation slot; the
+  canonical checksum-pinned DeepSeek model remains the default.
 
-### Documentation refresh
+### Repository rename continuity
 
-- Replaced the main product screenshots with a current seven-screen walkthrough
-  of Chat, Models, Server, Agent mode, coding-agent connections, Activity, and
-  selectable color palettes.
-- Documented the boundary between DSBox's bounded built-in agent loop and
-  external coding agents that own their own tools, permissions, and workspace.
-- Clarified capability detection, Web search boundaries, tool limits, protocol
-  availability, telemetry, and the current single-selected-model architecture.
+- Supports manifest-declared previous Hugging Face repository ids, so an
+  already-installed Qwen ExpertMajor bundle remains marked active after the
+  repository receives its format-specific name.
+- New downloads continue to use the current immutable repository revision;
+  aliases are used only to recognize existing local paths.
+
+### Verification
+
+- Added catalog policy tests for exact v1/v2 format declarations, runtime pins,
+  checksums, experimental status, and missing-contract failures.
+- Added header-level fixtures for both layouts and verified the compatibility
+  gate against the published-size 20.8 GB Qwen v1 and 86.7 GB DeepSeek v2
+  artifacts without reading their weight payloads.
 
 ### macOS community build
 

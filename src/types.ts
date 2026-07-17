@@ -154,6 +154,14 @@ export interface CatalogModelVariant {
 
 export type CatalogPublisher = string;
 
+/**
+ * GGUF extensions whose routed tensors are stored in DS4's expert-major
+ * layout. They remain GGUF containers, but generic GGUF loaders cannot execute
+ * them because the canonical routed tensor descriptors are intentionally
+ * absent.
+ */
+export type Ds4ArtifactFormat = "ds4-expert-major-v1" | "ds4-expert-major-v2";
+
 export interface CatalogSource {
   id: CatalogPublisher;
   label: string;
@@ -181,6 +189,10 @@ export interface CatalogModel {
   unavailableReason: string | null;
   variantCount: number;
   variants: CatalogModelVariant[];
+  /** DS4-only physical layout declared by the revision-pinned manifest. */
+  artifactFormat?: Ds4ArtifactFormat | null;
+  /** Previous repository ids retained so renamed, installed models stay active. */
+  previousRepositories?: string[];
   /** Optional catalog metadata. Unknown architectures remain user-selectable. */
   architecture?: "moe" | "dense" | "unknown" | null;
 }
@@ -209,6 +221,8 @@ export interface ModelDownloadSnapshot {
   variantId: string;
   variantLabel: string;
   modelId: string;
+  /** Expected physical layout from the catalog contract. Missing only on legacy persisted downloads. */
+  artifactFormat?: Ds4ArtifactFormat | null;
   label: string;
   stage: ModelDownloadStage;
   files: ModelDownloadFileSnapshot[];
@@ -261,6 +275,7 @@ export interface LocalModelCandidate {
   selected: boolean;
   compatibility: LocalModelCompatibility;
   architecture: string | null;
+  artifactFormat?: Ds4ArtifactFormat | null;
 }
 
 export type LocalModelScanStatus = "idle" | "scanning" | "complete" | "cancelled" | "error";

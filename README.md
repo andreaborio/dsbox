@@ -113,11 +113,13 @@ Appearance includes five instant choices: Follow system, DSBox Light, DSBox Dark
 
 **Choose GGUF file…** opens the native Finder picker. DSBox uses the selected model in place: it does not copy or upload it, and it never asks a non-technical user to type a path.
 
-A generic GGUF container is not enough: DS4 requires its own architecture metadata and tensor layout. Finder selection, disk scan, model switching, and server startup all use the same compatibility gate, with a specific explanation when a file cannot run.
+A generic GGUF container is not enough: DS4 requires its own architecture metadata and tensor layout. Finder selection, disk scan, model switching, and server startup all use the same compatibility gate, with a specific explanation when a file cannot run. The gate also identifies the opaque `ds4.expert_major.v1` and `ds4.expert_major.v2` tensors used by DS4-only ExpertMajor files, so the Library never presents those extensions as portable llama.cpp or MLX GGUFs.
 
 ### Download inside DSBox
 
-The catalog reads DS4-oriented sources from the Hugging Face `andreaborio` profile and includes a checksum-pinned, DS4-native DwarfStar model from `antirez/deepseek-v4-gguf`. Unsloth repositories remain visible for provenance, but their current standard multipart GGUF builds cannot be selected or downloaded because DS4 does not support that layout. The exact revision, total size, file count, free-space check, and hardware advisory are shown before any compatible download begins.
+The catalog reads DS4-oriented sources from the Hugging Face `andreaborio` profile and includes a checksum-pinned, DS4-native DwarfStar model from `antirez/deepseek-v4-gguf`. ExpertMajor repositories are treated as separate models: their revision-pinned `dsbox.json` must declare the exact format version, opaque tensor name, required `andreaborio/ds4` runtime, and runtime commit, while the pinned Hugging Face revision must publish the model file's LFS SHA-256. DSBox enables download only when both halves of that contract are present, then verifies and builds the unified ExpertMajor runtime before the download starts. The same runtime gate runs for Finder and Library models, including transactional live switches. Their cards and confirmation dialog say **DS4 only** instead of implying generic GGUF compatibility. Unsloth repositories remain visible for provenance, but their current standard multipart GGUF builds cannot be selected or downloaded because DS4 does not support that layout. The exact revision, total size, file count, free-space check, and hardware advisory are shown before any compatible download begins.
+
+A renamed model repository can declare `previousRepositories` in the same manifest. DSBox uses those ids only to recognize an already-installed bundle at its old local path; new downloads always use the current revision-pinned repository.
 
 Downloads are:
 

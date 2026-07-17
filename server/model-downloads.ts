@@ -19,6 +19,7 @@ import type {
   CatalogModelAssembly,
   CatalogModelFile,
   CatalogModelVariant,
+  Ds4ArtifactFormat,
   ModelDownloadFileSnapshot,
   ModelDownloadSnapshot
 } from "../src/types.js";
@@ -52,7 +53,11 @@ export interface ModelDownloadManagerOptions {
   hubBaseUrl?: string;
   getDiskFreeBytes?: (target: string) => Promise<number>;
   canStart?: () => boolean;
-  validateReadyModel?: (modelPath: string, modelId: string) => Promise<void>;
+  validateReadyModel?: (
+    modelPath: string,
+    modelId: string,
+    expectedArtifactFormat?: Ds4ArtifactFormat | null
+  ) => Promise<void>;
   onReady?: (modelPath: string, modelId: string) => Promise<void>;
   retryDelayMs?: number;
 }
@@ -190,7 +195,11 @@ export class ModelDownloadManager {
   private readonly hubBaseUrl: string;
   private readonly getDiskFreeBytes: (target: string) => Promise<number>;
   private readonly canStart: () => boolean;
-  private readonly validateReadyModel: ((modelPath: string, modelId: string) => Promise<void>) | null;
+  private readonly validateReadyModel: ((
+    modelPath: string,
+    modelId: string,
+    expectedArtifactFormat?: Ds4ArtifactFormat | null
+  ) => Promise<void>) | null;
   private readonly onReady: ((modelPath: string, modelId: string) => Promise<void>) | null;
   private readonly retryDelayMs: number;
   private readonly stateDirectory: string;
@@ -345,6 +354,7 @@ export class ModelDownloadManager {
         variantId: variant.id,
         variantLabel: variant.label,
         modelId: model.modelId,
+        artifactFormat: model.artifactFormat ?? null,
         label: model.label,
         stage: "queued",
         files,
@@ -784,7 +794,7 @@ export class ModelDownloadManager {
   private async markReady(record: DownloadRecord): Promise<void> {
     const modelPath = path.join(record.snapshot.destinationDirectory, ...record.snapshot.outputFile.split("/"));
     if (this.validateReadyModel) {
-      await this.validateReadyModel(modelPath, record.snapshot.modelId);
+      await this.validateReadyModel(modelPath, record.snapshot.modelId, record.snapshot.artifactFormat);
     }
     const next = this.store.get();
     next.model.path = modelPath;

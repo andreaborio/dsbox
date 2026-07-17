@@ -6,8 +6,10 @@ import type {
   CatalogModelVariant,
   CatalogPublisher,
   CatalogResponse,
-  CatalogSource
+  CatalogSource,
+  Ds4ArtifactFormat
 } from "../src/types.js";
+import { ds4ArtifactFormatTensor, isDs4ArtifactFormat } from "../src/lib/model-format.js";
 
 const AUTHOR = "andreaborio" as const;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -113,12 +115,75 @@ interface DsboxManifest {
   launch?: { servedModelId?: string };
   requirements?: { minUnifiedMemoryBytes?: number };
   architecture?: CatalogModel["architecture"];
+  previousRepositories?: string[];
   artifact?: {
     output?: string;
     sizeBytes?: number;
     sha256?: string;
     assembly?: { type?: string; parts?: Array<{ path?: string; sizeBytes?: number; sha256?: string }> };
+    format?: {
+      id?: string;
+      version?: number;
+      tensor?: string;
+      requiresRuntime?: string;
+    };
   };
+}
+
+interface ParsedArtifactFormat {
+  format: Ds4ArtifactFormat | null;
+  error: string | null;
+}
+
+interface ExpertMajorIdentity {
+  present: boolean;
+  format: Ds4ArtifactFormat | null;
+  version: string | null;
+}
+
+const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+function artifactFormatFromVersion(version: number): Ds4ArtifactFormat | null {
+  const format = `ds4-expert-major-v${version}`;
+  return isDs4ArtifactFormat(format) ? format : null;
+}
+
+function expectedArtifactFormat(...identity: Array<string | null | undefined>): ExpertMajorIdentity {
+  const match = identity.join(" ").match(/(?:^|[-_. ])expert[-_. ]?major(?:[-_. ]?v(\d+))?(?:$|[-_. ])/i);
+  if (!match) return { present: false, format: null, version: null };
+  const version = match[1] ?? null;
+  return {
+    present: true,
+    format: version ? artifactFormatFromVersion(Number(version)) : null,
+    version
+  };
+}
+
+function parseArtifactFormat(manifest: DsboxManifest | null): ParsedArtifactFormat {
+  const declaration = manifest?.artifact?.format;
+  if (!declaration) return { format: null, error: null };
+  const version = declaration.version;
+  const format = typeof version === "number" && Number.isInteger(version)
+    ? artifactFormatFromVersion(version)
+    : null;
+  if (declaration.id !== "ds4-expert-major" || !format) {
+    return { format: null, error: "The DSBox manifest declares an unknown DS4 artifact format" };
+  }
+  if (declaration.tensor !== ds4ArtifactFormatTensor(format)) {
+    return { format: null, error: `The DSBox manifest does not declare the ${format} tensor contract` };
+  }
+  if (declaration.requiresRuntime !== "andreaborio/ds4") {
+    return { format: null, error: "DS4 ExpertMajor artifacts must declare andreaborio/ds4 as their required runtime" };
+  }
+  return { format, error: null };
+}
+
+function previousRepositories(manifest: DsboxManifest | null, repository: string): string[] {
+  if (!Array.isArray(manifest?.previousRepositories)) return [];
+  return [...new Set(manifest.previousRepositories
+    .filter((candidate): candidate is string => typeof candidate === "string")
+    .map((candidate) => candidate.trim())
+    .filter((candidate) => REPOSITORY_ID.test(candidate) && candidate !== repository))];
 }
 
 function cleanLabel(repository: string): string {
@@ -397,9 +462,50 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   const discoveredVariants = declaredAssembly
     ? [declaredAssembly, ...groupedVariants.filter((variant) => variant.outputFile !== declaredAssembly.outputFile)]
     : [...groupedVariants, ...inferredAssemblies];
+  const requestedFile = manifest?.file || (manifest?.artifact?.assembly ? undefined : manifest?.artifact?.output);
+  const declaredSelectedVariant = declaredAssembly
+    ?? (requestedFile
+      ? discoveredVariants.find((variant) => variant.files.some((file) => file.name === requestedFile))
+      : discoveredVariants.length === 1 ? discoveredVariants[0] : undefined);
+  const manifestFileMissing = Boolean(requestedFile && !declaredSelectedVariant);
+  const explicitModelId = manifest?.modelId?.trim() || manifest?.launch?.servedModelId?.trim() || null;
+  const modelId = explicitModelId || inferredModelId(repository, tags);
+  const runtimeBranch = manifest?.runtimeBranch?.trim() || manifest?.runtime?.branch?.trim() || null;
+  const runtimeCommit = manifest?.runtimeCommit?.trim() || null;
+  const parsedFormat = parseArtifactFormat(manifest);
+  const expertMajorIdentity = expectedArtifactFormat(repository, requestedFile);
+  const expectedFormat = expertMajorIdentity.format;
+  const artifactFormat = parsedFormat.format;
+  let artifactPolicyError = parsedFormat.error;
+  if (!artifactPolicyError && expertMajorIdentity.present && !expectedFormat) {
+    artifactPolicyError = expertMajorIdentity.version
+      ? `DSBox does not support DS4 ExpertMajor v${expertMajorIdentity.version}`
+      : "DS4 ExpertMajor repositories must include a supported format version";
+  }
+  if (!artifactPolicyError && expectedFormat && !artifactFormat) {
+    artifactPolicyError = `The ${expectedFormat} repository must declare its DS4-only artifact format in dsbox.json`;
+  }
+  if (!artifactPolicyError && expectedFormat && artifactFormat !== expectedFormat) {
+    artifactPolicyError = `The repository name and manifest disagree about ${expectedFormat}`;
+  }
+  if (!artifactPolicyError && artifactFormat === "ds4-expert-major-v1" && modelId !== "qwen3.6-35b-a3b") {
+    artifactPolicyError = "DS4 ExpertMajor v1 is restricted to the pinned Qwen3.6 35B-A3B contract";
+  }
+  if (!artifactPolicyError && artifactFormat === "ds4-expert-major-v2" && !modelId.startsWith("deepseek")) {
+    artifactPolicyError = "DS4 ExpertMajor v2 requires a DeepSeek model contract";
+  }
+  if (!artifactPolicyError && artifactFormat && !requestedFile) {
+    artifactPolicyError = "DS4 ExpertMajor manifests must pin one output file";
+  }
+  if (!artifactPolicyError && artifactFormat && (
+    !runtimeBranch || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeCommit ?? "")
+  )) {
+    artifactPolicyError = "DS4 ExpertMajor artifacts require a revision-pinned DS4 runtime";
+  }
+
   const unsupportedUnverifiedGguf = publisher === "unsloth" && !manifest;
   const rawQwenSource = unsupportedUnverifiedGguf && /qwen3[._-]?6[-_. ]?35b[-_. ]?a3b/i.test(repository);
-  const variants = unsupportedUnverifiedGguf
+  let variants = unsupportedUnverifiedGguf
     ? discoveredVariants.map((variant) => ({
         ...variant,
         installable: false,
@@ -410,15 +516,37 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
           : "This repository does not declare a DS4-compatible model layout"
       }))
     : discoveredVariants;
-  const variantCount = variants.length || quantizationVariantCount(directGgufs);
-  const requestedFile = manifest?.file || (manifest?.artifact?.assembly ? undefined : manifest?.artifact?.output);
-  const selectedVariant = declaredAssembly
-    ?? (requestedFile
-      ? variants.find((variant) => variant.files.some((file) => file.name === requestedFile))
-      : variants.length === 1 ? variants[0] : undefined);
-  const manifestFileMissing = Boolean(requestedFile && !selectedVariant);
+  variants = variants.map((variant) => {
+    const selected = declaredSelectedVariant?.id === variant.id;
+    const variantIdentity = expectedArtifactFormat(repository, variant.outputFile);
+    let unavailableReason = artifactPolicyError;
+    if (!unavailableReason && variantIdentity.present && !variantIdentity.format) {
+      unavailableReason = variantIdentity.version
+        ? `DSBox does not support DS4 ExpertMajor v${variantIdentity.version}`
+        : "DS4 ExpertMajor artifacts must include a supported format version";
+    }
+    if (!unavailableReason && variantIdentity.format && !artifactFormat) {
+      unavailableReason = `The ${variantIdentity.format} artifact must declare its DS4-only format in dsbox.json`;
+    }
+    if (
+      !unavailableReason
+      && variantIdentity.format
+      && artifactFormat
+      && variantIdentity.format !== artifactFormat
+    ) {
+      unavailableReason = `The artifact filename and manifest disagree about ${variantIdentity.format}`;
+    }
+    if (!unavailableReason && artifactFormat && !selected) {
+      unavailableReason = "Only the manifest-pinned DS4 ExpertMajor artifact is installable from this repository";
+    }
+    return unavailableReason
+      ? { ...variant, installable: false, unavailableReason }
+      : variant;
+  });
+  let selectedVariant = declaredSelectedVariant
+    ? variants.find((variant) => variant.id === declaredSelectedVariant.id)
+    : undefined;
   const files = selectedVariant?.files ?? [];
-  const installable = !manifestFileMissing && variants.some((variant) => variant.installable);
   const minimumMemoryGb = Number.isFinite(manifest?.minimumMemoryGb)
     ? Number(manifest?.minimumMemoryGb)
     : Number.isFinite(manifest?.requirements?.minUnifiedMemoryBytes)
@@ -426,25 +554,38 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
       : null;
   const memoryFits = minimumMemoryGb !== null && totalMemoryBytes >= minimumMemoryGb * 1024 ** 3;
   const stable = manifest?.status?.toLowerCase() === "stable";
-  const explicitModelId = manifest?.modelId?.trim() || manifest?.launch?.servedModelId?.trim() || null;
-  const runtimeBranch = manifest?.runtimeBranch?.trim() || manifest?.runtime?.branch?.trim() || null;
-  const runtimeCommit = manifest?.runtimeCommit?.trim() || null;
   const compatibilityDeclared = minimumMemoryGb !== null
     && Boolean(explicitModelId)
     && Boolean(runtimeBranch)
     && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeCommit ?? "");
   const checksumAvailable = Boolean(files.length) && files.every((file) => /^[a-f0-9]{64}$/i.test(file.sha256 ?? ""));
+  if (!artifactPolicyError && artifactFormat && !checksumAvailable) {
+    artifactPolicyError = "DS4 ExpertMajor artifacts require a SHA-256 checksum for every published file";
+    variants = variants.map((variant) => variant.id === selectedVariant?.id
+      ? { ...variant, installable: false, unavailableReason: artifactPolicyError }
+      : variant);
+    selectedVariant = selectedVariant
+      ? variants.find((variant) => variant.id === selectedVariant?.id)
+      : undefined;
+  }
+  const installable = !manifestFileMissing && (requestedFile
+    ? Boolean(selectedVariant?.installable)
+    : variants.some((variant) => variant.installable));
+  const variantCount = artifactFormat && installable
+    ? variants.filter((variant) => variant.installable).length
+    : variants.length || quantizationVariantCount(directGgufs);
   const recommended = manifest?.recommended === true && stable && Boolean(selectedVariant?.installable) && !experimental && memoryFits && compatibilityDeclared && checksumAvailable;
   const unavailableReason = unsupportedUnverifiedGguf
     ? variants[0]?.unavailableReason ?? "This repository does not declare a DS4-compatible model layout"
-    : manifestFileMissing
+    : artifactPolicyError
+      ?? (manifestFileMissing
       ? `The manifest references a missing file: ${requestedFile}`
       : selectedVariant?.unavailableReason
         ?? (installable && !selectedVariant && variantCount > 1
           ? "Choose a quantization in DSBox"
           : installable
             ? null
-            : "No complete installable GGUF bundle detected");
+            : "No complete installable GGUF bundle detected"));
   return {
     publisher,
     repository,
@@ -458,7 +599,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
         : experimental
           ? "Experimental version available for advanced testing."
           : "DS4 model published on Hugging Face."),
-    modelId: explicitModelId || inferredModelId(repository, tags),
+    modelId,
     runtimeBranch,
     runtimeCommit,
     files,
@@ -473,6 +614,8 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     unavailableReason,
     variantCount,
     variants,
+    artifactFormat,
+    previousRepositories: previousRepositories(manifest, repository),
     architecture: manifest?.architecture
       ?? model.architecture
       ?? (rawQwenSource ? "moe" : null)

@@ -8,6 +8,7 @@ import {
   installableCatalogVariants
 } from "../lib/model-variants";
 import { formatBytes } from "../lib/format";
+import { ds4ArtifactFormatLabel } from "../lib/model-format";
 import type { CatalogModel } from "../types";
 import { Modal } from "./ui";
 import "./ModelDownloadDialog.css";
@@ -61,6 +62,7 @@ export function ModelDownloadDialog({
     ? "advisory"
     : "neutral";
   const requiresReview = Boolean(assessment?.requiresAcknowledgement);
+  const artifactFormatLabel = ds4ArtifactFormatLabel(model?.artifactFormat);
 
   return (
     <Modal
@@ -92,6 +94,12 @@ export function ModelDownloadDialog({
               <p>DSBox downloads directly from Hugging Face, verifies every file, and selects the model when it is ready.</p>
             </div>
           </div>
+
+          {artifactFormatLabel && (
+            <InlineNotice tone="neutral" title={`${artifactFormatLabel} · DS4 only`}>
+              This file uses a DS4-native expert layout. It is not runnable in llama.cpp, MLX, or generic GGUF loaders; keep a canonical GGUF for those runtimes.
+            </InlineNotice>
+          )}
 
           {variants.length > 1 && (
             <section className="model-download-dialog__variants" aria-labelledby="model-version-heading">
@@ -152,6 +160,7 @@ export function ModelDownloadDialog({
             <div><dt>Download</dt><dd>{formatBytes(selected.totalBytes, 1)}</dd></div>
             <div><dt>Free space</dt><dd>{diskFreeBytes > 0 ? formatBytes(diskFreeBytes, 1) : "Checking…"}</dd></div>
             <div><dt>Files</dt><dd>{selected.files.length === 1 ? "1 GGUF" : `${selected.files.length} GGUF shards`}</dd></div>
+            {artifactFormatLabel && <div><dt>Format</dt><dd>{artifactFormatLabel}</dd></div>}
             <div><dt>Revision</dt><dd>{model.revision.slice(0, 12)}</dd></div>
             <div className="model-download-dialog__destination"><dt>Destination</dt><dd title={destination(model, selected.id, selected.outputFile)}>{destination(model, selected.id, selected.outputFile)}</dd></div>
           </dl>

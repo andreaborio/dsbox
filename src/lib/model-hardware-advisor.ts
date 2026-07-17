@@ -85,7 +85,9 @@ function compatibility(model: CatalogModel): ModelHardwareAssessment["compatibil
     return {
       status: "verified",
       label: "Verified for DS4",
-      explanation: "The model, engine revision, and published file checksum are pinned by the DSBox catalog."
+      explanation: model.artifactFormat
+        ? "The DS4-only ExpertMajor layout, engine revision, and published file checksum are pinned by the DSBox catalog. Generic GGUF loaders are not compatible."
+        : "The model, engine revision, and published file checksum are pinned by the DSBox catalog."
     };
   }
   return {
@@ -199,7 +201,7 @@ export function assessModelHardware(
 /** Local files reach this surface only after the runtime-level GGUF preflight. */
 export function assessLocalModelHardware(
   model: Pick<LocalModelCandidate, "name" | "modelId" | "sizeBytes"> &
-    Partial<Pick<LocalModelCandidate, "compatibility" | "architecture">>,
+    Partial<Pick<LocalModelCandidate, "compatibility" | "architecture" | "artifactFormat">>,
   hardware: ModelHardwareContext
 ): ModelHardwareAssessment {
   const projectedCatalogModel: CatalogModel = {
@@ -223,6 +225,7 @@ export function assessLocalModelHardware(
     unavailableReason: null,
     variantCount: 1,
     variants: [],
+    artifactFormat: model.artifactFormat ?? null,
     architecture: localArchitectureKind(model.architecture)
   };
   const assessment = assessModelHardware(projectedCatalogModel, hardware);

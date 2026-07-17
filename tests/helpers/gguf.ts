@@ -11,6 +11,7 @@ const GGML_TYPE_F32 = 0;
 const GGML_TYPE_Q8_0 = 8;
 const GGML_TYPE_Q4_K = 12;
 const GGML_TYPE_Q6_K = 14;
+const GGML_TYPE_I8 = 24;
 
 const QWEN_CHAT_TEMPLATE_GZIP_BASE64 = "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";
 const QWEN_CHAT_TEMPLATE = gunzipSync(Buffer.from(QWEN_CHAT_TEMPLATE_GZIP_BASE64, "base64"));
@@ -171,16 +172,6 @@ function qwenTokenTypeMetadata(): Buffer {
   ]);
 }
 
-function tensorDescriptor(name: string): Buffer {
-  return Buffer.concat([
-    ggufString(name),
-    uint32(1),
-    uint64(1),
-    uint32(GGML_TYPE_F32),
-    uint64(0)
-  ]);
-}
-
 function shapedTensorDescriptor(name: string, type: number, dimensions: readonly number[]): Buffer {
   return Buffer.concat([
     ggufString(name),
@@ -193,6 +184,7 @@ function shapedTensorDescriptor(name: string, type: number, dimensions: readonly
 
 export interface Ds4GgufFixtureOptions {
   includeVocabSize?: boolean;
+  nativeExpertMajorV2?: boolean;
   vocabSize?: number;
 }
 
@@ -215,13 +207,20 @@ export function createDs4GgufFixture(options: Ds4GgufFixtureOptions = {}): Buffe
     metadata.push(uint32Metadata("deepseek4.vocab_size", options.vocabSize ?? 129_280));
   }
 
+  const tensors = options.nativeExpertMajorV2
+    ? [
+        ...DS4_TENSOR_SIGNATURE.filter((name) => name !== "blk.0.ffn_gate_exps.weight").map((name) => ({ name, type: GGML_TYPE_F32, dimensions: [1] })),
+        { name: "ds4.expert_major.v2", type: GGML_TYPE_I8, dimensions: [4096] }
+      ]
+    : DS4_TENSOR_SIGNATURE.map((name) => ({ name, type: GGML_TYPE_F32, dimensions: [1] }));
+
   return Buffer.concat([
     Buffer.from("GGUF", "ascii"),
     uint32(GGUF_VERSION),
-    uint64(DS4_TENSOR_SIGNATURE.length),
+    uint64(tensors.length),
     uint64(metadata.length),
     ...metadata,
-    ...DS4_TENSOR_SIGNATURE.map(tensorDescriptor)
+    ...tensors.map((tensor) => shapedTensorDescriptor(tensor.name, tensor.type, tensor.dimensions))
   ]);
 }
 
@@ -283,6 +282,7 @@ export interface Ds4QwenGgufFixtureOptions {
   paddingTokenId?: number;
   /** Recreates the original Unsloth artifact's unsupported output quant. */
   rawUnslothLayout?: boolean;
+  nativeExpertMajorV1?: boolean;
 }
 
 /**
@@ -335,6 +335,14 @@ export function createDs4QwenGgufFixture(options: Ds4QwenGgufFixtureOptions = {}
         tensor.type = GGML_TYPE_Q6_K;
       }
     }
+  }
+  if (options.nativeExpertMajorV1) {
+    const canonical = tensors.filter((tensor) => !/^blk\.\d+\.ffn_(?:gate|up|down)_exps\.weight$/.test(tensor.name));
+    tensors.splice(0, tensors.length, ...canonical, {
+      name: "ds4.expert_major.v1",
+      type: GGML_TYPE_I8,
+      dimensions: [4096]
+    });
   }
 
   return Buffer.concat([

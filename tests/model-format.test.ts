@@ -1,0 +1,28 @@
+import { describe, expect, it } from "vitest";
+import {
+  catalogModelMatchesInstalledPath,
+  ds4ArtifactFormatLabel,
+  ds4ArtifactFormatTensor,
+  isDs4ArtifactFormat
+} from "../src/lib/model-format.js";
+
+describe("DS4 artifact formats", () => {
+  it("maps the two ExpertMajor contracts to their physical tensor markers", () => {
+    expect(ds4ArtifactFormatLabel("ds4-expert-major-v1")).toBe("DS4 ExpertMajor v1");
+    expect(ds4ArtifactFormatTensor("ds4-expert-major-v2")).toBe("ds4.expert_major.v2");
+    expect(isDs4ArtifactFormat("gguf")).toBe(false);
+  });
+
+  it("recognizes an installed bundle after its Hugging Face repository was renamed", () => {
+    const model = {
+      repository: "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-GGUF",
+      previousRepositories: ["andreaborio/Qwen3.6-35B-A3B-DS4-GGUF"]
+    };
+
+    expect(catalogModelMatchesInstalledPath(
+      model,
+      "/Users/test/.dsbox/models/Qwen3.6-35B-A3B-DS4-GGUF/revision/bundle/model.gguf"
+    )).toBe(true);
+    expect(catalogModelMatchesInstalledPath(model, "/models/unrelated/model.gguf")).toBe(false);
+  });
+});

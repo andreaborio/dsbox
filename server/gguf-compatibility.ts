@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { open, type FileHandle } from "node:fs/promises";
+import type { Ds4ArtifactFormat } from "../src/types.js";
+import { ds4ArtifactFormatTensor } from "../src/lib/model-format.js";
 
 const GGUF_HEADER_BYTES = 24;
 const GGUF_VERSION = 3;
@@ -162,11 +164,20 @@ export const DS4_DEEPSEEK4_TENSOR_SIGNATURE = [
   "blk.0.ffn_gate_exps.weight"
 ] as const;
 
+export const DS4_DEEPSEEK4_NATIVE_TENSOR_SIGNATURE = [
+  "token_embd.weight",
+  "output.weight",
+  "output_norm.weight",
+  "blk.0.attn_q_a.weight",
+  "blk.0.ffn_gate_inp.weight"
+] as const;
+
 const GGML_TYPE = {
   f32: 0,
   f16: 1,
   q8_0: 8,
-  q4_k: 12
+  q4_k: 12,
+  i8: 24
 } as const;
 
 interface TensorLayoutExpectation {
@@ -230,8 +241,13 @@ function createQwen35MoeTensorLayout(): Map<string, TensorLayoutExpectation> {
 }
 
 const QWEN35MOE_TENSOR_LAYOUT = createQwen35MoeTensorLayout();
+const QWEN35MOE_ROUTED_TENSOR = /^blk\.\d+\.ffn_(?:gate|up|down)_exps\.weight$/;
+const QWEN35MOE_NATIVE_TENSOR_LAYOUT = new Map(
+  [...QWEN35MOE_TENSOR_LAYOUT].filter(([name]) => !QWEN35MOE_ROUTED_TENSOR.test(name))
+);
 
 export const DS4_QWEN35MOE_TENSOR_SIGNATURE = [...QWEN35MOE_TENSOR_LAYOUT.keys()] as readonly string[];
+export const DS4_QWEN35MOE_NATIVE_TENSOR_SIGNATURE = [...QWEN35MOE_NATIVE_TENSOR_LAYOUT.keys()] as readonly string[];
 
 export type Ds4GgufCompatibilityReasonCode =
   | "not_gguf"
@@ -260,6 +276,7 @@ export interface Ds4GgufCompatibility {
   metadataCount: number | null;
   architecture: string | null;
   splitCount: number | null;
+  artifactFormat: Ds4ArtifactFormat | null;
   reason: Ds4GgufCompatibilityReason | null;
 }
 
@@ -567,8 +584,16 @@ function tensorLayoutMatches(descriptor: TensorDescriptor, expectation: TensorLa
     descriptor.dimensions.every((dimension, index) => dimension === expectation.dimensions[index]);
 }
 
+function expertMajorStoreDescriptorMatches(descriptor: TensorDescriptor | undefined): boolean {
+  return Boolean(descriptor
+    && descriptor.type === GGML_TYPE.i8
+    && descriptor.dimensions.length === 1
+    && Number.isSafeInteger(descriptor.dimensions[0])
+    && descriptor.dimensions[0] > 0);
+}
+
 function result(
-  header: Pick<Ds4GgufCompatibility, "ggufVersion" | "tensorCount" | "metadataCount" | "architecture" | "splitCount">,
+  header: Pick<Ds4GgufCompatibility, "ggufVersion" | "tensorCount" | "metadataCount" | "architecture" | "splitCount" | "artifactFormat">,
   reason: Ds4GgufCompatibilityReason | null
 ): Ds4GgufCompatibility {
   return { compatible: reason === null, ...header, reason };
@@ -579,7 +604,8 @@ const emptyHeader = {
   tensorCount: null,
   metadataCount: null,
   architecture: null,
-  splitCount: null
+  splitCount: null,
+  artifactFormat: null
 };
 
 /**
@@ -589,7 +615,7 @@ const emptyHeader = {
  */
 export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibility> {
   let handle: FileHandle | null = null;
-  const header: Pick<Ds4GgufCompatibility, "ggufVersion" | "tensorCount" | "metadataCount" | "architecture" | "splitCount"> = { ...emptyHeader };
+  const header: Pick<Ds4GgufCompatibility, "ggufVersion" | "tensorCount" | "metadataCount" | "architecture" | "splitCount" | "artifactFormat"> = { ...emptyHeader };
   try {
     handle = await open(filePath, "r");
     const file = await handle.stat();
@@ -651,6 +677,29 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       tensors.set(name, { dimensions, type });
     }
 
+    const expertMajorV1Tensor = ds4ArtifactFormatTensor("ds4-expert-major-v1");
+    const expertMajorV2Tensor = ds4ArtifactFormatTensor("ds4-expert-major-v2");
+    const expertMajorV1 = tensors.get(expertMajorV1Tensor);
+    const expertMajorV2 = tensors.get(expertMajorV2Tensor);
+    if (expertMajorV1 && expertMajorV2) {
+      return result(header, {
+        code: "missing_tensor_signature",
+        message: "This GGUF mixes two incompatible DS4 ExpertMajor store versions."
+      });
+    }
+    header.artifactFormat = expertMajorV1
+      ? "ds4-expert-major-v1"
+      : expertMajorV2
+        ? "ds4-expert-major-v2"
+        : null;
+    const expertMajorStore = expertMajorV1 ?? expertMajorV2;
+    if (expertMajorStore && !expertMajorStoreDescriptorMatches(expertMajorStore)) {
+      return result(header, {
+        code: "missing_tensor_signature",
+        message: `The ${header.artifactFormat} store has an invalid opaque I8 tensor descriptor.`
+      });
+    }
+
     if ((header.splitCount ?? 1) > 1) {
       return result(header, {
         code: "multipart_unsupported",
@@ -680,6 +729,19 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       return result(header, {
         code: "unsupported_architecture",
         message: `The current DS4 runtime does not support the ${header.architecture} GGUF architecture.`
+      });
+    }
+
+    if (header.artifactFormat === "ds4-expert-major-v1" && header.architecture !== "qwen35moe") {
+      return result(header, {
+        code: "missing_tensor_signature",
+        message: "DS4 ExpertMajor v1 is the fixed Qwen3.6 35B-A3B layout and cannot be used with this architecture."
+      });
+    }
+    if (header.artifactFormat === "ds4-expert-major-v2" && header.architecture !== "deepseek4") {
+      return result(header, {
+        code: "missing_tensor_signature",
+        message: "DS4 ExpertMajor v2 requires the DeepSeek 4 layout."
       });
     }
 
@@ -716,16 +778,19 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         });
       }
 
-      const missingTensors = DS4_QWEN35MOE_TENSOR_SIGNATURE.filter((name) => !tensors.has(name));
+      const qwenTensorLayout = header.artifactFormat === "ds4-expert-major-v1"
+        ? QWEN35MOE_NATIVE_TENSOR_LAYOUT
+        : QWEN35MOE_TENSOR_LAYOUT;
+      const missingTensors = [...qwenTensorLayout.keys()].filter((name) => !tensors.has(name));
       if (missingTensors.length > 0) {
         return result(header, {
           code: "missing_tensor_signature",
-          message: `This GGUF does not contain the DS4 Qwen3.6 35B A3B text-model tensor layout: ${missingTensors.join(", ")}.`,
+          message: `This GGUF does not contain the DS4 Qwen3.6 35B A3B ${header.artifactFormat ? "ExpertMajor" : "text-model"} tensor layout: ${missingTensors.join(", ")}.`,
           missingKeys: [...missingTensors]
         });
       }
 
-      const invalidTensors = [...QWEN35MOE_TENSOR_LAYOUT].flatMap(([name, expectation]) => {
+      const invalidTensors = [...qwenTensorLayout].flatMap(([name, expectation]) => {
         const descriptor = tensors.get(name);
         return descriptor && !tensorLayoutMatches(descriptor, expectation) ? [name] : [];
       });
@@ -737,23 +802,38 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         });
       }
 
-      if (tensorCount !== QWEN35MOE_TENSOR_LAYOUT.size) {
+      const expectedQwenTensorCount = qwenTensorLayout.size + (header.artifactFormat ? 1 : 0);
+      if (tensorCount !== expectedQwenTensorCount) {
         return result(header, {
           code: "missing_tensor_signature",
-          message: `DS4 requires the 733-tensor Qwen3.6 35B A3B text-only, no-MTP layout; this GGUF contains ${tensorCount} tensors.`
+          message: `DS4 requires the ${expectedQwenTensorCount}-tensor Qwen3.6 35B A3B ${header.artifactFormat ? "ExpertMajor v1" : "text-only, no-MTP"} layout; this GGUF contains ${tensorCount} tensors.`
         });
       }
 
       return result(header, null);
     }
 
-    const missingTensors = DS4_DEEPSEEK4_TENSOR_SIGNATURE.filter((name) => !tensors.has(name));
+    const deepseekSignature = header.artifactFormat === "ds4-expert-major-v2"
+      ? DS4_DEEPSEEK4_NATIVE_TENSOR_SIGNATURE
+      : DS4_DEEPSEEK4_TENSOR_SIGNATURE;
+    const missingTensors = deepseekSignature.filter((name) => !tensors.has(name));
     if (missingTensors.length > 0) {
       return result(header, {
         code: "missing_tensor_signature",
         message: `This GGUF does not contain the DS4-native DeepSeek 4 tensor layout: ${missingTensors.join(", ")}.`,
         missingKeys: [...missingTensors]
       });
+    }
+
+    if (header.artifactFormat === "ds4-expert-major-v2") {
+      const canonicalRoutedTensors = [...tensors.keys()].filter((name) => QWEN35MOE_ROUTED_TENSOR.test(name));
+      if (canonicalRoutedTensors.length > 0) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: "This GGUF mixes DS4 ExpertMajor v2 with canonical routed expert tensors.",
+          invalidKeys: canonicalRoutedTensors.slice(0, 16)
+        });
+      }
     }
 
     return result(header, null);

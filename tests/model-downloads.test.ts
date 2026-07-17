@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { CatalogModel, CatalogModelVariant, ModelDownloadSnapshot, ServerEvent } from "../src/types.js";
+import type { CatalogModel, CatalogModelVariant, Ds4ArtifactFormat, ModelDownloadSnapshot, ServerEvent } from "../src/types.js";
 import { ConfigStore } from "../server/config.js";
 import { EventBus } from "../server/event-bus.js";
+import { inspectDs4Gguf } from "../server/gguf-compatibility.js";
 import { ModelDownloadManager } from "../server/model-downloads.js";
+import { createDs4QwenGgufFixture } from "./helpers/gguf.js";
 
 function sha256(data: Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-function catalogModel(variant: CatalogModelVariant): CatalogModel {
+function catalogModel(variant: CatalogModelVariant, artifactFormat: Ds4ArtifactFormat | null = null): CatalogModel {
   return {
     publisher: "unsloth",
     repository: "unsloth/Test-Model-GGUF",
@@ -34,7 +36,8 @@ function catalogModel(variant: CatalogModelVariant): CatalogModel {
     sourceUrl: "https://huggingface.co/unsloth/Test-Model-GGUF",
     unavailableReason: null,
     variantCount: 1,
-    variants: [variant]
+    variants: [variant],
+    artifactFormat
   };
 }
 
@@ -142,7 +145,11 @@ describe("transparent Hugging Face downloads", () => {
 
   async function manager(options: {
     diskFreeBytes?: number;
-    validateReadyModel?: (modelPath: string, modelId: string) => Promise<void>;
+    validateReadyModel?: (
+      modelPath: string,
+      modelId: string,
+      expectedArtifactFormat?: Ds4ArtifactFormat | null
+    ) => Promise<void>;
     onReady?: (modelPath: string, modelId: string) => Promise<void>;
   } = {}): Promise<ModelDownloadManager> {
     const downloads = await ModelDownloadManager.open(store, bus, {
@@ -307,6 +314,39 @@ describe("transparent Hugging Face downloads", () => {
     expect(readyCalls).toEqual([]);
   });
 
+  it("rejects a canonical GGUF when the downloaded catalog entry declares ExpertMajor v1", async () => {
+    const data = createDs4QwenGgufFixture();
+    files.set("qwen-canonical.gguf", data);
+    const variant: CatalogModelVariant = {
+      id: "variant-qwen-canonical",
+      label: "Qwen canonical",
+      files: [{ name: "qwen-canonical.gguf", sizeBytes: data.length, sha256: sha256(data) }],
+      outputFile: "qwen-canonical.gguf",
+      totalBytes: data.length,
+      installable: true,
+      unavailableReason: null,
+      assembly: null
+    };
+    const initialModel = structuredClone(store.get().model);
+    const expectedFormats: Array<Ds4ArtifactFormat | null | undefined> = [];
+    const downloads = await manager({
+      validateReadyModel: async (modelPath, _modelId, expectedArtifactFormat) => {
+        expectedFormats.push(expectedArtifactFormat);
+        const detected = (await inspectDs4Gguf(modelPath)).artifactFormat;
+        if (detected !== expectedArtifactFormat) throw new Error("Catalog artifact format does not match the downloaded GGUF");
+      }
+    });
+    const model = catalogModel(variant, "ds4-expert-major-v1");
+    model.modelId = "qwen3.6-35b-a3b";
+    const started = await downloads.start(model, variant.id);
+    const failed = await waitForDownload(downloads, started.id, (snapshot) => snapshot.stage === "error");
+
+    expect(failed.artifactFormat).toBe("ds4-expert-major-v1");
+    expect(failed.error).toBe("Catalog artifact format does not match the downloaded GGUF");
+    expect(expectedFormats).toEqual(["ds4-expert-major-v1"]);
+    expect(store.get().model).toEqual(initialModel);
+  });
+
   it("revalidates an incompatible persisted artifact on resume instead of marking it ready", async () => {
     const data = Buffer.concat([Buffer.from("GGUF"), Buffer.alloc(112, 5)]);
     files.set("persisted-incompatible.gguf", data);
@@ -321,9 +361,13 @@ describe("transparent Hugging Face downloads", () => {
       assembly: null
     };
     const initialModel = structuredClone(store.get().model);
-    let validationCalls = 0;
-    const rejectIncompatible = async () => {
-      validationCalls += 1;
+    const expectedFormats: Array<Ds4ArtifactFormat | null | undefined> = [];
+    const rejectIncompatible = async (
+      _modelPath: string,
+      _modelId: string,
+      expectedArtifactFormat?: Ds4ArtifactFormat | null
+    ) => {
+      expectedFormats.push(expectedArtifactFormat);
       throw new Error("Downloaded GGUF is incompatible with DS4");
     };
     const firstManager = await manager({ validateReadyModel: rejectIncompatible });
@@ -332,16 +376,21 @@ describe("transparent Hugging Face downloads", () => {
     const installedPath = path.join(firstFailure.destinationDirectory, variant.outputFile);
     expect(await readFile(installedPath)).toEqual(data);
 
+    const statePath = path.join(home, "downloads", "state.json");
+    const legacyState = JSON.parse(await readFile(statePath, "utf8")) as { downloads: Array<{ snapshot: { artifactFormat?: unknown } }> };
+    delete legacyState.downloads[0].snapshot.artifactFormat;
+    await writeFile(statePath, `${JSON.stringify(legacyState, null, 2)}\n`);
+
     const restoredManager = await manager({ validateReadyModel: rejectIncompatible });
     await restoredManager.resume(started.id);
     const resumedFailure = await waitForDownload(
       restoredManager,
       started.id,
-      (snapshot) => snapshot.stage === "error" && validationCalls === 2
+      (snapshot) => snapshot.stage === "error" && expectedFormats.length === 2
     );
 
     expect(resumedFailure.error).toBe("Downloaded GGUF is incompatible with DS4");
-    expect(validationCalls).toBe(2);
+    expect(expectedFormats).toEqual([null, undefined]);
     expect(store.get().model).toEqual(initialModel);
     expect(await readFile(installedPath)).toEqual(data);
     expect(requestedRanges).toEqual([""]);

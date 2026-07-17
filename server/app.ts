@@ -214,8 +214,8 @@ export async function createServices(port: number): Promise<AppServices> {
   const catalog = new ModelCatalog();
   const downloads = await ModelDownloadManager.open(store, bus, {
     canStart: () => !runtime.hasTask() && !runtime.isSwitchingModel() && runtime.getState().pid === null,
-    validateReadyModel: async (modelPath) => {
-      await runtime.validateLocalModel(modelPath);
+    validateReadyModel: async (modelPath, _modelId, expectedArtifactFormat) => {
+      await runtime.validateLocalModel(modelPath, modelPath, expectedArtifactFormat);
     },
     onReady: async (modelPath, modelId) => {
       try {

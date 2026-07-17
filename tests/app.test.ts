@@ -164,6 +164,29 @@ describe("DSBox API", () => {
     expect(services.runtime.hasTask()).toBe(false);
   });
 
+  it("enforces the catalog artifact layout against the downloaded GGUF header", async () => {
+    const canonicalPath = path.join(home, "deepseek-canonical.gguf");
+    const nativePath = path.join(home, "deepseek-expert-major-v2.gguf");
+    await writeFile(canonicalPath, createDs4GgufFixture());
+    await writeFile(nativePath, createDs4GgufFixture({ nativeExpertMajorV2: true }));
+
+    await expect(services.runtime.validateLocalModel(
+      canonicalPath,
+      canonicalPath,
+      "ds4-expert-major-v2"
+    )).rejects.toThrow(/catalog declared ds4-expert-major-v2/i);
+    await expect(services.runtime.validateLocalModel(
+      nativePath,
+      nativePath,
+      "ds4-expert-major-v2"
+    )).resolves.toMatchObject({ artifactFormat: "ds4-expert-major-v2" });
+    await expect(services.runtime.validateLocalModel(
+      nativePath,
+      nativePath,
+      null
+    )).rejects.toThrow(/catalog declared canonical GGUF/i);
+  });
+
   it("pins a verified Qwen artifact to the model ID required by DS4", async () => {
     const modelPath = path.join(home, "Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf");
     await writeFile(modelPath, createDs4QwenGgufFixture());
@@ -300,6 +323,61 @@ describe("DSBox API", () => {
     expect(startManaged).toHaveBeenCalledOnce();
     expect(startManaged).toHaveBeenCalledWith(true);
     expect(services.store.get().model).toEqual({ path: nextPath, id: "running-next" });
+    internal.engine = null;
+  });
+
+  it("carries the transactional allowance through a running switch into ExpertMajor runtime preparation", async () => {
+    const currentPath = path.join(home, "running-canonical.gguf");
+    const nextPath = path.join(home, "running-expert-major-v2.gguf");
+    await writeFile(currentPath, createDs4GgufFixture());
+    await writeFile(nextPath, createDs4GgufFixture({ nativeExpertMajorV2: true }));
+    await services.runtime.selectLocalModel(currentPath, "deepseek-v4-flash");
+    const internal = services.runtime as unknown as {
+      engine: { pid: number } | null;
+      modelSwitchPending: boolean;
+      state: RuntimeState;
+      stopEngine(): Promise<void>;
+      startEngine(modelSwitch?: boolean): Promise<void>;
+      ensureExpertMajorRuntimeCheckout(
+        config: ReturnType<AppServices["store"]["get"]>,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch?: boolean
+      ): Promise<ReturnType<AppServices["store"]["get"]>>;
+    };
+    internal.engine = { pid: 1234 };
+    internal.state = { ...services.runtime.getState(), phase: "running", readiness: "ready", pid: 1234 };
+    vi.spyOn(internal, "stopEngine").mockImplementation(async () => {
+      internal.engine = null;
+      internal.state = { ...internal.state, phase: "idle", readiness: "offline", pid: null };
+    });
+    const install = vi.spyOn(services.runtime, "installOrUpdate").mockResolvedValue();
+    const build = vi.spyOn(services.runtime, "build").mockResolvedValue();
+    const gate = vi.spyOn(internal, "ensureExpertMajorRuntimeCheckout").mockImplementation(async (config, format, allowModelSwitch) => {
+      expect(internal.modelSwitchPending).toBe(true);
+      expect(format).toBe("ds4-expert-major-v2");
+      await services.runtime.installOrUpdate(allowModelSwitch);
+      await services.runtime.build(allowModelSwitch);
+      return config;
+    });
+    const startEngine = vi.spyOn(internal, "startEngine").mockImplementation(async (modelSwitch) => {
+      const config = services.store.get();
+      const selected = await services.runtime.validateLocalModel(config.model.path, config.model.path);
+      await internal.ensureExpertMajorRuntimeCheckout(config, selected.artifactFormat as "ds4-expert-major-v2", modelSwitch);
+      internal.engine = { pid: 5678 };
+      internal.state = { ...internal.state, phase: "running", readiness: "ready", pid: 5678 };
+    });
+
+    const response = await request(createApp(services))
+      .post("/api/models/local/switch")
+      .set("x-dsbox-control", "1")
+      .send({ path: nextPath, modelId: "deepseek-v4-flash" })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ changed: true, restarted: true });
+    expect(startEngine).toHaveBeenCalledWith(true);
+    expect(gate).toHaveBeenCalledWith(expect.anything(), "ds4-expert-major-v2", true);
+    expect(install).toHaveBeenCalledWith(true);
+    expect(build).toHaveBeenCalledWith(true);
     internal.engine = null;
   });
 

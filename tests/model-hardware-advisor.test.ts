@@ -48,6 +48,16 @@ describe("DS4 SSD-streaming hardware advisor", () => {
     expect(assessment.requiresAcknowledgement).toBe(false);
   });
 
+  it("keeps DS4-only ExpertMajor compatibility explicit", () => {
+    const assessment = assessModelHardware(model({ artifactFormat: "ds4-expert-major-v2" }), {
+      totalMemoryBytes: 64 * GIB,
+      diskFreeBytes: 180 * GIB
+    });
+
+    expect(assessment.compatibility).toMatchObject({ status: "verified", label: "Verified for DS4" });
+    expect(assessment.compatibility.explanation).toContain("Generic GGUF loaders are not compatible");
+  });
+
   it("warns but never marks a 90 GB model incompatible on a 16 GB Mac", () => {
     const assessment = assessModelHardware(model({ minimumMemoryGb: 64 }), {
       totalMemoryBytes: 16 * GIB,

@@ -1,12 +1,21 @@
 {
   "schemaVersion": 1,
-  "name": "DeepSeek V4 Flash Q2_K",
-  "description": "Stable GGUF build optimized for DS4 on Apple Silicon.",
-  "status": "stable",
-  "recommended": true,
+  "name": "DeepSeek V4 Flash DS4 ExpertMajor v2",
+  "description": "Experimental DS4-only ExpertMajor v2 layout for Apple Metal.",
+  "status": "experimental",
+  "recommended": false,
   "modelId": "deepseek-v4-flash",
   "runtimeBranch": "main",
-  "runtimeCommit": "c58e91f48910f16be92ac1338bb39de36317722d",
-  "file": "deepseek-v4-flash-q2_k.gguf",
-  "minimumMemoryGb": 64
+  "runtimeCommit": "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0",
+  "file": "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf",
+  "minimumMemoryGb": 64,
+  "architecture": "moe",
+  "artifact": {
+    "format": {
+      "id": "ds4-expert-major",
+      "version": 2,
+      "tensor": "ds4.expert_major.v2",
+      "requiresRuntime": "andreaborio/ds4"
+    }
+  }
 }

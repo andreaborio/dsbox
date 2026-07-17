@@ -4,10 +4,12 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   DS4_DEEPSEEK4_TENSOR_SIGNATURE,
+  DS4_DEEPSEEK4_NATIVE_TENSOR_SIGNATURE,
   DS4_QWEN35MOE_TENSOR_SIGNATURE,
+  DS4_QWEN35MOE_NATIVE_TENSOR_SIGNATURE,
   inspectDs4Gguf
 } from "../server/gguf-compatibility.js";
-import { createDs4QwenGgufFixture } from "./helpers/gguf.js";
+import { createDs4GgufFixture, createDs4QwenGgufFixture } from "./helpers/gguf.js";
 
 const U32 = 4;
 const F32 = 6;
@@ -163,6 +165,19 @@ describe("DS4 GGUF compatibility inspection", () => {
       tensorCount: DS4_DEEPSEEK4_TENSOR_SIGNATURE.length,
       architecture: "deepseek4",
       splitCount: null,
+      artifactFormat: null,
+      reason: null
+    });
+  });
+
+  it("recognizes the DS4-only DeepSeek ExpertMajor v2 tensor contract", async () => {
+    const result = await inspect(createDs4GgufFixture({ nativeExpertMajorV2: true }));
+
+    expect(result).toMatchObject({
+      compatible: true,
+      architecture: "deepseek4",
+      artifactFormat: "ds4-expert-major-v2",
+      tensorCount: DS4_DEEPSEEK4_NATIVE_TENSOR_SIGNATURE.length + 1,
       reason: null
     });
   });
@@ -176,9 +191,23 @@ describe("DS4 GGUF compatibility inspection", () => {
       tensorCount: 733,
       architecture: "qwen35moe",
       splitCount: null,
+      artifactFormat: null,
       reason: null
     });
     expect(DS4_QWEN35MOE_TENSOR_SIGNATURE).toHaveLength(733);
+  });
+
+  it("recognizes the DS4-only Qwen ExpertMajor v1 tensor contract", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ nativeExpertMajorV1: true }));
+
+    expect(result).toMatchObject({
+      compatible: true,
+      architecture: "qwen35moe",
+      artifactFormat: "ds4-expert-major-v1",
+      tensorCount: 614,
+      reason: null
+    });
+    expect(DS4_QWEN35MOE_NATIVE_TENSOR_SIGNATURE).toHaveLength(613);
   });
 
   it("rejects the raw Unsloth Qwen artifact until its four tensors are normalized for DS4", async () => {

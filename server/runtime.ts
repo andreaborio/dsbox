@@ -10,6 +10,7 @@ import { execFile } from "node:child_process";
 import { createServer } from "node:net";
 import type {
   CatalogModel,
+  Ds4ArtifactFormat,
   LocalModelCandidate,
   LocalModelScanSnapshot,
   LocalModelSwitchResult,
@@ -51,10 +52,12 @@ const fallbackModelVariables: Record<string, string> = {
 const localModelInventoryVersion = 1;
 export const QWEN35_RUNTIME_BRANCH = "codex/qwen-tool-dialect";
 export const QWEN35_RUNTIME_COMMIT = "fc1561f36080829ecc43695af29d82782a852e86";
+export const EXPERT_MAJOR_RUNTIME_COMMIT = "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0";
 const qwenUnsupportedEnvironmentKeys = [
   "DS4_EXPERT_PROFILE",
   "DS4_EXPERT_HOTLIST",
   "DS4_METAL_STREAMING_EXPERT_HOTLIST",
+  "DS4_METAL_STREAMING_EXPERT_HOTLIST_PRIORITY",
   "DS4_METAL_STREAMING_EXPERT_HOTLIST_PROFILE",
   "DS4_METAL_STREAMING_PIN_NON_ROUTED",
   "DS4_SERVER_STREAMING_DECODE_STATS"
@@ -727,8 +730,10 @@ export class RuntimeManager {
     });
   }
 
-  async installOrUpdate(): Promise<void> {
-    if (this.task || this.engine || this.modelSwitchPending) throw new Error("Stop the runtime before updating");
+  async installOrUpdate(allowModelSwitch = false): Promise<void> {
+    if (this.task || this.engine || (this.modelSwitchPending && !allowModelSwitch)) {
+      throw new Error("Stop the runtime before updating");
+    }
     const config = this.store.get();
     const directory = config.repository.directory;
     const installed = await this.pathExists(path.join(directory, ".git"));
@@ -799,8 +804,10 @@ export class RuntimeManager {
     }
   }
 
-  async build(): Promise<void> {
-    if (this.task || this.engine || this.modelSwitchPending) throw new Error("Stop the runtime before building");
+  async build(allowModelSwitch = false): Promise<void> {
+    if (this.task || this.engine || (this.modelSwitchPending && !allowModelSwitch)) {
+      throw new Error("Stop the runtime before building");
+    }
     const config = this.store.get();
     if (!(await this.pathExists(path.join(config.repository.directory, ".git")))) {
       throw new Error("Install or select a ds4 checkout first");
@@ -898,6 +905,11 @@ export class RuntimeManager {
       .catch(() => false);
   }
 
+  private async runtimeIncludesCommits(directory: string, commits: readonly string[]): Promise<boolean> {
+    const results = await Promise.all(commits.map((commit) => this.runtimeIncludesCommit(directory, commit)));
+    return results.every(Boolean);
+  }
+
   private async ensureCatalogRuntime(model: CatalogModel): Promise<void> {
     if (!model.runtimeCommit) {
       if (model.recommended) throw new Error("The model manifest does not declare a verifiable DS4 engine version");
@@ -945,6 +957,9 @@ export class RuntimeManager {
   }
 
   async prepareCatalogRuntime(model: CatalogModel): Promise<void> {
+    if (model.artifactFormat) {
+      await this.ensureExpertMajorRuntimeCheckout(this.store.get(), model.artifactFormat);
+    }
     await this.ensureCatalogRuntime(model);
   }
 
@@ -1074,7 +1089,8 @@ export class RuntimeManager {
       const unsupportedCandidate = (
         code: LocalModelCandidate["compatibility"]["code"],
         reason: string,
-        architecture: string | null = null
+        architecture: string | null = null,
+        artifactFormat: LocalModelCandidate["artifactFormat"] = null
       ): LocalModelCandidate => ({
         path: absolutePath,
         name: path.basename(absolutePath, ".gguf"),
@@ -1082,7 +1098,8 @@ export class RuntimeManager {
         modelId: this.inferLocalModelId(absolutePath),
         selected: false,
         compatibility: { status: "unsupported", code, reason },
-        architecture
+        architecture,
+        artifactFormat
       });
       if (/\.(?:head(?:er)?\w*|partial|part)\.gguf$/i.test(filename)) {
         const message = "This looks like a partial GGUF download. Choose the complete model file instead.";
@@ -1097,7 +1114,12 @@ export class RuntimeManager {
         const message = localCompatibilityMessage(compatibility);
         const reason = compatibility.reason?.message ?? message;
         return {
-          candidate: unsupportedCandidate(localCompatibilityCode(compatibility), reason, compatibility.architecture),
+          candidate: unsupportedCandidate(
+            localCompatibilityCode(compatibility),
+            reason,
+            compatibility.architecture,
+            compatibility.artifactFormat
+          ),
           message
         };
       }
@@ -1109,7 +1131,8 @@ export class RuntimeManager {
           modelId: this.inferLocalModelId(absolutePath),
           selected: absolutePath === path.resolve(selectedPath),
           compatibility: { status: "compatible", code: "ds4_native", reason: null },
-          architecture: compatibility.architecture
+          architecture: compatibility.architecture,
+          artifactFormat: compatibility.artifactFormat
         },
         message: null
       };
@@ -1122,11 +1145,25 @@ export class RuntimeManager {
     return (await this.inspectLocalModelWithReason(filePath, selectedPath)).candidate;
   }
 
-  async validateLocalModel(filePath: string, selectedPath = filePath): Promise<LocalModelCandidate> {
+  async validateLocalModel(
+    filePath: string,
+    selectedPath = filePath,
+    expectedArtifactFormat?: Ds4ArtifactFormat | null
+  ): Promise<LocalModelCandidate> {
     if (!path.isAbsolute(filePath)) throw new ModelSelectionError("DSBox did not receive a valid model location");
     const inspection = await this.inspectLocalModelWithReason(filePath, selectedPath);
     if (!inspection.candidate || inspection.candidate.compatibility.status !== "compatible") {
       throw new ModelSelectionError(inspection.message ?? "This file is not compatible with DS4");
+    }
+    if (
+      expectedArtifactFormat !== undefined
+      && (inspection.candidate.artifactFormat ?? null) !== expectedArtifactFormat
+    ) {
+      const expected = expectedArtifactFormat ?? "canonical GGUF";
+      const detected = inspection.candidate.artifactFormat ?? "canonical GGUF";
+      throw new ModelSelectionError(
+        `The downloaded file uses ${detected}, but the catalog declared ${expected}. Refresh the catalog and download the pinned artifact again.`
+      );
     }
     return inspection.candidate;
   }
@@ -1762,7 +1799,7 @@ export class RuntimeManager {
     }
     this.startPending = true;
     try {
-      await this.startEngine();
+      await this.startEngine(modelSwitch);
     } catch (error) {
       this.failOneClickStart(error);
       throw error;
@@ -1825,7 +1862,10 @@ export class RuntimeManager {
     }
   }
 
-  private async ensureQwenRuntimeCheckout(config: ReturnType<ConfigStore["get"]>): Promise<ReturnType<ConfigStore["get"]>> {
+  private async ensureQwenRuntimeCheckout(
+    config: ReturnType<ConfigStore["get"]>,
+    allowModelSwitch = false
+  ): Promise<ReturnType<ConfigStore["get"]>> {
     let selected = config;
     if (!(await this.checkoutHasQualifiedQwenRuntime(selected.repository.directory))) {
       let checkout: { path: string; branch: string | null; head: string | null } | null = null;
@@ -1853,7 +1893,7 @@ export class RuntimeManager {
         this.bus.publish({ type: "config", payload: selected });
         this.log("info", "git", `Preparing the qualified Qwen3.6 runtime at ${QWEN35_RUNTIME_COMMIT.slice(0, 9)} or newer.`);
         await this.refresh();
-        await this.installOrUpdate();
+        await this.installOrUpdate(allowModelSwitch);
         selected = this.store.get();
         if (!(await this.checkoutHasQualifiedQwenRuntime(selected.repository.directory))) {
           throw new Error(`The ${QWEN35_RUNTIME_BRANCH} channel does not include the qualified Qwen3.6 runtime ${QWEN35_RUNTIME_COMMIT.slice(0, 9)}`);
@@ -1866,7 +1906,7 @@ export class RuntimeManager {
       && await this.binaryMatchesCheckoutHead(selected.repository.directory);
     if (!(await qwenBinaryIsCurrent())) {
       this.log("info", "build", "Building the Qwen-capable Metal runtime for this Mac.");
-      await this.build();
+      await this.build(allowModelSwitch);
     }
     if (!(await qwenBinaryIsCurrent())) {
       throw new Error("The selected DS4 binary does not match this clean Qwen-capable checkout");
@@ -1874,7 +1914,80 @@ export class RuntimeManager {
     return this.store.get();
   }
 
-  private async startEngine(): Promise<void> {
+  private async checkoutIsClean(directory: string): Promise<boolean> {
+    return execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
+      .then((result) => !result.stdout.trim())
+      .catch(() => false);
+  }
+
+  private async ensureExpertMajorRuntimeCheckout(
+    config: ReturnType<ConfigStore["get"]>,
+    format: Ds4ArtifactFormat,
+    allowModelSwitch = false
+  ): Promise<ReturnType<ConfigStore["get"]>> {
+    const requiredCommits = [EXPERT_MAJOR_RUNTIME_COMMIT];
+    const label = format === "ds4-expert-major-v1" ? "Qwen ExpertMajor v1" : "DeepSeek ExpertMajor v2";
+    const sourceIsQualified = (directory: string) => this.runtimeIncludesCommits(directory, requiredCommits);
+    const checkoutCanBeBuilt = async (directory: string) => await sourceIsQualified(directory)
+      && ((await this.binaryMatchesCheckoutHead(directory)) || await this.checkoutIsClean(directory));
+
+    let selected = config;
+    if (!(await checkoutCanBeBuilt(selected.repository.directory))) {
+      let checkout: { path: string; branch: string | null } | null = null;
+      for (const candidate of await this.discoveredCheckouts()) {
+        if (candidate.path === selected.repository.directory) continue;
+        if (await checkoutCanBeBuilt(candidate.path)) {
+          checkout = candidate;
+          break;
+        }
+      }
+      if (checkout) {
+        const next = structuredClone(selected);
+        next.repository.url = "https://github.com/andreaborio/ds4.git";
+        next.repository.directory = checkout.path;
+        if (checkout.branch) next.repository.branch = checkout.branch;
+        selected = await this.store.set(next);
+        this.bus.publish({ type: "config", payload: selected });
+        this.log("info", "dsbox", `Using the qualified ${label} runtime at ${checkout.path}.`);
+        await this.refresh();
+      } else {
+        const gitDirectory = path.join(selected.repository.directory, ".git");
+        const currentIsManagedMain = selected.repository.url === "https://github.com/andreaborio/ds4.git"
+          && selected.repository.branch === "main"
+          && (!(await this.pathExists(gitDirectory)) || await this.checkoutIsClean(selected.repository.directory));
+        if (!currentIsManagedMain) {
+          const next = structuredClone(selected);
+          next.repository.url = "https://github.com/andreaborio/ds4.git";
+          next.repository.branch = "main";
+          next.repository.directory = path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4-expert-major");
+          selected = await this.store.set(next);
+          this.bus.publish({ type: "config", payload: selected });
+          await this.refresh();
+        }
+        this.log("info", "git", `Preparing the unified DS4 main runtime required by ${label}.`);
+        await this.installOrUpdate(allowModelSwitch);
+        selected = this.store.get();
+      }
+    }
+
+    if (!(await sourceIsQualified(selected.repository.directory))) {
+      const requirements = requiredCommits.map((commit) => commit.slice(0, 9)).join(" and ");
+      throw new Error(`The DS4 main channel does not yet include the ${label} runtime requirements (${requirements})`);
+    }
+    const binaryIsQualified = async () => await this.binaryMatchesCheckoutHead(selected.repository.directory)
+      && (format !== "ds4-expert-major-v1" || await this.binaryHasQwenRuntime(selected.repository.directory));
+    if (!(await binaryIsQualified())) {
+      this.log("info", "build", `Building the ${label} runtime for this Mac.`);
+      await this.build(allowModelSwitch);
+      selected = this.store.get();
+    }
+    if (!(await binaryIsQualified())) {
+      throw new Error(`The selected DS4 binary does not match the qualified ${label} checkout`);
+    }
+    return selected;
+  }
+
+  private async startEngine(modelSwitch = false): Promise<void> {
     let config = this.store.get();
     const selectedModel = await this.validateLocalModel(config.model.path, config.model.path);
     const modelId = this.localModelId(selectedModel, config.model.id);
@@ -1885,7 +1998,11 @@ export class RuntimeManager {
       this.bus.publish({ type: "config", payload: config });
     }
     const qwen35 = selectedModel.architecture === QWEN35_ARCHITECTURE;
-    if (qwen35) config = await this.ensureQwenRuntimeCheckout(config);
+    if (selectedModel.artifactFormat) {
+      config = await this.ensureExpertMajorRuntimeCheckout(config, selectedModel.artifactFormat, modelSwitch);
+    } else if (qwen35) {
+      config = await this.ensureQwenRuntimeCheckout(config, modelSwitch);
+    }
     await this.ensureAppleMetalToolchain();
     const binary = path.join(config.repository.directory, "ds4-server");
     if (!(await this.pathExists(binary, true))) throw new Error("ds4-server has not been built");
@@ -2075,7 +2192,10 @@ export class RuntimeManager {
       }
       const configured = this.store.get();
       const selectedModel = await this.validateLocalModel(configured.model.path, configured.model.path);
-      if (selectedModel.architecture === QWEN35_ARCHITECTURE) {
+      if (selectedModel.artifactFormat) {
+        await this.ensureExpertMajorRuntimeCheckout(configured, selectedModel.artifactFormat);
+        state = await this.refresh();
+      } else if (selectedModel.architecture === QWEN35_ARCHITECTURE) {
         await this.ensureQwenRuntimeCheckout(configured);
         state = await this.refresh();
       }

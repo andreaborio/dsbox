@@ -1,9 +1,11 @@
 import type {
+  Ds4ArtifactFormat,
   LocalModelCandidate,
   LocalModelCompatibility,
   LocalModelCompatibilityCode,
   LocalModelScanSnapshot
 } from "../types.js";
+import { isDs4ArtifactFormat } from "./model-format.js";
 
 const LEGACY_COMPATIBILITY: LocalModelCompatibility = {
   status: "unverified",
@@ -48,7 +50,10 @@ export function normalizeLocalModelCandidate(value: unknown): LocalModelCandidat
     modelId: typeof value.modelId === "string" && value.modelId.trim() ? value.modelId : name,
     selected: value.selected === true,
     compatibility: normalizeCompatibility(value.compatibility),
-    architecture: typeof value.architecture === "string" ? value.architecture : null
+    architecture: typeof value.architecture === "string" ? value.architecture : null,
+    artifactFormat: isDs4ArtifactFormat(value.artifactFormat)
+      ? value.artifactFormat as Ds4ArtifactFormat
+      : null
   };
 }
 

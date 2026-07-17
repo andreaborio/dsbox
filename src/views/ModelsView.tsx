@@ -27,6 +27,7 @@ import { Badge, Progress } from "../design-system";
 import type { DsboxController } from "../hooks/useDsbox";
 import { apiRequest } from "../lib/api";
 import { formatBytes, formatModelName } from "../lib/format";
+import { catalogModelMatchesInstalledPath, ds4ArtifactFormatLabel } from "../lib/model-format";
 import { identifyModel } from "../lib/model-identity";
 import {
   currentDownload,
@@ -338,10 +339,11 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   const renderCatalogModel = (model: CatalogModel, unsupported = false) => {
     const publisher = modelPublisher(model);
     const sourceLabel = publisherLabel(publisher, catalog?.sources ?? []);
-    const repositoryName = model.repository.split("/").at(-1) ?? "";
     const identity = identifyModel(model.modelId, model.label, model.repository);
-    const active = snapshot.config.model.id === model.modelId && snapshot.config.model.path.includes(`/models/${repositoryName}/`);
+    const active = snapshot.config.model.id === model.modelId
+      && catalogModelMatchesInstalledPath(model, snapshot.config.model.path);
     const defaultVariant = chooseDefaultCatalogVariant(model, snapshot.system.totalMemoryBytes);
+    const artifactFormatLabel = ds4ArtifactFormatLabel(model.artifactFormat);
 
     if (unsupported) {
       const reason = model.unavailableReason ?? (!defaultVariant ? "No complete DS4-compatible GGUF version is available." : "This model layout has not been verified for DS4.");
@@ -350,7 +352,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
           <div className="catalog-card__head">
             <span className={`catalog-card__tile catalog-card__tile--${identity}`}><ModelIdentityIcon identity={identity} fallback={<Box size={18} />} /></span>
             <div>
-              <div><h3>{model.label}</h3><span className="source-chip">{sourceLabel}</span></div>
+              <div><h3>{model.label}</h3><span className="source-chip">{sourceLabel}</span>{artifactFormatLabel && <span className="source-chip">{artifactFormatLabel}</span>}</div>
               <p>Hugging Face · {model.repository}</p>
             </div>
           </div>
@@ -377,9 +379,9 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
 
     return (
       <article className={active ? "catalog-card catalog-card--active" : "catalog-card"} key={model.repository}>
-        <div className="catalog-card__head"><span className={`catalog-card__tile catalog-card__tile--${identity} ${model.experimental ? "catalog-card__tile--experimental" : ""}`}><ModelIdentityIcon identity={identity} fallback={<Box size={22} />} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by DSBox</span>}{publisher.toLowerCase() !== "andreaborio" && <span className="source-chip">{sourceLabel}</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
+        <div className="catalog-card__head"><span className={`catalog-card__tile catalog-card__tile--${identity} ${model.experimental ? "catalog-card__tile--experimental" : ""}`}><ModelIdentityIcon identity={identity} fallback={<Box size={22} />} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by DSBox</span>}{publisher.toLowerCase() !== "andreaborio" && <span className="source-chip">{sourceLabel}</span>}{artifactFormatLabel && <span className="source-chip">{artifactFormatLabel}</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
         <p className="catalog-card__description">{model.description}</p>
-        <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB publisher guidance</span>}<span>{defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF"}</span>{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
+        <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB publisher guidance</span>}<span>{artifactFormatLabel ?? (defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF")}</span>{artifactFormatLabel && <span>DS4 only · not llama.cpp</span>}{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
         <div className={`catalog-card__advisor catalog-card__advisor--${assessment.performance.level}`} title={assessment.performance.explanation}>
           <span className="catalog-card__advisor-icon" aria-hidden="true">{assessment.performance.level === "very-slow" || assessment.performance.level === "may-be-slow" ? <AlertTriangle size={15} /> : <HardDrive size={15} />}</span>
           <div><span>On this {Math.round(memoryGb)} GB Mac</span><strong>{assessment.performance.label}</strong></div>
@@ -400,6 +402,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
       totalMemoryBytes: snapshot.system.totalMemoryBytes,
       diskFreeBytes
     });
+    const artifactFormatLabel = ds4ArtifactFormatLabel(model.artifactFormat);
     const rowClassName = [
       "local-result",
       model.selected ? "local-result--active" : "",
@@ -432,8 +435,8 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
         <div className="local-result__meta">
           <strong>{formatBytes(model.sizeBytes, 1)}</strong>
           {assessment
-            ? <><span className={`model-advisor-label model-advisor-label--${assessment.performance.level}`} title={assessment.performance.explanation}>{assessment.performance.label}</span><small>Ready</small></>
-            : <><span>{model.architecture ?? "GGUF"}</span><small>Library only</small></>}
+            ? <><span className={`model-advisor-label model-advisor-label--${assessment.performance.level}`} title={assessment.performance.explanation}>{assessment.performance.label}</span><small>{artifactFormatLabel ? `${artifactFormatLabel} · DS4 only` : "Ready"}</small></>
+            : <><span>{artifactFormatLabel ?? model.architecture ?? "GGUF"}</span><small>Library only</small></>}
         </div>
         {!unsupported && (
           <Button variant={model.selected ? "ghost" : "secondary"} icon={model.selected ? <Check size={14} /> : undefined} disabled={model.selected || runtimeBusy} loading={selectingPath === model.path} onClick={() => void useLocalModel(model)}>{model.selected ? "In use" : "Use"}</Button>

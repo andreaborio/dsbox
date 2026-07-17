@@ -4,10 +4,11 @@ import { createDefaultConfig } from "../server/config.js";
 import type { ConfigStore } from "../server/config.js";
 import { EventBus } from "../server/event-bus.js";
 import { shellDisplayArgument } from "../src/lib/arguments.js";
-import type { DsboxConfig, LocalModelCandidate } from "../src/types.js";
+import type { CatalogModel, DsboxConfig, LocalModelCandidate } from "../src/types.js";
 import {
   buildEngineArguments,
   ds4BuildInfoMatchesHead,
+  EXPERT_MAJOR_RUNTIME_COMMIT,
   orderedLocalModelScanRoots,
   parseEnvironment,
   parseFallbackModelFilename,
@@ -80,6 +81,7 @@ describe("environment parser", () => {
       PATH: "/usr/bin",
       DS4_EXPERT_PROFILE: "/tmp/profile.json",
       DS4_METAL_STREAMING_PIN_NON_ROUTED: "1",
+      DS4_METAL_STREAMING_EXPERT_HOTLIST_PRIORITY: "1",
       DS4_SERVER_STREAMING_DECODE_STATS: "1",
       DS4_QWEN_EXPERIMENTAL_METAL: "0"
     }, {
@@ -93,6 +95,7 @@ describe("environment parser", () => {
     const environment = qwen35LaunchEnvironment({ DS4_EXPERT_PROFILE: "x" }, { DS4_EXPERT_HOTLIST: "y" });
     expect(environment.DS4_EXPERT_PROFILE).toBeUndefined();
     expect(environment.DS4_EXPERT_HOTLIST).toBeUndefined();
+    expect(qwen35LaunchEnvironment({}, { DS4_METAL_STREAMING_EXPERT_HOTLIST_PRIORITY: "1" }).DS4_METAL_STREAMING_EXPERT_HOTLIST_PRIORITY).toBeUndefined();
     expect(qwen35LaunchEnvironment({ DS4_SERVER_STREAMING_DECODE_STATS: "1" }, {}).DS4_SERVER_STREAMING_DECODE_STATS).toBeUndefined();
   });
 });
@@ -324,6 +327,110 @@ describe("Qwen one-click preparation", () => {
     expect(install).not.toHaveBeenCalled();
     expect(build).not.toHaveBeenCalled();
     expect(start).toHaveBeenCalledOnce();
+  });
+
+  it("keeps Qwen ExpertMajor v1 off the legacy tool branch and requires the unified main ancestry", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.repository.branch = QWEN35_RUNTIME_BRANCH;
+    config.repository.directory = "/work/ds4-qwen-tool-legacy";
+    let current = structuredClone(config);
+    const store = {
+      homeDirectory: "/home/alice/.dsbox",
+      get: vi.fn(() => structuredClone(current)),
+      set: vi.fn(async (next: DsboxConfig) => {
+        current = structuredClone(next);
+        return structuredClone(current);
+      })
+    } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const ancestryChecks: string[][] = [];
+    const internal = runtime as unknown as {
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v1",
+        allowModelSwitch?: boolean
+      ): Promise<DsboxConfig>;
+      runtimeIncludesCommits(directory: string, commits: readonly string[]): Promise<boolean>;
+      binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
+      binaryHasQwenRuntime(directory: string): Promise<boolean>;
+    };
+    vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([]);
+    vi.spyOn(internal, "runtimeIncludesCommits").mockImplementation(async (directory, commits) => {
+      ancestryChecks.push([...commits]);
+      return directory === "/home/alice/.dsbox/runtime/andreaborio-ds4-expert-major";
+    });
+    vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValueOnce(false).mockResolvedValue(true);
+    vi.spyOn(internal, "binaryHasQwenRuntime").mockResolvedValue(true);
+    vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
+    const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
+    const build = vi.spyOn(runtime, "build").mockResolvedValue();
+
+    const selected = await internal.ensureExpertMajorRuntimeCheckout(config, "ds4-expert-major-v1", true);
+
+    expect(selected.repository).toMatchObject({
+      url: "https://github.com/andreaborio/ds4.git",
+      branch: "main",
+      directory: "/home/alice/.dsbox/runtime/andreaborio-ds4-expert-major"
+    });
+    expect(ancestryChecks).not.toHaveLength(0);
+    expect(ancestryChecks.every((commits) => commits.length === 1)).toBe(true);
+    expect(ancestryChecks.every((commits) => commits.includes(EXPERT_MAJOR_RUNTIME_COMMIT))).toBe(true);
+    expect(install).toHaveBeenCalledWith(true);
+    expect(build).toHaveBeenCalledWith(true);
+  });
+
+  it("passes the transactional switch allowance into runtime preparation", async () => {
+    const runtime = new RuntimeManager({} as ConfigStore, new EventBus());
+    const internal = runtime as unknown as {
+      startManaged(modelSwitch?: boolean): Promise<void>;
+      startEngine(modelSwitch?: boolean): Promise<void>;
+    };
+    const startEngine = vi.spyOn(internal, "startEngine").mockResolvedValue();
+
+    await internal.startManaged(true);
+
+    expect(startEngine).toHaveBeenCalledWith(true);
+  });
+
+  it("keeps public runtime mutations blocked during a switch but permits the internal transaction", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const internal = runtime as unknown as {
+      modelSwitchPending: boolean;
+      pathExists(candidate: string, executable?: boolean): Promise<boolean>;
+    };
+    internal.modelSwitchPending = true;
+    vi.spyOn(internal, "pathExists").mockRejectedValue(new Error("passed the switch guard"));
+
+    await expect(runtime.installOrUpdate()).rejects.toThrow("Stop the runtime before updating");
+    await expect(runtime.installOrUpdate(true)).rejects.toThrow("passed the switch guard");
+    await expect(runtime.build()).rejects.toThrow("Stop the runtime before building");
+    await expect(runtime.build(true)).rejects.toThrow("passed the switch guard");
+  });
+
+  it("prepares the full ExpertMajor runtime policy before a catalog download", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const model = { artifactFormat: "ds4-expert-major-v1" } as CatalogModel;
+    const internal = runtime as unknown as {
+      ensureCatalogRuntime(model: CatalogModel): Promise<void>;
+      ensureExpertMajorRuntimeCheckout(config: DsboxConfig, format: "ds4-expert-major-v1"): Promise<DsboxConfig>;
+    };
+    let expertMajorPrepared = false;
+    const fullPolicy = vi.spyOn(internal, "ensureExpertMajorRuntimeCheckout").mockImplementation(async () => {
+      expertMajorPrepared = true;
+      return config;
+    });
+    const pinRuntime = vi.spyOn(internal, "ensureCatalogRuntime").mockImplementation(async () => {
+      if (!expertMajorPrepared) throw new Error("legacy branch checked before unified runtime selection");
+    });
+
+    await runtime.prepareCatalogRuntime(model);
+
+    expect(pinRuntime).toHaveBeenCalledWith(model);
+    expect(fullPolicy).toHaveBeenCalledWith(config, "ds4-expert-major-v1");
   });
 });
 

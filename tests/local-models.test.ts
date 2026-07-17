@@ -15,13 +15,15 @@ describe("local model response normalization", () => {
       modelId: "current-model",
       selected: true,
       compatibility: { status: "compatible", code: "ds4_native", reason: null },
-      architecture: "deepseek4"
+      architecture: "deepseek4",
+      artifactFormat: "ds4-expert-major-v2"
     });
 
     expect(model).toMatchObject({
       selected: true,
       compatibility: { status: "compatible", code: "ds4_native", reason: null },
-      architecture: "deepseek4"
+      architecture: "deepseek4",
+      artifactFormat: "ds4-expert-major-v2"
     });
     expect(model && localModelIsRunnable(model)).toBe(true);
   });
@@ -40,7 +42,8 @@ describe("local model response normalization", () => {
         status: "unverified",
         code: "legacy_unverified"
       },
-      architecture: null
+      architecture: null,
+      artifactFormat: null
     });
     expect(model && localModelIsRunnable(model)).toBe(true);
   });
