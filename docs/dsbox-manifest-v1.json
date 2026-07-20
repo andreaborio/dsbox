@@ -1,16 +1,22 @@
 {
   "schemaVersion": 1,
   "name": "DeepSeek V4 Flash DS4 ExpertMajor v2",
-  "description": "Experimental DS4-only ExpertMajor v2 layout for Apple Metal.",
-  "status": "experimental",
+  "description": "Current single-file DeepSeek V4 Flash release for the unified DS4 ExpertMajor v2 runtime.",
+  "status": "stable",
   "recommended": false,
   "modelId": "deepseek-v4-flash",
   "runtimeBranch": "main",
-  "runtimeCommit": "fe0919b70571678408f2c8c52aec8d49525e715c",
-  "file": "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf",
+  "runtimeCommit": "7c99924f93c4be46d065421c46e1541b29bd28dd",
+  "file": "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-DS4-ExpertMajor-v2.gguf",
   "minimumMemoryGb": 64,
   "architecture": "moe",
+  "previousRepositories": [
+    "andreaborio/DeepSeek-V4-Flash-DS4-ExpertMajor-v2-GGUF"
+  ],
   "artifact": {
+    "output": "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-DS4-ExpertMajor-v2.gguf",
+    "sizeBytes": 86720114272,
+    "sha256": "837808c4d391c95011276a0a5ab16a30b4d5231d915861a5ee3b7701450403bf",
     "format": {
       "id": "ds4-expert-major",
       "version": 2,

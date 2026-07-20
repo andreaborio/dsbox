@@ -392,7 +392,7 @@ describe("Hugging Face model catalog", () => {
 
   it("selects only Qwen v2 from the consolidated public repository", async () => {
     const repository = "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF";
-    const previousRepository = "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-GGUF";
+    const previousRepository = "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-GGUF";
     const revision = "2".repeat(40);
     const canonicalFile = "Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf";
     const v1File = "Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-Q4_K_S.gguf";

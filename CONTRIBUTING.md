@@ -21,7 +21,7 @@ npm run build
 - Keep `ds4-server` on `127.0.0.1`; LAN exposure is not part of the base profile.
 - Do not add automatic CPU fallbacks on macOS.
 - Do not send `SIGKILL` during normal shutdown. SIGTERM must give ds4 time to drain requests and save KV state.
-- Validate flags against `ds4-server --help all`; `main` and the GLM branch do not expose identical capabilities.
+- Validate flags against `ds4-server --help all` from the unified `main` runtime; managed ExpertMajor v2 startup must not reintroduce backend, power, residency, streaming, cache, preload, or cold-start overrides.
 - Do not display Metal or I/O metrics that cannot be measured reliably.
 - Treat traces and KV caches as potentially sensitive data.
 - Never start a model download implicitly from the power action. Users must select a local GGUF or explicitly confirm a catalog download.

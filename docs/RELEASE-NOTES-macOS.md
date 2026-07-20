@@ -1,25 +1,27 @@
-## DSBox 0.3.0
+## DSBox 0.3.1
 
-This breaking release makes ExpertMajor v2 the only runnable MoE format for
-Qwen3.6, DeepSeek V4 Flash, and GLM-5.2. It moves all three families onto the
-unified DS4 `main` runtime, removes legacy Qwen flags and branches, and selects
-only revision-pinned v2 files from the consolidated Hugging Face repositories.
+This release completes the ExpertMajor v2-only startup contract for Qwen3.6,
+DeepSeek V4 Flash, and GLM-5.2. All three families now use one DS4 `main`
+checkout and let DS4 AUTO choose the backend and resident-or-SSD plan from the
+validated model and live Mac memory state.
 
-### GLM-5.2 ExpertMajor v2
+### Unified startup
 
-- Recognizes the pinned `glm-dsa` metadata, tokenizer, 1,297-tensor inventory,
-  and embedded `ds4.expert_major.v2` store during the lightweight GGUF header
-  preflight; model weight payloads are not scanned.
-- Enforces the 64 GB minimum and marks the artifact as **DS4 only** instead of
-  implying compatibility with llama.cpp, MLX, or generic GGUF launchers.
-- Selects and builds DS4 `main` at qualified commit
-  `fe0919b70571678408f2c8c52aec8d49525e715c` or a verified descendant.
-- Uses DS4's automatic SSD/cache plan and qualified GLM Metal profile without
-  adding redundant SSD mode, full-layer, cache-size, or preload flags.
-- Reuses the unified ExpertMajor checkout and removes the obsolete GLM branch
-  selector from Settings.
-- Applies the same runtime check to catalog downloads, Finder selection, the
-  local Library, and transactional model switches.
+- Uses only `~/.dsbox/runtime/andreaborio-ds4` on branch `main`; historical
+  model-specific checkouts are no longer selected automatically.
+- Requires DS4 commit
+  `7c99924f93c4be46d065421c46e1541b29bd28dd` or a verified descendant.
+- Omits backend, power, residency, streaming, cache, preload, cold-start, and
+  warm-up overrides on managed models. DeepSeek retains disk-KV, imatrix,
+  steering, and optional prefill controls. GLM retains disk-KV while its graph
+  owns prefill and currently omits imatrix/steering. Qwen hides the session
+  features its recurrent runtime cannot serialize and owns its prefill schedule.
+- Filters retired or conflicting advanced arguments consistently across Qwen,
+  DeepSeek, and GLM while retaining safe server and diagnostic arguments.
+- Shows DS4 AUTO consistently in Runtime, Settings, and Monitor instead of
+  inferring a false in-memory mode from the intentionally minimal command.
+- Pins the current DeepSeek ExpertMajor v2 filename, size, and SHA-256 in the
+  example DSBox manifest.
 
 ### Release safety
 
@@ -35,11 +37,10 @@ only revision-pinned v2 files from the consolidated Hugging Face repositories.
 
 ### Verification
 
-- Retained header fixtures for valid and deliberately corrupted GLM contracts,
-  catalog policy coverage, main-runtime selection tests, and AUTO argument
-  tests.
-- Verified the real 262,147,193,504-byte internal GGUF through the same
-  lightweight preflight used by DSBox.
+- Retained header fixtures for valid and deliberately corrupted ExpertMajor v2
+  contracts, catalog policy coverage, main-runtime selection tests, and
+  table-driven AUTO argument tests for all three model families.
+- Passed 298 automated tests, TypeScript checks, and the production build.
 
 ### macOS community build
 

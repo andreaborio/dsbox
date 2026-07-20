@@ -35,7 +35,7 @@
 - **One power control.** Once a model is selected, DSBox can prepare the checkout, build `ds4-server`, validate flags, start it, and wait for real readiness.
 - **Models without path hunting.** Scan the Mac, choose a GGUF with Finder, or review and download a Hugging Face variant inside DSBox.
 - **SSD streaming without artificial lockouts.** DSBox warns when a model may be very slow, but does not block an experiment merely because the GGUF is larger than unified memory.
-- **The right memory path automatically.** Qwen3.6 ExpertMajor v2 stays resident when its guarded Metal preflight allows it; the GLM-5.2 ExpertMajor v2 artifact selects its qualified SSD/cache plan automatically.
+- **The right memory path automatically.** Qwen3.6, DeepSeek V4 Flash, and GLM-5.2 ExpertMajor v2 delegate backend, power, and resident-or-SSD planning to the unified DS4 AUTO runtime.
 - **A complete local chat.** Threads, reasoning, stop control, automatic scrolling, syntax-highlighted code, one-click copy, and response-level prefill/generation timings.
 - **A bounded agent loop.** Agent mode can inspect the local runtime and model, optionally search the web, and show reasoning, tool activity, results, and sources as they stream.
 - **Bring your coding agent.** The Agents screen exposes model-aware loopback endpoints, copy-ready configurations, and honest unavailable states when the active runtime lacks a required protocol.
@@ -208,15 +208,15 @@ codex --model <selected-model-id> -c model_provider=ds4
 
 DSBox does not pretend that “fits on SSD” means “will be fast.” A model larger than unified memory may run through DS4 SSD streaming, but speed depends on model structure, quantization, storage, thermal state, and cache warmth. Hardware guidance is advisory; insufficient disk space is the hard download blocker.
 
-Adaptive mode lets DS4 calculate its expert-cache budget from live model geometry and available memory. DSBox independently watches macOS pressure and swap activity while the runtime is active, and performs a safety stop if pressure becomes unsafe or required signals repeatedly disappear. Manual context, cache, KV-disk, trace, imatrix, flags, and environment controls remain available in Settings.
+Adaptive mode lets DS4 calculate its expert-cache budget from live model geometry and available memory. DSBox independently watches macOS pressure and swap activity while the runtime is active, and performs a safety stop if pressure becomes unsafe or required signals repeatedly disappear. Manual cache, residency, and power controls remain available only for unmanaged/custom runtimes. DeepSeek and GLM retain disk-KV; DeepSeek also retains imatrix and directional steering. Qwen keeps live context reuse but cannot serialize its recurrent session payload yet, while GLM keeps its graph-selected prefill schedule. Context, trace, safe extra flags, and environment controls remain available in Settings.
 
 For Qwen3.6, DeepSeek V4 Flash, and GLM-5.2, DSBox requires the unified DS4
-[`fe0919b`](https://github.com/andreaborio/ds4/commit/fe0919b70571678408f2c8c52aec8d49525e715c)
-ExpertMajor v2 runtime or newer. Qwen deliberately receives neither
-`--ssd-streaming` nor `--resident` and no longer needs an experimental environment flag.
-DS4 therefore admits full residency only after its own working-set and live
-memory-pressure checks, with SSD streaming as the safe fallback. DSBox keeps its
-independent one-second pressure and swapout watchdog armed in either outcome.
+[`7c99924`](https://github.com/andreaborio/ds4/commit/7c99924f93c4be46d065421c46e1541b29bd28dd)
+ExpertMajor v2 runtime or newer. On the normal managed path, all three families
+receive no backend, power, residency, streaming, cache, preload, or cold-start
+override from DSBox. DS4 selects its validated AUTO plan from the model and live
+memory state. DSBox keeps its independent one-second pressure and swapout watchdog
+armed in every managed outcome.
 
 <details>
 <summary><strong>Recorded Qwen3.6 reference results</strong></summary>

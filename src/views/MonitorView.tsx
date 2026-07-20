@@ -20,6 +20,7 @@ import { useMemo, useState } from "react";
 import type { AppSnapshot, InferenceStage, LogEntry, RuntimeState, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
 import { argumentOptionValue, tokenizeArguments } from "../lib/arguments";
+import { isManagedExpertMajorV2Model, isQwen35Model } from "../lib/engine-arguments";
 import { formatBytes, formatPercent, timeLabel } from "../lib/format";
 import { Sparkline, StatusPill } from "../components/ui";
 
@@ -123,7 +124,8 @@ export function MonitorView({ snapshot }: Props) {
   const liveTokensPerSecond = snapshot.activity.stage === "idle" ? null : latest?.tokensPerSecond ?? null;
   const runtimeActive = ["starting", "running", "stopping"].includes(runtime.phase);
   const presentation = resolveMonitorPresentation(runtime, snapshot.activity.stage, liveTokensPerSecond);
-  const qwenManaged = config.model.id === "qwen3.6-35b-a3b";
+  const expertMajorManaged = isManagedExpertMajorV2Model(config);
+  const qwenSelected = isQwen35Model(config);
   const runtimeCache = runtimeActive
     ? argumentOptionValue(runtime.command, "--ssd-streaming-cache-experts")
     : null;
@@ -137,7 +139,7 @@ export function MonitorView({ snapshot }: Props) {
   } catch {
     // Invalid advanced arguments are reported when the user tries to start.
   }
-  const modelCacheLabel = qwenManaged
+  const modelCacheLabel = expertMajorManaged
     ? "AUTO · resident/SSD"
     : runtimeActive
     ? !runtimeStreaming
@@ -232,8 +234,8 @@ export function MonitorView({ snapshot }: Props) {
           <div className="io-facts">
             <div><span>Volume</span><strong>{latest ? formatBytes(latest.diskTotalBytes, 0) : "—"}</strong></div>
             <div><span>Model cache</span><strong>{modelCacheLabel}</strong></div>
-            <div><span>On-disk context</span><strong>{qwenManaged ? "Unavailable" : config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
-            <div><span>Mode</span><strong>{qwenManaged ? "Metal AUTO" : (runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
+            <div><span>On-disk context</span><strong>{qwenSelected ? "Unavailable" : config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
+            <div><span>Mode</span><strong>{expertMajorManaged ? "DS4 AUTO" : (runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
           </div>
           <p className="metric-disclaimer"><Info size={13} /> macOS does not reliably expose per-process SSD throughput without internal instrumentation.</p>
         </article>

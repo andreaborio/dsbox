@@ -23,6 +23,7 @@ import type { AppSnapshot, CatalogResponse, DsboxConfig, EnginePhase, ViewId } f
 import type { DsboxController } from "../hooks/useDsbox";
 import { apiRequest } from "../lib/api";
 import { shellDisplayArgument } from "../lib/arguments";
+import { isManagedExpertMajorV2Model, isQwen35Model } from "../lib/engine-arguments";
 import { formatBytes, formatDuration, formatModelName, timeLabel } from "../lib/format";
 import { identifyModel } from "../lib/model-identity";
 import { currentDownload, formatDownloadEta } from "../lib/model-download-state";
@@ -114,12 +115,13 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   const activeDownloadPercent = activeDownload
     ? Math.round((activeDownload.downloadedBytes / Math.max(activeDownload.totalBytes, 1)) * 100)
     : null;
-  const qwenManaged = config.model.id === "qwen3.6-35b-a3b";
+  const qwenSelected = isQwen35Model(config);
+  const expertMajorManaged = isManagedExpertMajorV2Model(config);
   const modelIdentity = identifyModel(config.model.id, config.model.path);
   const checkoutChangeAllowed = ["uninstalled", "idle", "error"].includes(runtime.phase) && !activeDownload;
-  const phaseCopy = qwenManaged && runtime.phase === "running"
+  const phaseCopy = qwenSelected && runtime.phase === "running"
     ? { ...copyByPhase.running, description: "Qwen is ready for private chat and OpenAI-compatible agents with tools and streaming." }
-    : qwenManaged && runtime.phase === "stopping"
+    : qwenSelected && runtime.phase === "stopping"
       ? { ...copyByPhase.stopping, description: "Finishing active work before shutting down Qwen." }
       : copyByPhase[runtime.phase];
   const busy = Boolean(activeDownload) || busyPhases.includes(runtime.phase);
@@ -149,8 +151,12 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
     } else {
       void apiRequest<{ command: string[] }>("/api/runtime/command").then((value) => setCommand(value.command)).catch(() => undefined);
     }
-    void apiRequest<{ checkouts: DiscoveredCheckout[] }>("/api/runtime/discover").then((value) => setCheckouts(value.checkouts)).catch(() => undefined);
-  }, [config, runtime.command, runtime.gitHead, runtime.phase, technicalOpen]);
+    if (expertMajorManaged) {
+      setCheckouts([]);
+    } else {
+      void apiRequest<{ checkouts: DiscoveredCheckout[] }>("/api/runtime/discover").then((value) => setCheckouts(value.checkouts)).catch(() => undefined);
+    }
+  }, [config, expertMajorManaged, runtime.command, runtime.gitHead, runtime.phase, technicalOpen]);
 
   useEffect(() => {
     if (!technicalOpen) return;
@@ -192,9 +198,9 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
 
   const recentLogs = snapshot.logs.slice(-8);
   const displayedCommand = useMemo(() => {
-    if (!qwenManaged || ["starting", "running", "stopping"].includes(runtime.phase) || command.length < 2) return command;
+    if (!expertMajorManaged || ["starting", "running", "stopping"].includes(runtime.phase) || command.length < 2) return command;
     return command.map((value, index) => index === 0 ? "<Unified ExpertMajor v2 DS4 checkout>/ds4-server" : value);
-  }, [command, qwenManaged, runtime.phase]);
+  }, [command, expertMajorManaged, runtime.phase]);
   const progress = activeDownload
     ? activeDownloadPercent!
     : runtime.phase === "preparing" ? 6
@@ -279,7 +285,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
       {runtime.phase === "running" && (
         <section className="ready-actions">
           <button className="ready-action panel" onClick={() => onNavigate("chat")}><span><MessageSquareText size={19} /></span><div><strong>Open chat</strong><p>Start a private conversation.</p></div><ExternalLink size={14} /></button>
-          {qwenManaged
+          {qwenSelected
             ? <button className="ready-action panel" onClick={() => onNavigate("agents")}><span><Bot size={19} /></span><div><strong>Connect an agent</strong><p>Chat Completions with tools.</p></div><ExternalLink size={14} /></button>
             : <button className="ready-action panel" onClick={() => onNavigate("agents")}><span><Bot size={19} /></span><div><strong>Connect an agent</strong><p>Codex, Claude Code, and others.</p></div><ExternalLink size={14} /></button>}
         </section>
@@ -298,11 +304,11 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           <div className="technical-overview">
             <div><span>Channel</span><strong>{runtime.gitBranch ?? config.repository.branch}</strong></div>
             <div><span>Version</span><strong>{runtime.gitHead ?? "not installed"}</strong></div>
-            <div><span>Mode</span><strong>{qwenManaged ? "Metal AUTO" : config.streaming.enabled ? "Metal + SSD streaming" : "Metal resident"}</strong></div>
+            <div><span>Mode</span><strong>{expertMajorManaged ? "DS4 AUTO" : config.streaming.enabled ? "Metal + SSD streaming" : "Metal resident"}</strong></div>
             <div><span>Context</span><strong>{config.server.contextTokens.toLocaleString("en-US")} tokens</strong></div>
           </div>
 
-          {checkouts.length > 0 && (
+          {!expertMajorManaged && checkouts.length > 0 && (
             <div className="technical-block">
               <h4><FolderGit2 size={14} /> DS4 installations found</h4>
               {!checkoutChangeAllowed && <p className="technical-empty">Turn off DSBox before changing the engine checkout.</p>}
@@ -318,7 +324,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           )}
 
           <div className="technical-block">
-            <div className="technical-block__head"><h4><Terminal size={14} /> {qwenManaged && !["starting", "running", "stopping"].includes(runtime.phase) ? "Startup profile" : "Startup command"}</h4><CopyButton value={displayedCommand.map(shellDisplayArgument).join(" ")} /></div>
+            <div className="technical-block__head"><h4><Terminal size={14} /> {expertMajorManaged && !["starting", "running", "stopping"].includes(runtime.phase) ? "Startup profile" : "Startup command"}</h4><CopyButton value={displayedCommand.map(shellDisplayArgument).join(" ")} /></div>
             <pre><code>{displayedCommand.length ? displayedCommand.map(shellDisplayArgument).join(" ") : "Available after setup"}</code></pre>
           </div>
 

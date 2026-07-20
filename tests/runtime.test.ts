@@ -10,6 +10,7 @@ import {
   ds4BuildInfoMatchesHead,
   EXPERT_MAJOR_RUNTIME_BRANCH,
   EXPERT_MAJOR_RUNTIME_COMMIT,
+  gitRemoteIdentity,
   GLM52_RUNTIME_BRANCH,
   GLM52_RUNTIME_COMMIT,
   orderedLocalModelScanRoots,
@@ -20,6 +21,15 @@ import {
   RuntimeManager,
   tokenizeArguments
 } from "../server/runtime.js";
+
+describe("managed Git remote identity", () => {
+  it("treats HTTPS and SSH URLs for the same GitHub repository as equivalent", () => {
+    expect(gitRemoteIdentity("https://github.com/andreaborio/ds4.git"))
+      .toBe(gitRemoteIdentity("git@github.com:andreaborio/ds4.git"));
+    expect(gitRemoteIdentity("ssh://git@github.com/andreaborio/ds4"))
+      .toBe("github.com/andreaborio/ds4");
+  });
+});
 
 describe("local model scan roots", () => {
   it("checks visible home-folder siblings before caches and external volumes", () => {
@@ -102,8 +112,9 @@ describe("resumable fallback downloads", () => {
 });
 
 describe("engine arguments", () => {
-  it("uses the bounded 16 GB profile and leaves cache sizing to DS4", () => {
+  it("uses the bounded 16 GB profile for an unmanaged runtime", () => {
     const config = createDefaultConfig(16 * 1024 ** 3);
+    config.model.id = "custom-moe";
     const args = buildEngineArguments(config);
     expect(args.slice(args.indexOf("--ctx"), args.indexOf("--ctx") + 2)).toEqual(["--ctx", "8192"]);
     expect(args.slice(args.indexOf("--tokens"), args.indexOf("--tokens") + 2)).toEqual(["--tokens", "4096"]);
@@ -112,8 +123,9 @@ describe("engine arguments", () => {
     expect(args.slice(args.indexOf("--power"), args.indexOf("--power") + 2)).toEqual(["--power", "100"]);
   });
 
-  it("uses DS4 adaptive cache sizing on the 64 GB profile", () => {
+  it("uses DS4 adaptive cache sizing for an unmanaged 64 GB runtime", () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
+    config.model.id = "custom-moe";
     const args = buildEngineArguments(config);
     expect(args).toContain("--metal");
     expect(args).toContain("--ssd-streaming");
@@ -124,31 +136,115 @@ describe("engine arguments", () => {
     expect(args.slice(args.indexOf("--host"), args.indexOf("--host") + 2)).toEqual(["--host", "127.0.0.1"]);
   });
 
-  it("delegates unmeasured hardware and models to DS4 AUTO", () => {
-    const config = createDefaultConfig(128 * 1024 ** 3);
-    expect(config.streaming.cacheMode).toBe("auto");
-    expect(buildEngineArguments(config)).not.toContain("--ssd-streaming-cache-experts");
-    const glm = createDefaultConfig(64 * 1024 ** 3);
-    glm.model.id = "glm-5.2";
-    glm.model.path = "/models/glm-5.2.gguf";
-    glm.streaming.cacheMode = "manual";
-    glm.streaming.cacheSizeGb = 32;
-    glm.streaming.coldStart = true;
-    glm.streaming.preloadExperts = 528;
-    const glmArgs = buildEngineArguments(glm);
-    expect(glmArgs).not.toContain("--ssd-streaming");
-    expect(glmArgs).not.toContain("--ssd-streaming-cache-experts");
-    expect(glmArgs).not.toContain("--ssd-streaming-cold");
-    expect(glmArgs).not.toContain("--ssd-streaming-preload-experts");
+  const managedModels = [
+    { modelId: "qwen3.6-35b-a3b", architecture: "qwen35moe", path: "/models/qwen-v2.gguf", supportsDiskKv: false, supportsImatrixSteering: false, supportsPrefillOverride: false },
+    { modelId: "deepseek-v4-flash", architecture: "deepseek4", path: "/models/deepseek-v2.gguf", supportsDiskKv: true, supportsImatrixSteering: true, supportsPrefillOverride: true },
+    { modelId: "glm-5.2", architecture: "glm-dsa", path: "/models/glm-v2.gguf", supportsDiskKv: true, supportsImatrixSteering: false, supportsPrefillOverride: false }
+  ] as const;
+
+  it.each(managedModels)("delegates $modelId ExpertMajor v2 startup to DS4 AUTO", ({ modelId, architecture, path, supportsDiskKv, supportsImatrixSteering, supportsPrefillOverride }) => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.model = { id: modelId, path };
+    config.server.powerPercent = 48;
+    config.server.quality = true;
+    config.server.warmWeights = true;
+    config.server.prefillChunk = 2048;
+    config.streaming.cacheMode = "manual";
+    config.streaming.cacheSizeGb = 24;
+    config.streaming.coldStart = true;
+    config.streaming.preloadExperts = 512;
+    config.observability.imatrixEnabled = true;
+    config.advanced.extraArgs = [
+      "--metal",
+      "--debug",
+      "--backend metal",
+      "--power 12",
+      "--quality",
+      "--warm-weights",
+      "--resident",
+      "--no-ssd-streaming",
+      "--ssd-streaming",
+      "--ssd-streaming-cold",
+      "--ssd-streaming-cache-experts 700",
+      "--ssd-streaming-preload-experts 200",
+      "--prefill-chunk 1024",
+      "--mtp /models/draft.gguf",
+      "--role coordinator",
+      "--listen 127.0.0.1 9000",
+      "--dist-prefill-chunk 64",
+      "--dir-steering-file /tmp/steer.bin",
+      "--kv-disk-dir /tmp/custom-kv",
+      "--imatrix-out /tmp/custom-imatrix.dat",
+      "--trace /tmp/managed.trace"
+    ].join(" ");
+
+    const args = buildEngineArguments(config, architecture);
+    expect(args).toEqual(expect.arrayContaining([
+      "-m", path,
+      "--ctx", String(config.server.contextTokens),
+      "--tokens", String(config.server.maxOutputTokens),
+      "--threads", String(config.server.threads),
+      "--host", "127.0.0.1",
+      "--port", String(config.server.internalPort),
+      "--trace", "/tmp/managed.trace"
+    ]));
+    for (const retired of [
+      "--metal",
+      "--debug",
+      "--backend",
+      "--power",
+      "--quality",
+      "--warm-weights",
+      "--resident",
+      "--no-ssd-streaming",
+      "--ssd-streaming",
+      "--ssd-streaming-cold",
+      "--ssd-streaming-cache-experts",
+      "--ssd-streaming-preload-experts",
+      "--mtp",
+      "--role",
+      "--listen",
+      "--dist-prefill-chunk"
+    ]) {
+      expect(args, `${modelId} leaked ${retired}`).not.toContain(retired);
+    }
+    if (supportsDiskKv) {
+      expect(args).toContain("--kv-disk-dir");
+      expect(args).toContain("/tmp/custom-kv");
+    } else {
+      expect(args).not.toContain("--kv-disk-dir");
+      expect(args).not.toContain("/tmp/custom-kv");
+    }
+    if (supportsImatrixSteering) {
+      expect(args).toContain("--imatrix-out");
+      expect(args).toContain("/tmp/custom-imatrix.dat");
+      expect(args).toContain("--dir-steering-file");
+      expect(args).toContain("/tmp/steer.bin");
+    } else {
+      expect(args).not.toContain("--imatrix-out");
+      expect(args).not.toContain("/tmp/custom-imatrix.dat");
+      expect(args).not.toContain("--dir-steering-file");
+      expect(args).not.toContain("/tmp/steer.bin");
+    }
+    if (supportsPrefillOverride) {
+      expect(args).toContain("--prefill-chunk");
+      expect(args).toContain("1024");
+    } else {
+      expect(args).not.toContain("--prefill-chunk");
+      expect(args).not.toContain("1024");
+      expect(args).not.toContain("2048");
+    }
   });
 
   it("preserves manual GB and advanced exact overrides without duplicates", () => {
     const manual = createDefaultConfig(64 * 1024 ** 3);
+    manual.model.id = "custom-moe";
     manual.streaming.cacheMode = "manual";
     manual.streaming.cacheSizeGb = 32;
     expect(buildEngineArguments(manual)).toContain("32GB");
 
     const advanced = createDefaultConfig(16 * 1024 ** 3);
+    advanced.model.id = "custom-moe";
     advanced.advanced.extraArgs = "--ssd-streaming-cache-experts 300";
     const args = buildEngineArguments(advanced);
     expect(args.filter((value) => value === "--ssd-streaming-cache-experts")).toHaveLength(1);
@@ -167,6 +263,7 @@ describe("engine arguments", () => {
 
   it("adds privacy-sensitive diagnostics only when enabled", () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
+    config.model.id = "custom-moe";
     config.observability.traceEnabled = true;
     config.observability.imatrixEnabled = true;
     const args = buildEngineArguments(config);
@@ -175,59 +272,13 @@ describe("engine arguments", () => {
     expect(args).toContain("--imatrix-every");
   });
 
-  it("applies the exact Qwen Metal AUTO residency profile", () => {
-    const config = createDefaultConfig(64 * 1024 ** 3);
-    config.model.id = "qwen3.6-35b-a3b";
-    config.model.path = "/models/Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf";
-    config.server.powerPercent = 48;
-    config.server.quality = true;
-    config.server.warmWeights = true;
-    config.streaming.cacheMode = "manual";
-    config.streaming.cacheSizeGb = 24;
-    config.streaming.preloadExperts = 512;
-    config.observability.imatrixEnabled = true;
-    config.advanced.extraArgs = [
-      "--power 12",
-      "--quality",
-      "--ssd-streaming",
-      "--ssd-streaming-cold",
-      "--ssd-streaming-cache-experts 700",
-      "--ssd-streaming-preload-experts 200",
-      "--mtp /models/draft.gguf",
-      "--role coordinator",
-      "--listen 127.0.0.1 9000",
-      "--dir-steering-file /tmp/steer.bin",
-      "--kv-disk-dir /tmp/custom-kv",
-      "--trace /tmp/qwen.trace"
-    ].join(" ");
-
-    const args = buildEngineArguments(config);
-    expect(args.slice(args.indexOf("--power"), args.indexOf("--power") + 2)).toEqual(["--power", "100"]);
-    expect(args).toContain("--metal");
-    expect(args).not.toContain("--ssd-streaming");
-    expect(args).not.toContain("--ssd-streaming-cold");
-    expect(args).toContain("--trace");
-    expect(args).not.toContain("--quality");
-    expect(args).not.toContain("--warm-weights");
-    expect(args).not.toContain("--ssd-streaming-cache-experts");
-    expect(args).not.toContain("--ssd-streaming-preload-experts");
-    expect(args).not.toContain("--imatrix-out");
-    expect(args).not.toContain("--mtp");
-    expect(args).not.toContain("--role");
-    expect(args).not.toContain("--listen");
-    expect(args).not.toContain("--dir-steering-file");
-    expect(args).not.toContain("--kv-disk-dir");
-    expect(args).not.toContain("/tmp/custom-kv");
-    expect(args).not.toContain("/models/draft.gguf");
-    expect(args.filter((value) => value === "127.0.0.1")).toHaveLength(1);
-  });
-
   it("uses verified architecture instead of a misleading configured model id", () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     config.model.id = "qwen3.6-35b-a3b";
     config.server.quality = true;
 
-    expect(buildEngineArguments(config, "deepseek4")).toContain("--quality");
+    expect(buildEngineArguments(config, "custom-moe")).toContain("--quality");
+    config.model.id = "custom-moe";
     expect(buildEngineArguments(config, "qwen35moe")).not.toContain("--quality");
   });
 });
@@ -283,6 +334,7 @@ describe("ExpertMajor v2 one-click preparation", () => {
       checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
       binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
       binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
+      managedCheckoutIdentity(directory: string): Promise<{ exists: boolean; branch: string | null; remote: string | null; clean: boolean }>;
       runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
       ensureExpertMajorRuntimeCheckout(
         config: DsboxConfig,
@@ -291,15 +343,18 @@ describe("ExpertMajor v2 one-click preparation", () => {
         modelIdentity: string
       ): Promise<DsboxConfig>;
     };
-    vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockImplementation(async (directory) => directory === "/work/ds4-main");
+    const managedDirectory = "/home/alice/.dsbox/runtime/andreaborio-ds4";
+    vi.spyOn(internal, "managedCheckoutIdentity").mockResolvedValue({
+      exists: true,
+      branch: "main",
+      remote: "https://github.com/andreaborio/ds4.git",
+      clean: true
+    });
+    vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockImplementation(async (directory) => directory === managedDirectory);
     vi.spyOn(internal, "runtimeIncludesCommit").mockImplementation(async (directory, commit) =>
-      directory === "/work/ds4-main" && commit === EXPERT_MAJOR_RUNTIME_COMMIT);
+      directory === managedDirectory && commit === EXPERT_MAJOR_RUNTIME_COMMIT);
     vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
-    vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([
-      { path: "/work/ds4-qwen-support", branch: "feat/qwen-support", head: "91d311d58" },
-      { path: "/work/ds4-main", branch: EXPERT_MAJOR_RUNTIME_BRANCH, head: EXPERT_MAJOR_RUNTIME_COMMIT.slice(0, 9) }
-    ]);
     vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
 
     const selected = await internal.ensureExpertMajorRuntimeCheckout(
@@ -311,7 +366,8 @@ describe("ExpertMajor v2 one-click preparation", () => {
 
     expect(EXPERT_MAJOR_RUNTIME_COMMIT).toMatch(/^[a-f0-9]{40}$/);
     expect(selected.repository).toMatchObject({
-      directory: "/work/ds4-main",
+      url: "https://github.com/andreaborio/ds4.git",
+      directory: managedDirectory,
       branch: EXPERT_MAJOR_RUNTIME_BRANCH
     });
     expect(store.set).toHaveBeenCalledOnce();
@@ -388,15 +444,28 @@ describe("ExpertMajor v2 one-click preparation", () => {
       runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
       binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
       binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
+      managedCheckoutIdentity(directory: string): Promise<{ exists: boolean; branch: string | null; remote: string | null; clean: boolean }>;
     };
-    vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([]);
+    vi.spyOn(internal, "managedCheckoutIdentity")
+      .mockResolvedValueOnce({
+        exists: true,
+        branch: "codex/qwen-tool-dialect",
+        remote: "git@github.com:andreaborio/ds4.git",
+        clean: true
+      })
+      .mockResolvedValue({
+        exists: true,
+        branch: "main",
+        remote: "git@github.com:andreaborio/ds4.git",
+        clean: true
+      });
     vi.spyOn(internal, "checkoutHasExpertMajorV2Source")
       .mockImplementation(async (directory) => directory === "/home/alice/.dsbox/runtime/andreaborio-ds4");
     vi.spyOn(internal, "runtimeIncludesCommit").mockImplementation(async (directory, commit) => {
       ancestryChecks.push(commit);
       return directory === "/home/alice/.dsbox/runtime/andreaborio-ds4";
     });
-    vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValueOnce(false).mockResolvedValue(true);
+    vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
     vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
     vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
     const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
@@ -417,13 +486,60 @@ describe("ExpertMajor v2 one-click preparation", () => {
     expect(ancestryChecks).not.toHaveLength(0);
     expect(ancestryChecks.every((commit) => commit === EXPERT_MAJOR_RUNTIME_COMMIT)).toBe(true);
     expect(install).toHaveBeenCalledWith(true);
-    expect(build).toHaveBeenCalledWith(true);
+    expect(build).not.toHaveBeenCalled();
   });
 
-  it("qualifies GLM ExpertMajor v2 from explicit source and current-binary capabilities", async () => {
+  it.each([
+    {
+      name: "a dirty non-main checkout",
+      identity: { exists: true, branch: "experiment", remote: "https://github.com/andreaborio/ds4.git", clean: false },
+      error: "has local changes"
+    },
+    {
+      name: "a checkout from another origin",
+      identity: { exists: true, branch: "main", remote: "https://github.com/example/ds4.git", clean: true },
+      error: "different origin remote"
+    }
+  ])("rejects $name instead of presenting it as unified main", async ({ identity, error }) => {
     const config = createDefaultConfig(64 * 1024 ** 3);
-    config.repository.directory = "/work/ds4-glm-expert-major";
-    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    config.repository.directory = "/home/alice/.dsbox/runtime/andreaborio-ds4";
+    const store = {
+      homeDirectory: "/home/alice/.dsbox",
+      get: vi.fn(() => structuredClone(config))
+    } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const internal = runtime as unknown as {
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<DsboxConfig>;
+      managedCheckoutIdentity(directory: string): Promise<{ exists: boolean; branch: string | null; remote: string | null; clean: boolean }>;
+    };
+    vi.spyOn(internal, "managedCheckoutIdentity").mockResolvedValue(identity);
+    const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
+
+    await expect(internal.ensureExpertMajorRuntimeCheckout(
+      config,
+      "ds4-expert-major-v2",
+      false,
+      "deepseek4"
+    )).rejects.toThrow(error);
+    expect(install).not.toHaveBeenCalled();
+  });
+
+  it("qualifies GLM ExpertMajor v2 from the unified main checkout and current-binary capabilities", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.repository = {
+      url: "https://github.com/andreaborio/ds4.git",
+      branch: "main",
+      directory: "/home/alice/.dsbox/runtime/andreaborio-ds4"
+    };
+    const store = {
+      homeDirectory: "/home/alice/.dsbox",
+      get: vi.fn(() => structuredClone(config))
+    } as unknown as ConfigStore;
     const runtime = new RuntimeManager(store, new EventBus());
     const internal = runtime as unknown as {
       ensureExpertMajorRuntimeCheckout(
@@ -435,8 +551,15 @@ describe("ExpertMajor v2 one-click preparation", () => {
       checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
       binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
       binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
+      managedCheckoutIdentity(directory: string): Promise<{ exists: boolean; branch: string | null; remote: string | null; clean: boolean }>;
       runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
     };
+    vi.spyOn(internal, "managedCheckoutIdentity").mockResolvedValue({
+      exists: true,
+      branch: "main",
+      remote: "https://github.com/andreaborio/ds4.git",
+      clean: true
+    });
     const sourceCapability = vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockResolvedValue(true);
     const binaryCapability = vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
@@ -488,16 +611,22 @@ describe("ExpertMajor v2 one-click preparation", () => {
       runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
       binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
       binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
+      managedCheckoutIdentity(directory: string): Promise<{ exists: boolean; branch: string | null; remote: string | null; clean: boolean }>;
     };
-    vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([]);
+    let installed = false;
+    vi.spyOn(internal, "managedCheckoutIdentity").mockImplementation(async () => installed
+      ? { exists: true, branch: "main", remote: "https://github.com/andreaborio/ds4.git", clean: true }
+      : { exists: false, branch: null, remote: null, clean: true });
     vi.spyOn(internal, "checkoutHasExpertMajorV2Source")
-      .mockImplementation(async (directory) => directory === targetDirectory);
+      .mockImplementation(async (directory) => installed && directory === targetDirectory);
     vi.spyOn(internal, "runtimeIncludesCommit")
-      .mockImplementation(async (directory, commit) => directory === targetDirectory && commit === GLM52_RUNTIME_COMMIT);
+      .mockImplementation(async (directory, commit) => installed && directory === targetDirectory && commit === GLM52_RUNTIME_COMMIT);
     vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
     vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
-    const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
+    const install = vi.spyOn(runtime, "installOrUpdate").mockImplementation(async () => {
+      installed = true;
+    });
 
     const selected = await internal.ensureExpertMajorRuntimeCheckout(
       config,

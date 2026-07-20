@@ -3946,7 +3946,7 @@ pre,
 .inline-toggles span { display: flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 11px; }
 .inline-toggles .managed-setting-badge { color: light-dark(#666661, var(--ds-color-text-secondary)); font-size: 9.5px; }
 
-.qwen-settings-note {
+.expert-major-settings-note {
   display: flex;
   align-items: flex-start;
   margin-top: 12px;
@@ -3958,8 +3958,8 @@ pre,
   color: light-dark(#5e5e59, var(--ds-color-text-primary));
 }
 
-.qwen-settings-note svg { flex: 0 0 auto; margin-top: 1px; }
-.qwen-settings-note p { margin: 0; font-size: 11px; line-height: 1.55; }
+.expert-major-settings-note svg { flex: 0 0 auto; margin-top: 1px; }
+.expert-major-settings-note p { margin: 0; font-size: 11px; line-height: 1.55; }
 
 .secret-field { display: flex; align-items: center; gap: 5px; }
 .secret-field input { min-width: 0; flex: 1; }

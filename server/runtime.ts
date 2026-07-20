@@ -24,7 +24,7 @@ import { chooseGgufFileInFinder } from "./native-file-picker.js";
 import { argumentOptionName, shellDisplayArgument, tokenizeArguments } from "../src/lib/arguments.js";
 import {
   buildEngineArguments,
-  GLM52_ARCHITECTURE,
+  isManagedExpertMajorV2Model,
   QWEN35_ARCHITECTURE,
   QWEN35_MODEL_ID
 } from "../src/lib/engine-arguments.js";
@@ -52,9 +52,25 @@ const fallbackModelVariables: Record<string, string> = {
 
 const localModelInventoryVersion = 1;
 export const EXPERT_MAJOR_RUNTIME_BRANCH = "main";
-export const EXPERT_MAJOR_RUNTIME_COMMIT = "fe0919b70571678408f2c8c52aec8d49525e715c";
+export const EXPERT_MAJOR_RUNTIME_COMMIT = "7c99924f93c4be46d065421c46e1541b29bd28dd";
 export const GLM52_RUNTIME_BRANCH = EXPERT_MAJOR_RUNTIME_BRANCH;
 export const GLM52_RUNTIME_COMMIT = EXPERT_MAJOR_RUNTIME_COMMIT;
+
+interface ManagedCheckoutIdentity {
+  exists: boolean;
+  branch: string | null;
+  remote: string | null;
+  clean: boolean;
+}
+
+export function gitRemoteIdentity(remote: string): string {
+  return remote.trim().toLowerCase()
+    .replace(/^https?:\/\/github\.com\//, "github.com/")
+    .replace(/^ssh:\/\/git@github\.com\//, "github.com/")
+    .replace(/^git@github\.com:/, "github.com/")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/, "");
+}
 
 interface LocalModelInventoryRecord {
   path: string;
@@ -1850,10 +1866,25 @@ export class RuntimeManager {
     }
   }
 
-  private async checkoutIsClean(directory: string): Promise<boolean> {
-    return execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
-      .then((result) => !result.stdout.trim())
-      .catch(() => false);
+  private async managedCheckoutIdentity(directory: string): Promise<ManagedCheckoutIdentity> {
+    if (!(await this.pathExists(path.join(directory, ".git")))) {
+      return { exists: false, branch: null, remote: null, clean: true };
+    }
+    try {
+      const [branch, remote, status] = await Promise.all([
+        execFileAsync("git", ["branch", "--show-current"], { cwd: directory }),
+        execFileAsync("git", ["remote", "get-url", "origin"], { cwd: directory }),
+        execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
+      ]);
+      return {
+        exists: true,
+        branch: branch.stdout.trim() || null,
+        remote: remote.stdout.trim() || null,
+        clean: !status.stdout.trim()
+      };
+    } catch {
+      throw new Error(`DSBox cannot verify the managed DS4 checkout at ${directory}`);
+    }
   }
 
   private async ensureExpertMajorRuntimeCheckout(
@@ -1873,52 +1904,48 @@ export class RuntimeManager {
     const sourceIsQualified = async (directory: string) =>
       await this.checkoutHasExpertMajorV2Source(directory)
       && await this.runtimeIncludesCommit(directory, EXPERT_MAJOR_RUNTIME_COMMIT);
-    const checkoutCanBeBuilt = async (directory: string) => await sourceIsQualified(directory)
-      && ((await this.binaryMatchesCheckoutHead(directory)) || await this.checkoutIsClean(directory));
 
+    const managedDirectory = path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4");
+    const managedUrl = "https://github.com/andreaborio/ds4.git";
     let selected = config;
-    if (!(await checkoutCanBeBuilt(selected.repository.directory))) {
-      let checkout: { path: string; branch: string | null } | null = null;
-      for (const candidate of await this.discoveredCheckouts()) {
-        if (candidate.path === selected.repository.directory) continue;
-        if (await checkoutCanBeBuilt(candidate.path)) {
-          checkout = candidate;
-          break;
-        }
-      }
-      if (checkout) {
-        const next = structuredClone(selected);
-        next.repository.url = "https://github.com/andreaborio/ds4.git";
-        next.repository.directory = checkout.path;
-        if (checkout.branch) next.repository.branch = checkout.branch;
-        selected = await this.store.set(next);
-        this.bus.publish({ type: "config", payload: selected });
-        this.log("info", "dsbox", `Using the qualified ${label} runtime at ${checkout.path}.`);
-        await this.refresh();
-      } else {
-        const targetBranch = EXPERT_MAJOR_RUNTIME_BRANCH;
-        const targetDirectory = "andreaborio-ds4";
-        const gitDirectory = path.join(selected.repository.directory, ".git");
-        const currentIsManagedTarget = selected.repository.url === "https://github.com/andreaborio/ds4.git"
-          && selected.repository.branch === targetBranch
-          && (!(await this.pathExists(gitDirectory)) || await this.checkoutIsClean(selected.repository.directory));
-        if (!currentIsManagedTarget) {
-          const next = structuredClone(selected);
-          next.repository.url = "https://github.com/andreaborio/ds4.git";
-          next.repository.branch = targetBranch;
-          next.repository.directory = path.join(this.store.homeDirectory, "runtime", targetDirectory);
-          selected = await this.store.set(next);
-          this.bus.publish({ type: "config", payload: selected });
-          await this.refresh();
-        }
-        this.log(
-          "info",
-          "git",
-          `Preparing the unified DS4 main runtime for ${label} at ${EXPERT_MAJOR_RUNTIME_COMMIT.slice(0, 9)} or newer.`
-        );
-        await this.installOrUpdate(allowModelSwitch);
-        selected = this.store.get();
-      }
+    if (selected.repository.url !== managedUrl
+      || selected.repository.branch !== EXPERT_MAJOR_RUNTIME_BRANCH
+      || selected.repository.directory !== managedDirectory) {
+      const next = structuredClone(selected);
+      next.repository.url = managedUrl;
+      next.repository.branch = EXPERT_MAJOR_RUNTIME_BRANCH;
+      next.repository.directory = managedDirectory;
+      selected = await this.store.set(next);
+      this.bus.publish({ type: "config", payload: selected });
+      await this.refresh();
+    }
+
+    let identity = await this.managedCheckoutIdentity(managedDirectory);
+    if (identity.exists && gitRemoteIdentity(identity.remote ?? "") !== gitRemoteIdentity(managedUrl)) {
+      throw new Error(`The managed DS4 folder has a different origin remote: ${managedDirectory}`);
+    }
+    if (identity.exists && !identity.clean) {
+      throw new Error(`The managed DS4 checkout has local changes; clean ${managedDirectory} before starting a model`);
+    }
+    const isManagedMain = identity.exists
+      && identity.branch === EXPERT_MAJOR_RUNTIME_BRANCH
+      && gitRemoteIdentity(identity.remote ?? "") === gitRemoteIdentity(managedUrl);
+    if (!isManagedMain || !(await sourceIsQualified(managedDirectory))) {
+      this.log(
+        "info",
+        "git",
+        `Preparing the unified DS4 main runtime for ${label} at ${EXPERT_MAJOR_RUNTIME_COMMIT.slice(0, 9)} or newer.`
+      );
+      await this.installOrUpdate(allowModelSwitch);
+      selected = this.store.get();
+      identity = await this.managedCheckoutIdentity(managedDirectory);
+    }
+
+    if (!identity.exists
+      || identity.branch !== EXPERT_MAJOR_RUNTIME_BRANCH
+      || gitRemoteIdentity(identity.remote ?? "") !== gitRemoteIdentity(managedUrl)
+      || !identity.clean) {
+      throw new Error(`DSBox requires a clean andreaborio/ds4 ${EXPERT_MAJOR_RUNTIME_BRANCH} checkout at ${managedDirectory}`);
     }
 
     if (!(await sourceIsQualified(selected.repository.directory))) {
@@ -1948,7 +1975,7 @@ export class RuntimeManager {
       this.bus.publish({ type: "config", payload: config });
     }
     const qwen35 = selectedModel.architecture === QWEN35_ARCHITECTURE;
-    const glm52 = selectedModel.architecture === GLM52_ARCHITECTURE;
+    const expertMajorManaged = isManagedExpertMajorV2Model(config, selectedModel.architecture);
     if (selectedModel.artifactFormat) {
       config = await this.ensureExpertMajorRuntimeCheckout(
         config,
@@ -1970,7 +1997,7 @@ export class RuntimeManager {
 
     const hasAdvancedCacheOverride = tokenizeArguments(config.advanced.extraArgs)
       .some((value) => optionName(value) === "--ssd-streaming-cache-experts");
-    const usesAutomaticMemoryPlan = qwen35 || glm52 || (
+    const usesAutomaticMemoryPlan = expertMajorManaged || (
       config.streaming.enabled
       && config.streaming.cacheMode === "auto"
       && !hasAdvancedCacheOverride
@@ -1979,9 +2006,13 @@ export class RuntimeManager {
     const help = await this.detectHelp(binary, config.repository.directory);
     this.validateCapabilities(args, help);
     await this.ensurePortAvailable(config.server.internalHost, config.server.internalPort);
-    if (config.kvCache.enabled) await mkdir(config.kvCache.directory, { recursive: true, mode: 0o700 });
+    if (args.some((value) => optionName(value) === "--kv-disk-dir")) {
+      await mkdir(config.kvCache.directory, { recursive: true, mode: 0o700 });
+    }
     if (config.observability.traceEnabled) await mkdir(path.dirname(config.observability.tracePath), { recursive: true, mode: 0o700 });
-    if (config.observability.imatrixEnabled) await mkdir(path.dirname(config.observability.imatrixPath), { recursive: true, mode: 0o700 });
+    if (args.some((value) => optionName(value) === "--imatrix-out")) {
+      await mkdir(path.dirname(config.observability.imatrixPath), { recursive: true, mode: 0o700 });
+    }
     const extraEnvironment = parseEnvironment(config.advanced.environment);
     const environment = { ...process.env, ...extraEnvironment };
 
@@ -2004,16 +2035,14 @@ export class RuntimeManager {
       this.log(
         "info",
         "dsbox",
-        qwen35
-          ? "DS4 Qwen AUTO residency enabled; DSBox pressure/swap watchdog armed at 1 Hz."
-          : glm52
-            ? "DS4 GLM automatic SSD/cache plan and gold profile enabled; DSBox pressure/swap watchdog armed at 1 Hz."
-            : "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+        expertMajorManaged
+          ? "DS4 ExpertMajor v2 AUTO plan enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+          : "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
       );
     }
 
     const command = [binary, ...args];
-    if (qwen35) this.log("info", "dsbox", "Qwen3.6 profile applied: Metal AUTO residency, resident when safe with SSD fallback, power 100, and tool-enabled chat.");
+    if (qwen35) this.log("info", "dsbox", "Qwen3.6 ExpertMajor v2 AUTO profile applied with tool-enabled chat.");
     this.log("info", "dsbox", `$ ${command.map(shellDisplayArgument).join(" ")}`);
     this.setState({
       phase: "starting",
@@ -2223,10 +2252,8 @@ export class RuntimeManager {
     }
     const candidates = [...new Set([
       configured,
-      path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4-qwen35"),
+      path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4"),
       path.join(home, "Beep", "ds4"),
-      path.join(home, "Beep", "ds4-qwen-support"),
-      path.join(home, "Beep", "ds4-glm52-gold"),
       path.join(home, "BEEP", "ds4"),
       ...nearby.sort()
     ])];
