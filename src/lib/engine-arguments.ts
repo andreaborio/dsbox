@@ -85,7 +85,7 @@ function qwenSafeExtraArguments(extraArgs: string[]): string[] {
 export function buildEngineArguments(config: DsboxConfig, modelArchitecture?: string | null): string[] {
   const qwen35 = isQwen35Model(config, modelArchitecture);
   const glm52 = isGlm52Model(config, modelArchitecture);
-  const runtimeOwnsResidency = qwen35 || glm52;
+  const runtimeOwnsMemoryPlan = qwen35 || glm52;
   const tokenizedExtraArgs = tokenizeArguments(config.advanced.extraArgs);
   const extraArgs = qwen35 ? qwenSafeExtraArguments(tokenizedExtraArgs) : tokenizedExtraArgs;
   const advancedCacheOverride = extraArgs.some(
@@ -102,11 +102,11 @@ export function buildEngineArguments(config: DsboxConfig, modelArchitecture?: st
     "--port", String(config.server.internalPort)
   ];
 
-  // Qualified Qwen and GLM runtimes own the residency decision. DS4 keeps the
-  // model resident when its live memory preflight passes and otherwise selects
-  // SSD streaming plus the architecture-specific profile. DSBox must not turn
-  // AUTO into an explicit streaming/cache override for these two paths.
-  if (config.streaming.enabled && !runtimeOwnsResidency) {
+  // Qualified Qwen and GLM runtimes own the residency decision. Qwen may stay
+  // resident when its live preflight passes; GLM ExpertMajor v2 always resolves
+  // to its SSD/cache profile. DSBox must not turn either contract into explicit
+  // streaming, cache, preload, or cold-start overrides.
+  if (config.streaming.enabled && !runtimeOwnsMemoryPlan) {
     args.push("--ssd-streaming");
     if (!advancedCacheOverride && config.streaming.cacheMode === "manual") {
       args.push("--ssd-streaming-cache-experts", `${config.streaming.cacheSizeGb}GB`);
