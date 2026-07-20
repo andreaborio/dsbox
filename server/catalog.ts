@@ -491,8 +491,9 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   if (!artifactPolicyError && artifactFormat === "ds4-expert-major-v1" && modelId !== "qwen3.6-35b-a3b") {
     artifactPolicyError = "DS4 ExpertMajor v1 is restricted to the pinned Qwen3.6 35B-A3B contract";
   }
-  if (!artifactPolicyError && artifactFormat === "ds4-expert-major-v2" && !modelId.startsWith("deepseek")) {
-    artifactPolicyError = "DS4 ExpertMajor v2 requires a DeepSeek model contract";
+  if (!artifactPolicyError && artifactFormat === "ds4-expert-major-v2" &&
+      !modelId.startsWith("deepseek") && modelId !== "glm-5.2") {
+    artifactPolicyError = "DS4 ExpertMajor v2 requires a pinned DeepSeek 4 or GLM-5.2 model contract";
   }
   if (!artifactPolicyError && artifactFormat && !requestedFile) {
     artifactPolicyError = "DS4 ExpertMajor manifests must pin one output file";

@@ -24,6 +24,7 @@ import { chooseGgufFileInFinder } from "./native-file-picker.js";
 import { argumentOptionName, shellDisplayArgument, tokenizeArguments } from "../src/lib/arguments.js";
 import {
   buildEngineArguments,
+  GLM52_ARCHITECTURE,
   QWEN35_ARCHITECTURE,
   QWEN35_MODEL_ID
 } from "../src/lib/engine-arguments.js";
@@ -53,6 +54,8 @@ const localModelInventoryVersion = 1;
 export const QWEN35_RUNTIME_BRANCH = "codex/qwen-tool-dialect";
 export const QWEN35_RUNTIME_COMMIT = "fc1561f36080829ecc43695af29d82782a852e86";
 export const EXPERT_MAJOR_RUNTIME_COMMIT = "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0";
+export const GLM52_RUNTIME_BRANCH = "codex/glm52-upstream-clean-bench";
+export const GLM52_RUNTIME_COMMIT = "08f3ebedcf000aadafe0b58211c571dd9dba14a8";
 const qwenUnsupportedEnvironmentKeys = [
   "DS4_EXPERT_PROFILE",
   "DS4_EXPERT_HOTLIST",
@@ -958,7 +961,16 @@ export class RuntimeManager {
 
   async prepareCatalogRuntime(model: CatalogModel): Promise<void> {
     if (model.artifactFormat) {
-      await this.ensureExpertMajorRuntimeCheckout(this.store.get(), model.artifactFormat);
+      if (model.modelId === "glm-5.2") {
+        await this.ensureExpertMajorRuntimeCheckout(
+          this.store.get(),
+          model.artifactFormat,
+          false,
+          model.modelId
+        );
+      } else {
+        await this.ensureExpertMajorRuntimeCheckout(this.store.get(), model.artifactFormat);
+      }
     }
     await this.ensureCatalogRuntime(model);
   }
@@ -1841,6 +1853,31 @@ export class RuntimeManager {
     }
   }
 
+  private async checkoutHasGlmExpertMajorV2Source(directory: string): Promise<boolean> {
+    try {
+      const [header, implementation] = await Promise.all([
+        readFile(path.join(directory, "ds4_expert_store.h"), "utf8"),
+        readFile(path.join(directory, "ds4.c"), "utf8")
+      ]);
+      return header.includes('DS4_EXPERT_STORE_V2_TENSOR "ds4.expert_major.v2"')
+        && header.includes("DS4_EXPERT_STORE_FAMILY_GLM_DSA")
+        && implementation.includes("model_install_glm_native_expert_store_metal")
+        && implementation.includes("native GLM ExpertMajor v2 active");
+    } catch {
+      return false;
+    }
+  }
+
+  private async binaryHasGlmExpertMajorV2Runtime(directory: string): Promise<boolean> {
+    try {
+      const binary = await readFile(path.join(directory, "ds4-server"));
+      return binary.includes(Buffer.from("ds4.expert_major.v2"))
+        && binary.includes(Buffer.from("native GLM ExpertMajor v2 active"));
+    } catch {
+      return false;
+    }
+  }
+
   private async binaryMatchesCheckoutHead(directory: string): Promise<boolean> {
     if (await this.buildMatchesHead(directory)) return true;
     const checkoutClean = await execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
@@ -1923,11 +1960,21 @@ export class RuntimeManager {
   private async ensureExpertMajorRuntimeCheckout(
     config: ReturnType<ConfigStore["get"]>,
     format: Ds4ArtifactFormat,
-    allowModelSwitch = false
+    allowModelSwitch = false,
+    modelIdentity: string | null = null
   ): Promise<ReturnType<ConfigStore["get"]>> {
     const requiredCommits = [EXPERT_MAJOR_RUNTIME_COMMIT];
-    const label = format === "ds4-expert-major-v1" ? "Qwen ExpertMajor v1" : "DeepSeek ExpertMajor v2";
-    const sourceIsQualified = (directory: string) => this.runtimeIncludesCommits(directory, requiredCommits);
+    const isGlm52 = format === "ds4-expert-major-v2" &&
+      (modelIdentity === "glm-dsa" || modelIdentity === "glm-5.2");
+    const label = format === "ds4-expert-major-v1"
+      ? "Qwen ExpertMajor v1"
+      : isGlm52
+        ? "GLM-5.2 ExpertMajor v2"
+        : "DeepSeek ExpertMajor v2";
+    const sourceIsQualified = async (directory: string) => isGlm52
+      ? await this.checkoutHasGlmExpertMajorV2Source(directory)
+        && await this.runtimeIncludesCommit(directory, GLM52_RUNTIME_COMMIT)
+      : this.runtimeIncludesCommits(directory, requiredCommits);
     const checkoutCanBeBuilt = async (directory: string) => await sourceIsQualified(directory)
       && ((await this.binaryMatchesCheckoutHead(directory)) || await this.checkoutIsClean(directory));
 
@@ -1951,31 +1998,43 @@ export class RuntimeManager {
         this.log("info", "dsbox", `Using the qualified ${label} runtime at ${checkout.path}.`);
         await this.refresh();
       } else {
+        const targetBranch = isGlm52 ? GLM52_RUNTIME_BRANCH : "main";
+        const targetDirectory = isGlm52 ? "andreaborio-ds4-glm52" : "andreaborio-ds4-expert-major";
         const gitDirectory = path.join(selected.repository.directory, ".git");
-        const currentIsManagedMain = selected.repository.url === "https://github.com/andreaborio/ds4.git"
-          && selected.repository.branch === "main"
+        const currentIsManagedTarget = selected.repository.url === "https://github.com/andreaborio/ds4.git"
+          && selected.repository.branch === targetBranch
           && (!(await this.pathExists(gitDirectory)) || await this.checkoutIsClean(selected.repository.directory));
-        if (!currentIsManagedMain) {
+        if (!currentIsManagedTarget) {
           const next = structuredClone(selected);
           next.repository.url = "https://github.com/andreaborio/ds4.git";
-          next.repository.branch = "main";
-          next.repository.directory = path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4-expert-major");
+          next.repository.branch = targetBranch;
+          next.repository.directory = path.join(this.store.homeDirectory, "runtime", targetDirectory);
           selected = await this.store.set(next);
           this.bus.publish({ type: "config", payload: selected });
           await this.refresh();
         }
-        this.log("info", "git", `Preparing the unified DS4 main runtime required by ${label}.`);
+        this.log(
+          "info",
+          "git",
+          isGlm52
+            ? `Preparing the qualified DS4 GLM channel at ${GLM52_RUNTIME_COMMIT.slice(0, 9)} or newer.`
+            : `Preparing the unified DS4 main runtime required by ${label}.`
+        );
         await this.installOrUpdate(allowModelSwitch);
         selected = this.store.get();
       }
     }
 
     if (!(await sourceIsQualified(selected.repository.directory))) {
+      if (isGlm52) {
+        throw new Error(`The ${GLM52_RUNTIME_BRANCH} channel does not include the qualified GLM-5.2 ExpertMajor v2 runtime ${GLM52_RUNTIME_COMMIT.slice(0, 9)}`);
+      }
       const requirements = requiredCommits.map((commit) => commit.slice(0, 9)).join(" and ");
       throw new Error(`The DS4 main channel does not yet include the ${label} runtime requirements (${requirements})`);
     }
     const binaryIsQualified = async () => await this.binaryMatchesCheckoutHead(selected.repository.directory)
-      && (format !== "ds4-expert-major-v1" || await this.binaryHasQwenRuntime(selected.repository.directory));
+      && (format !== "ds4-expert-major-v1" || await this.binaryHasQwenRuntime(selected.repository.directory))
+      && (!isGlm52 || await this.binaryHasGlmExpertMajorV2Runtime(selected.repository.directory));
     if (!(await binaryIsQualified())) {
       this.log("info", "build", `Building the ${label} runtime for this Mac.`);
       await this.build(allowModelSwitch);
@@ -1998,8 +2057,16 @@ export class RuntimeManager {
       this.bus.publish({ type: "config", payload: config });
     }
     const qwen35 = selectedModel.architecture === QWEN35_ARCHITECTURE;
+    const glm52 = selectedModel.architecture === GLM52_ARCHITECTURE;
     if (selectedModel.artifactFormat) {
-      config = await this.ensureExpertMajorRuntimeCheckout(config, selectedModel.artifactFormat, modelSwitch);
+      config = selectedModel.architecture === "glm-dsa"
+        ? await this.ensureExpertMajorRuntimeCheckout(
+            config,
+            selectedModel.artifactFormat,
+            modelSwitch,
+            selectedModel.architecture
+          )
+        : await this.ensureExpertMajorRuntimeCheckout(config, selectedModel.artifactFormat, modelSwitch);
     } else if (qwen35) {
       config = await this.ensureQwenRuntimeCheckout(config, modelSwitch);
     }
@@ -2016,7 +2083,7 @@ export class RuntimeManager {
 
     const hasAdvancedCacheOverride = tokenizeArguments(config.advanced.extraArgs)
       .some((value) => optionName(value) === "--ssd-streaming-cache-experts");
-    const usesAutomaticMemoryPlan = qwen35 || (
+    const usesAutomaticMemoryPlan = qwen35 || glm52 || (
       config.streaming.enabled
       && config.streaming.cacheMode === "auto"
       && !hasAdvancedCacheOverride
@@ -2054,7 +2121,9 @@ export class RuntimeManager {
         "dsbox",
         qwen35
           ? "DS4 Qwen AUTO residency enabled; DSBox pressure/swap watchdog armed at 1 Hz."
-          : "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+          : glm52
+            ? "DS4 GLM AUTO residency and gold profile enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+            : "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
       );
     }
 
@@ -2193,7 +2262,16 @@ export class RuntimeManager {
       const configured = this.store.get();
       const selectedModel = await this.validateLocalModel(configured.model.path, configured.model.path);
       if (selectedModel.artifactFormat) {
-        await this.ensureExpertMajorRuntimeCheckout(configured, selectedModel.artifactFormat);
+        if (selectedModel.architecture === "glm-dsa") {
+          await this.ensureExpertMajorRuntimeCheckout(
+            configured,
+            selectedModel.artifactFormat,
+            false,
+            selectedModel.architecture
+          );
+        } else {
+          await this.ensureExpertMajorRuntimeCheckout(configured, selectedModel.artifactFormat);
+        }
         state = await this.refresh();
       } else if (selectedModel.architecture === QWEN35_ARCHITECTURE) {
         await this.ensureQwenRuntimeCheckout(configured);

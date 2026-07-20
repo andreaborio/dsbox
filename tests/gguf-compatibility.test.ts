@@ -5,11 +5,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   DS4_DEEPSEEK4_TENSOR_SIGNATURE,
   DS4_DEEPSEEK4_NATIVE_TENSOR_SIGNATURE,
+  DS4_GLM52_EXPERT_STORE_BYTES,
+  DS4_GLM52_NATIVE_TENSOR_COUNT,
+  DS4_GLM52_NATIVE_TENSOR_SIGNATURE,
   DS4_QWEN35MOE_TENSOR_SIGNATURE,
   DS4_QWEN35MOE_NATIVE_TENSOR_SIGNATURE,
   inspectDs4Gguf
 } from "../server/gguf-compatibility.js";
-import { createDs4GgufFixture, createDs4QwenGgufFixture } from "./helpers/gguf.js";
+import {
+  createDs4Glm52GgufFixture,
+  createDs4GgufFixture,
+  createDs4QwenGgufFixture
+} from "./helpers/gguf.js";
 
 const U32 = 4;
 const F32 = 6;
@@ -182,6 +189,71 @@ describe("DS4 GGUF compatibility inspection", () => {
     });
   });
 
+  it("recognizes the pinned GLM-5.2 ExpertMajor v2 header without reading tensor payload", async () => {
+    const result = await inspect(createDs4Glm52GgufFixture());
+
+    expect(result).toMatchObject({
+      compatible: true,
+      ggufVersion: 3,
+      architecture: "glm-dsa",
+      artifactFormat: "ds4-expert-major-v2",
+      tensorCount: DS4_GLM52_NATIVE_TENSOR_COUNT,
+      reason: null
+    });
+    expect(DS4_GLM52_NATIVE_TENSOR_SIGNATURE).toHaveLength(25);
+    expect(DS4_GLM52_EXPERT_STORE_BYTES).toBe(240_987_951_104);
+  });
+
+  it("rejects a GLM ExpertMajor artifact with a different pinned model geometry", async () => {
+    const result = await inspect(createDs4Glm52GgufFixture({ expertCount: 255 }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "invalid_metadata_type",
+      invalidKeys: ["glm-dsa.expert_count"]
+    });
+  });
+
+  it("rejects a GLM chat template with the correct length but the wrong digest", async () => {
+    const result = await inspect(createDs4Glm52GgufFixture({ invalidChatTemplate: true }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "invalid_metadata_type",
+      invalidKeys: ["tokenizer.chat_template"]
+    });
+  });
+
+  it("rejects a GLM token-type table with the correct length but the wrong digest", async () => {
+    const result = await inspect(createDs4Glm52GgufFixture({ invalidTokenTypes: true }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "invalid_metadata_type",
+      invalidKeys: ["tokenizer.ggml.token_type"]
+    });
+  });
+
+  it("rejects a GLM ExpertMajor store with a different byte extent", async () => {
+    const result = await inspect(createDs4Glm52GgufFixture({ expertStoreBytes: 4096 }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "missing_tensor_signature",
+      invalidKeys: ["ds4.expert_major.v2"]
+    });
+  });
+
+  it("rejects a GLM GGUF that mixes the native store with canonical routed tensors", async () => {
+    const result = await inspect(createDs4Glm52GgufFixture({ includeCanonicalRoutedTensor: true }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "missing_tensor_signature",
+      invalidKeys: ["blk.3.ffn_gate_exps.weight"]
+    });
+  });
+
   it("accepts the normalized Qwen3.6 35B A3B text-only tensor contract", async () => {
     const result = await inspect(createDs4QwenGgufFixture());
 
@@ -274,11 +346,11 @@ describe("DS4 GGUF compatibility inspection", () => {
     expect(result.reason?.message).toContain("deepseek4.vocab_size");
   });
 
-  it("rejects glm-dsa because the currently bundled DS4 runtime is DeepSeek-only", async () => {
+  it("rejects canonical glm-dsa files while only the pinned ExpertMajor v2 layout is qualified", async () => {
     const result = await inspect(fixture({ architecture: "glm-dsa" }));
 
-    expect(result.reason?.code).toBe("unsupported_architecture");
-    expect(result.reason?.message).toContain("glm-dsa");
+    expect(result.reason?.code).toBe("missing_tensor_signature");
+    expect(result.reason?.message).toContain("ExpertMajor v2");
   });
 
   it("requires a DS4-native tensor signature", async () => {

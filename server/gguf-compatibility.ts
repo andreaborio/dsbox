@@ -155,6 +155,114 @@ const QWEN35MOE_CHAT_TEMPLATE_BYTES = 7764;
 const QWEN35MOE_CHAT_TEMPLATE_SHA256 = "e84f32a23fdda27689f868aa4a1a5621f41133e51a48d7f3efcbea2839574259";
 const QWEN35MOE_RECURRENT_LAYERS_KEY = "qwen35moe.attention.recurrent_layers";
 
+const GLM52_METADATA = new Map<string, MetadataExpectation>([
+  ["glm-dsa.block_count", "u32"],
+  ["glm-dsa.context_length", "u32"],
+  ["glm-dsa.embedding_length", "u32"],
+  ["glm-dsa.feed_forward_length", "u32"],
+  ["glm-dsa.attention.head_count", "u32"],
+  ["glm-dsa.attention.head_count_kv", "u32"],
+  ["glm-dsa.attention.key_length", "u32"],
+  ["glm-dsa.attention.value_length", "u32"],
+  ["glm-dsa.attention.q_lora_rank", "u32"],
+  ["glm-dsa.attention.kv_lora_rank", "u32"],
+  ["glm-dsa.attention.key_length_mla", "u32"],
+  ["glm-dsa.attention.value_length_mla", "u32"],
+  ["glm-dsa.attention.layer_norm_rms_epsilon", "f32"],
+  ["glm-dsa.rope.dimension_count", "u32"],
+  ["glm-dsa.rope.freq_base", "f32"],
+  ["glm-dsa.rope.interleave", "bool"],
+  ["glm-dsa.expert_count", "u32"],
+  ["glm-dsa.expert_used_count", "u32"],
+  ["glm-dsa.expert_group_count", "u32"],
+  ["glm-dsa.expert_group_used_count", "u32"],
+  ["glm-dsa.expert_gating_func", "u32"],
+  ["glm-dsa.expert_feed_forward_length", "u32"],
+  ["glm-dsa.expert_shared_count", "u32"],
+  ["glm-dsa.expert_weights_scale", "f32"],
+  ["glm-dsa.expert_weights_norm", "bool"],
+  ["glm-dsa.leading_dense_block_count", "u32"],
+  ["glm-dsa.nextn_predict_layers", "u32"],
+  ["glm-dsa.vocab_size", "u32"],
+  ["glm-dsa.attention.indexer.head_count", "u32"],
+  ["glm-dsa.attention.indexer.key_length", "u32"],
+  ["glm-dsa.attention.indexer.top_k", "u32"],
+  ["glm-dsa.attention.indexer.top_k_freq", "u32"],
+  ["glm-dsa.attention.indexer.skip_top_k_offset", "u32"],
+  ["glm-dsa.attention.indexer.share_for_mtp_iteration", "bool"],
+  ["glm-dsa.attention.indexer.rope_interleave", "bool"],
+  ["tokenizer.ggml.model", "string"],
+  ["tokenizer.ggml.pre", "string"],
+  ["tokenizer.ggml.tokens", "string-array"],
+  ["tokenizer.ggml.token_type", "i32-array"],
+  ["tokenizer.ggml.merges", "string-array"],
+  ["tokenizer.ggml.eos_token_id", "u32"],
+  ["tokenizer.ggml.padding_token_id", "u32"],
+  ["tokenizer.ggml.bos_token_id", "u32"],
+  ["tokenizer.ggml.eot_token_id", "u32"],
+  ["tokenizer.ggml.unknown_token_id", "u32"],
+  ["tokenizer.ggml.eom_token_id", "u32"],
+  ["tokenizer.chat_template", "string"]
+]);
+
+const GLM52_EXACT_VALUES = new Map<string, string | number | boolean>([
+  ["glm-dsa.block_count", 79],
+  ["glm-dsa.context_length", 1_048_576],
+  ["glm-dsa.embedding_length", 6144],
+  ["glm-dsa.feed_forward_length", 12_288],
+  ["glm-dsa.attention.head_count", 64],
+  ["glm-dsa.attention.head_count_kv", 1],
+  ["glm-dsa.attention.key_length", 576],
+  ["glm-dsa.attention.value_length", 512],
+  ["glm-dsa.attention.q_lora_rank", 2048],
+  ["glm-dsa.attention.kv_lora_rank", 512],
+  ["glm-dsa.attention.key_length_mla", 256],
+  ["glm-dsa.attention.value_length_mla", 256],
+  ["glm-dsa.attention.layer_norm_rms_epsilon", 1e-5],
+  ["glm-dsa.rope.dimension_count", 64],
+  ["glm-dsa.rope.freq_base", 8_000_000],
+  ["glm-dsa.rope.interleave", true],
+  ["glm-dsa.expert_count", 256],
+  ["glm-dsa.expert_used_count", 8],
+  ["glm-dsa.expert_group_count", 1],
+  ["glm-dsa.expert_group_used_count", 1],
+  ["glm-dsa.expert_gating_func", 2],
+  ["glm-dsa.expert_feed_forward_length", 2048],
+  ["glm-dsa.expert_shared_count", 1],
+  ["glm-dsa.expert_weights_scale", 2.5],
+  ["glm-dsa.expert_weights_norm", true],
+  ["glm-dsa.leading_dense_block_count", 3],
+  ["glm-dsa.nextn_predict_layers", 1],
+  ["glm-dsa.vocab_size", 154_880],
+  ["glm-dsa.attention.indexer.head_count", 32],
+  ["glm-dsa.attention.indexer.key_length", 128],
+  ["glm-dsa.attention.indexer.top_k", 2048],
+  ["glm-dsa.attention.indexer.top_k_freq", 4],
+  ["glm-dsa.attention.indexer.skip_top_k_offset", 3],
+  ["glm-dsa.attention.indexer.share_for_mtp_iteration", true],
+  ["glm-dsa.attention.indexer.rope_interleave", true],
+  ["tokenizer.ggml.model", "gpt2"],
+  ["tokenizer.ggml.pre", "glm4"],
+  ["tokenizer.ggml.eos_token_id", 154_820],
+  ["tokenizer.ggml.padding_token_id", 154_821],
+  ["tokenizer.ggml.bos_token_id", 154_822],
+  ["tokenizer.ggml.eot_token_id", 154_827],
+  ["tokenizer.ggml.unknown_token_id", 154_820],
+  ["tokenizer.ggml.eom_token_id", 154_829]
+]);
+
+const GLM52_ARRAY_LENGTHS = new Map<string, number>([
+  ["tokenizer.ggml.tokens", 154_880],
+  ["tokenizer.ggml.token_type", 154_880],
+  ["tokenizer.ggml.merges", 321_649]
+]);
+
+const GLM52_CHAT_TEMPLATE_BYTES = 5269;
+const GLM52_CHAT_TEMPLATE_SHA256 = "bf78575b301b56fa74337b470f6560d5366ff15378ddf88d623fd0496152fa77";
+const GLM52_TOKEN_TYPES_SHA256 = "dee3060106b017abcc4a2fa9ba429287b0cc246eeb00fc2a38fe6c1ad4274b3a";
+export const DS4_GLM52_NATIVE_TENSOR_COUNT = 1297;
+export const DS4_GLM52_EXPERT_STORE_BYTES = 240_987_951_104;
+
 export const DS4_DEEPSEEK4_TENSOR_SIGNATURE = [
   "token_embd.weight",
   "output.weight",
@@ -240,14 +348,54 @@ function createQwen35MoeTensorLayout(): Map<string, TensorLayoutExpectation> {
   return layout;
 }
 
+function createGlm52NativeTensorLayout(): Map<string, TensorLayoutExpectation> {
+  const layout = new Map<string, TensorLayoutExpectation>();
+  const exact = (name: string, type: number, ...dimensions: number[]) => {
+    layout.set(name, { dimensions, types: [type] });
+  };
+
+  exact("token_embd.weight", GGML_TYPE.f16, 6144, 154_880);
+  exact("output_norm.weight", GGML_TYPE.f32, 6144);
+  exact("output.weight", GGML_TYPE.q8_0, 6144, 154_880);
+
+  exact("blk.0.attn_norm.weight", GGML_TYPE.f32, 6144);
+  exact("blk.0.attn_q_a.weight", GGML_TYPE.q8_0, 6144, 2048);
+  exact("blk.0.attn_q_b.weight", GGML_TYPE.q8_0, 2048, 16_384);
+  exact("blk.0.attn_kv_a_mqa.weight", GGML_TYPE.q8_0, 6144, 576);
+  exact("blk.0.attn_k_b.weight", GGML_TYPE.q8_0, 192, 512, 64);
+  exact("blk.0.attn_v_b.weight", GGML_TYPE.q8_0, 512, 256, 64);
+  exact("blk.0.attn_output.weight", GGML_TYPE.q8_0, 16_384, 6144);
+  exact("blk.0.ffn_gate.weight", GGML_TYPE.q8_0, 6144, 12_288);
+  exact("blk.0.ffn_up.weight", GGML_TYPE.q8_0, 6144, 12_288);
+  exact("blk.0.ffn_down.weight", GGML_TYPE.q8_0, 12_288, 6144);
+
+  exact("blk.3.ffn_gate_inp.weight", GGML_TYPE.f16, 6144, 256);
+  exact("blk.3.exp_probs_b.bias", GGML_TYPE.f32, 256);
+  exact("blk.3.ffn_gate_shexp.weight", GGML_TYPE.q8_0, 6144, 2048);
+  exact("blk.3.ffn_up_shexp.weight", GGML_TYPE.q8_0, 6144, 2048);
+  exact("blk.3.ffn_down_shexp.weight", GGML_TYPE.q8_0, 2048, 6144);
+
+  exact("blk.78.indexer.attn_q_b.weight", GGML_TYPE.q8_0, 2048, 4096);
+  exact("blk.78.indexer.attn_k.weight", GGML_TYPE.q8_0, 6144, 128);
+  exact("blk.78.indexer.proj.weight", GGML_TYPE.q8_0, 6144, 32);
+  exact("blk.78.eh_proj.weight", GGML_TYPE.f16, 12_288, 6144);
+  exact("blk.78.enorm.weight", GGML_TYPE.f32, 6144);
+  exact("blk.78.hnorm.weight", GGML_TYPE.f32, 6144);
+  exact("blk.78.shared_head.norm.weight", GGML_TYPE.f32, 6144);
+
+  return layout;
+}
+
 const QWEN35MOE_TENSOR_LAYOUT = createQwen35MoeTensorLayout();
 const QWEN35MOE_ROUTED_TENSOR = /^blk\.\d+\.ffn_(?:gate|up|down)_exps\.weight$/;
 const QWEN35MOE_NATIVE_TENSOR_LAYOUT = new Map(
   [...QWEN35MOE_TENSOR_LAYOUT].filter(([name]) => !QWEN35MOE_ROUTED_TENSOR.test(name))
 );
+const GLM52_NATIVE_TENSOR_LAYOUT = createGlm52NativeTensorLayout();
 
 export const DS4_QWEN35MOE_TENSOR_SIGNATURE = [...QWEN35MOE_TENSOR_LAYOUT.keys()] as readonly string[];
 export const DS4_QWEN35MOE_NATIVE_TENSOR_SIGNATURE = [...QWEN35MOE_NATIVE_TENSOR_LAYOUT.keys()] as readonly string[];
+export const DS4_GLM52_NATIVE_TENSOR_SIGNATURE = [...GLM52_NATIVE_TENSOR_LAYOUT.keys()] as readonly string[];
 
 export type Ds4GgufCompatibilityReasonCode =
   | "not_gguf"
@@ -474,6 +622,7 @@ async function readMetadataValue(
     const count = safeNumber(await cursor.u64(8 + tailMinimum), "GGUF metadata array", MAX_ARRAY_ITEMS);
     let arrayValues: number[] | undefined;
     let contractMatches: boolean | undefined;
+    let sha256: string | undefined;
     if (arrayType === GGUF_TYPE.string) {
       for (let index = 0; index < count; index += 1) {
         const remainingStrings = count - index - 1;
@@ -490,6 +639,10 @@ async function readMetadataValue(
           arrayType === GGUF_TYPE.int32 && count === 248_320) {
         const bytes = await cursor.bytes(byteLength, byteLength + tailMinimum);
         contractMatches = qwenTokenTypesMatch(bytes);
+      } else if (key === "tokenizer.ggml.token_type" &&
+          arrayType === GGUF_TYPE.int32 && count === 154_880) {
+        const bytes = await cursor.bytes(byteLength, byteLength + tailMinimum);
+        sha256 = createHash("sha256").update(bytes).digest("hex");
       } else if (key === QWEN35MOE_RECURRENT_LAYERS_KEY &&
           arrayType === GGUF_TYPE.bool && count === 40) {
         const bytes = await cursor.bytes(byteLength, byteLength + tailMinimum);
@@ -498,13 +651,15 @@ async function readMetadataValue(
         cursor.skip(byteLength);
       }
     }
-    return { type, arrayType, value: null, arrayLength: count, arrayValues, contractMatches };
+    return { type, arrayType, value: null, arrayLength: count, arrayValues, contractMatches, sha256 };
   }
   if (key === "split.count") {
     return { type, arrayType: null, value: await readInteger(cursor, type, tailMinimum) };
   }
-  const expectedQwenValue = QWEN35MOE_EXACT_VALUES.get(key);
-  if (expectedQwenValue !== undefined && typeof expectedQwenValue !== "string") {
+  const capturesExactScalar = (
+    QWEN35MOE_EXACT_VALUES.has(key) || GLM52_EXACT_VALUES.has(key)
+  ) && type !== GGUF_TYPE.string;
+  if (capturesExactScalar) {
     return { type, arrayType: null, value: await readScalar(cursor, type, tailMinimum) };
   }
   cursor.skip(fixedValueBytes(type));
@@ -573,6 +728,28 @@ function qwenMetadataContractInvalidKeys(metadata: ReadonlyMap<string, MetadataE
        recurrentLayers.arrayLength !== 40 ||
        recurrentLayers.contractMatches !== true)) {
     invalid.add(QWEN35MOE_RECURRENT_LAYERS_KEY);
+  }
+
+  return [...invalid];
+}
+
+function glm52MetadataContractInvalidKeys(metadata: ReadonlyMap<string, MetadataEntry>): string[] {
+  const invalid = new Set<string>();
+
+  for (const [key, expected] of GLM52_EXACT_VALUES) {
+    const entry = metadata.get(key);
+    if (!entry || !metadataValueMatches(entry.value, expected)) invalid.add(key);
+  }
+  for (const [key, expectedLength] of GLM52_ARRAY_LENGTHS) {
+    if (metadata.get(key)?.arrayLength !== expectedLength) invalid.add(key);
+  }
+  if (metadata.get("tokenizer.ggml.token_type")?.sha256 !== GLM52_TOKEN_TYPES_SHA256) {
+    invalid.add("tokenizer.ggml.token_type");
+  }
+  const chatTemplate = metadata.get("tokenizer.chat_template");
+  if (chatTemplate?.byteLength !== GLM52_CHAT_TEMPLATE_BYTES ||
+      chatTemplate.sha256 !== GLM52_CHAT_TEMPLATE_SHA256) {
+    invalid.add("tokenizer.chat_template");
   }
 
   return [...invalid];
@@ -725,7 +902,9 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         invalidKeys: ["general.architecture"]
       });
     }
-    if (header.architecture !== "deepseek4" && header.architecture !== "qwen35moe") {
+    if (header.architecture !== "deepseek4" &&
+        header.architecture !== "qwen35moe" &&
+        header.architecture !== "glm-dsa") {
       return result(header, {
         code: "unsupported_architecture",
         message: `The current DS4 runtime does not support the ${header.architecture} GGUF architecture.`
@@ -738,16 +917,29 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         message: "DS4 ExpertMajor v1 is the fixed Qwen3.6 35B-A3B layout and cannot be used with this architecture."
       });
     }
-    if (header.artifactFormat === "ds4-expert-major-v2" && header.architecture !== "deepseek4") {
+    if (header.artifactFormat === "ds4-expert-major-v2" &&
+        header.architecture !== "deepseek4" &&
+        header.architecture !== "glm-dsa") {
       return result(header, {
         code: "missing_tensor_signature",
-        message: "DS4 ExpertMajor v2 requires the DeepSeek 4 layout."
+        message: "DS4 ExpertMajor v2 requires a pinned DeepSeek 4 or GLM-5.2 layout."
       });
     }
 
     const isQwen35Moe = header.architecture === "qwen35moe";
-    const metadataContract = isQwen35Moe ? QWEN35MOE_METADATA : DEEPSEEK4_METADATA;
-    const modelName = isQwen35Moe ? "Qwen3.6 35B A3B" : "DeepSeek 4";
+    const isGlm52 = header.architecture === "glm-dsa";
+    if (isGlm52 && header.artifactFormat !== "ds4-expert-major-v2") {
+      return result(header, {
+        code: "missing_tensor_signature",
+        message: "DSBox currently qualifies GLM-5.2 only as a single-file DS4 ExpertMajor v2 artifact."
+      });
+    }
+    const metadataContract = isQwen35Moe
+      ? QWEN35MOE_METADATA
+      : isGlm52
+        ? GLM52_METADATA
+        : DEEPSEEK4_METADATA;
+    const modelName = isQwen35Moe ? "Qwen3.6 35B A3B" : isGlm52 ? "GLM-5.2" : "DeepSeek 4";
     const missingMetadata = [...metadataContract.keys()].filter((key) => !metadata.has(key));
     if (missingMetadata.length > 0) {
       return result(header, {
@@ -810,6 +1002,55 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         });
       }
 
+      return result(header, null);
+    }
+
+    if (isGlm52) {
+      const invalidValues = glm52MetadataContractInvalidKeys(metadata);
+      if (invalidValues.length > 0) {
+        return result(header, {
+          code: "invalid_metadata_type",
+          message: `This GLM-5.2 GGUF does not match DS4's pinned metadata contract: ${invalidValues.join(", ")}.`,
+          invalidKeys: invalidValues
+        });
+      }
+      const missingTensors = [...GLM52_NATIVE_TENSOR_LAYOUT.keys()].filter((name) => !tensors.has(name));
+      if (missingTensors.length > 0) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: `This GGUF does not contain the pinned DS4 GLM-5.2 ExpertMajor v2 tensor layout: ${missingTensors.join(", ")}.`,
+          missingKeys: missingTensors
+        });
+      }
+      const invalidTensors = [...GLM52_NATIVE_TENSOR_LAYOUT].flatMap(([name, expectation]) => {
+        const descriptor = tensors.get(name);
+        return descriptor && !tensorLayoutMatches(descriptor, expectation) ? [name] : [];
+      });
+      const glmStore = tensors.get(expertMajorV2Tensor);
+      if (glmStore?.dimensions[0] !== DS4_GLM52_EXPERT_STORE_BYTES) {
+        invalidTensors.push(expertMajorV2Tensor);
+      }
+      if (invalidTensors.length > 0) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: `This GLM-5.2 GGUF has an incompatible ExpertMajor v2 tensor layout: ${invalidTensors.join(", ")}.`,
+          invalidKeys: invalidTensors
+        });
+      }
+      const canonicalRoutedTensors = [...tensors.keys()].filter((name) => QWEN35MOE_ROUTED_TENSOR.test(name));
+      if (canonicalRoutedTensors.length > 0) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: "This GLM-5.2 GGUF mixes ExpertMajor v2 with canonical routed expert tensors.",
+          invalidKeys: canonicalRoutedTensors.slice(0, 16)
+        });
+      }
+      if (tensorCount !== DS4_GLM52_NATIVE_TENSOR_COUNT) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: `DS4 requires the ${DS4_GLM52_NATIVE_TENSOR_COUNT}-tensor GLM-5.2 ExpertMajor v2 layout; this GGUF contains ${tensorCount} tensors.`
+        });
+      }
       return result(header, null);
     }
 

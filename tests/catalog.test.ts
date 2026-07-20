@@ -328,6 +328,69 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.recommended).toBeNull();
   });
 
+  it("exposes the single-file GLM-5.2 ExpertMajor v2 artifact with a 64 GB floor", async () => {
+    const repository = "andreaborio/GLM-5.2-DS4-ExpertMajor-v2-GGUF";
+    const revision = "7".repeat(40);
+    const nativeFile = "GLM-5.2-DS4-ExpertMajor-v2-Q2_K.gguf";
+    const runtimeCommit = "8".repeat(40);
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestedUrl(input);
+      if (url.includes("/api/models?")) return jsonResponse([{ id: repository, sha: revision }]);
+      if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
+        return jsonResponse({
+          id: repository,
+          sha: revision,
+          tags: ["ds4", "glm-5.2", "experimental", "expert-major"],
+          siblings: [{
+            rfilename: nativeFile,
+            lfs: { size: 262_147_193_504, sha256: "9".repeat(64) }
+          }]
+        });
+      }
+      if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
+        return jsonResponse({
+          schemaVersion: 1,
+          name: "GLM-5.2 DS4 ExpertMajor v2 Q2_K",
+          status: "experimental",
+          recommended: false,
+          modelId: "glm-5.2",
+          runtimeBranch: "main",
+          runtimeCommit,
+          file: nativeFile,
+          minimumMemoryGb: 64,
+          architecture: "moe",
+          artifact: {
+            format: {
+              id: "ds4-expert-major",
+              version: 2,
+              tensor: "ds4.expert_major.v2",
+              requiresRuntime: "andreaborio/ds4"
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+    const native = catalog.models.find((model) => model.repository === repository);
+
+    expect(native).toMatchObject({
+      modelId: "glm-5.2",
+      artifactFormat: "ds4-expert-major-v2",
+      runtimeCommit,
+      outputFile: nativeFile,
+      minimumMemoryGb: 64,
+      totalBytes: 262_147_193_504,
+      installable: true,
+      experimental: true,
+      recommended: false,
+      variantCount: 1,
+      unavailableReason: null
+    });
+    expect(catalog.recommended).toBeNull();
+  });
+
   it("keeps a renamed Qwen ExpertMajor v1 install active through its previous repository id", async () => {
     const repository = "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-GGUF";
     const previousRepository = "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF";
