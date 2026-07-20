@@ -152,7 +152,7 @@ describe("engine arguments", () => {
     const config = createDefaultConfig(128 * 1024 ** 3);
     expect(config.streaming.cacheMode).toBe("auto");
     expect(buildEngineArguments(config)).not.toContain("--ssd-streaming-cache-experts");
-    const glm = createDefaultConfig(16 * 1024 ** 3);
+    const glm = createDefaultConfig(64 * 1024 ** 3);
     glm.model.id = "glm-5.2";
     glm.model.path = "/models/glm-5.2.gguf";
     glm.streaming.cacheMode = "manual";
@@ -367,7 +367,7 @@ describe("Qwen one-click preparation", () => {
     vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([]);
     vi.spyOn(internal, "runtimeIncludesCommits").mockImplementation(async (directory, commits) => {
       ancestryChecks.push([...commits]);
-      return directory === "/home/alice/.dsbox/runtime/andreaborio-ds4-expert-major";
+      return directory === "/home/alice/.dsbox/runtime/andreaborio-ds4";
     });
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValueOnce(false).mockResolvedValue(true);
     vi.spyOn(internal, "binaryHasQwenRuntime").mockResolvedValue(true);
@@ -380,7 +380,7 @@ describe("Qwen one-click preparation", () => {
     expect(selected.repository).toMatchObject({
       url: "https://github.com/andreaborio/ds4.git",
       branch: "main",
-      directory: "/home/alice/.dsbox/runtime/andreaborio-ds4-expert-major"
+      directory: "/home/alice/.dsbox/runtime/andreaborio-ds4"
     });
     expect(ancestryChecks).not.toHaveLength(0);
     expect(ancestryChecks.every((commits) => commits.length === 1)).toBe(true);
@@ -428,8 +428,13 @@ describe("Qwen one-click preparation", () => {
     expect(build).not.toHaveBeenCalled();
   });
 
-  it("installs the dedicated qualified GLM channel when no usable checkout exists", async () => {
+  it("installs the unified qualified main runtime when no usable GLM checkout exists", async () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
+    config.repository = {
+      url: "https://example.com/retired-glm-runtime.git",
+      branch: "retired-glm-runtime",
+      directory: "/work/retired-glm-runtime"
+    };
     let current = structuredClone(config);
     const store = {
       homeDirectory: "/home/alice/.dsbox",
@@ -440,7 +445,7 @@ describe("Qwen one-click preparation", () => {
       })
     } as unknown as ConfigStore;
     const runtime = new RuntimeManager(store, new EventBus());
-    const targetDirectory = "/home/alice/.dsbox/runtime/andreaborio-ds4-glm52";
+    const targetDirectory = "/home/alice/.dsbox/runtime/andreaborio-ds4";
     const internal = runtime as unknown as {
       ensureExpertMajorRuntimeCheckout(
         config: DsboxConfig,
@@ -476,6 +481,7 @@ describe("Qwen one-click preparation", () => {
       directory: targetDirectory
     });
     expect(GLM52_RUNTIME_COMMIT).toMatch(/^[a-f0-9]{40}$/);
+    expect(GLM52_RUNTIME_BRANCH).toBe("main");
     expect(install).toHaveBeenCalledWith(false);
   });
 

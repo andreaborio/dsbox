@@ -54,8 +54,8 @@ const localModelInventoryVersion = 1;
 export const QWEN35_RUNTIME_BRANCH = "codex/qwen-tool-dialect";
 export const QWEN35_RUNTIME_COMMIT = "fc1561f36080829ecc43695af29d82782a852e86";
 export const EXPERT_MAJOR_RUNTIME_COMMIT = "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0";
-export const GLM52_RUNTIME_BRANCH = "codex/glm52-upstream-clean-bench";
-export const GLM52_RUNTIME_COMMIT = "08f3ebedcf000aadafe0b58211c571dd9dba14a8";
+export const GLM52_RUNTIME_BRANCH = "main";
+export const GLM52_RUNTIME_COMMIT = "d28a8bcd6c992d9bf643f54115d9df84b6298d5d";
 const qwenUnsupportedEnvironmentKeys = [
   "DS4_EXPERT_PROFILE",
   "DS4_EXPERT_HOTLIST",
@@ -1861,8 +1861,8 @@ export class RuntimeManager {
       ]);
       return header.includes('DS4_EXPERT_STORE_V2_TENSOR "ds4.expert_major.v2"')
         && header.includes("DS4_EXPERT_STORE_FAMILY_GLM_DSA")
-        && implementation.includes("model_install_glm_native_expert_store_metal")
-        && implementation.includes("native GLM ExpertMajor v2 active");
+        && implementation.includes("model_expand_glm_native_expert_store")
+        && implementation.includes("GLM inference requires a DS4 ExpertMajor v2 GGUF");
     } catch {
       return false;
     }
@@ -1872,7 +1872,8 @@ export class RuntimeManager {
     try {
       const binary = await readFile(path.join(directory, "ds4-server"));
       return binary.includes(Buffer.from("ds4.expert_major.v2"))
-        && binary.includes(Buffer.from("native GLM ExpertMajor v2 active"));
+        && binary.includes(Buffer.from("GLM inference requires a DS4 ExpertMajor v2 GGUF"))
+        && binary.includes(Buffer.from("embedded expert-major store active"));
     } catch {
       return false;
     }
@@ -1998,8 +1999,8 @@ export class RuntimeManager {
         this.log("info", "dsbox", `Using the qualified ${label} runtime at ${checkout.path}.`);
         await this.refresh();
       } else {
-        const targetBranch = isGlm52 ? GLM52_RUNTIME_BRANCH : "main";
-        const targetDirectory = isGlm52 ? "andreaborio-ds4-glm52" : "andreaborio-ds4-expert-major";
+        const targetBranch = "main";
+        const targetDirectory = "andreaborio-ds4";
         const gitDirectory = path.join(selected.repository.directory, ".git");
         const currentIsManagedTarget = selected.repository.url === "https://github.com/andreaborio/ds4.git"
           && selected.repository.branch === targetBranch
@@ -2017,7 +2018,7 @@ export class RuntimeManager {
           "info",
           "git",
           isGlm52
-            ? `Preparing the qualified DS4 GLM channel at ${GLM52_RUNTIME_COMMIT.slice(0, 9)} or newer.`
+            ? `Preparing the qualified DS4 main runtime for GLM-5.2 at ${GLM52_RUNTIME_COMMIT.slice(0, 9)} or newer.`
             : `Preparing the unified DS4 main runtime required by ${label}.`
         );
         await this.installOrUpdate(allowModelSwitch);
@@ -2027,7 +2028,7 @@ export class RuntimeManager {
 
     if (!(await sourceIsQualified(selected.repository.directory))) {
       if (isGlm52) {
-        throw new Error(`The ${GLM52_RUNTIME_BRANCH} channel does not include the qualified GLM-5.2 ExpertMajor v2 runtime ${GLM52_RUNTIME_COMMIT.slice(0, 9)}`);
+        throw new Error(`DS4 main does not include the qualified GLM-5.2 ExpertMajor v2 runtime ${GLM52_RUNTIME_COMMIT.slice(0, 9)}`);
       }
       const requirements = requiredCommits.map((commit) => commit.slice(0, 9)).join(" and ");
       throw new Error(`The DS4 main channel does not yet include the ${label} runtime requirements (${requirements})`);
@@ -2122,7 +2123,7 @@ export class RuntimeManager {
         qwen35
           ? "DS4 Qwen AUTO residency enabled; DSBox pressure/swap watchdog armed at 1 Hz."
           : glm52
-            ? "DS4 GLM AUTO residency and gold profile enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+            ? "DS4 GLM automatic SSD/cache plan and gold profile enabled; DSBox pressure/swap watchdog armed at 1 Hz."
             : "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
       );
     }

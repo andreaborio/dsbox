@@ -59,8 +59,7 @@ const responsePresets = [
 ] as const;
 
 const engineBranches = [
-  { value: "main", label: "Stable · main" },
-  { value: "codex/glm52-upstream-clean-bench", label: "GLM 5.2 · Experimental" }
+  { value: "main", label: "Stable · main" }
 ] as const;
 
 function cloneConfig(config: DsboxConfig): DsboxConfig {
