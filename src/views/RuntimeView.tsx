@@ -193,8 +193,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   const recentLogs = snapshot.logs.slice(-8);
   const displayedCommand = useMemo(() => {
     if (!qwenManaged || ["starting", "running", "stopping"].includes(runtime.phase) || command.length < 2) return command;
-    const binaryIndex = command[0] === "DS4_QWEN_EXPERIMENTAL_METAL=1" ? 1 : 0;
-    return command.map((value, index) => index === binaryIndex ? "<Qwen-capable DS4 checkout>/ds4-server" : value);
+    return command.map((value, index) => index === 0 ? "<Unified ExpertMajor v2 DS4 checkout>/ds4-server" : value);
   }, [command, qwenManaged, runtime.phase]);
   const progress = activeDownload
     ? activeDownloadPercent!

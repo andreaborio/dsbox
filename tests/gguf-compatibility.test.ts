@@ -8,6 +8,8 @@ import {
   DS4_GLM52_EXPERT_STORE_BYTES,
   DS4_GLM52_NATIVE_TENSOR_COUNT,
   DS4_GLM52_NATIVE_TENSOR_SIGNATURE,
+  DS4_QWEN35MOE_EXPERT_STORE_BYTES,
+  DS4_QWEN35MOE_NATIVE_TENSOR_COUNT,
   DS4_QWEN35MOE_TENSOR_SIGNATURE,
   DS4_QWEN35MOE_NATIVE_TENSOR_SIGNATURE,
   inspectDs4Gguf
@@ -163,18 +165,19 @@ afterEach(async () => {
 });
 
 describe("DS4 GGUF compatibility inspection", () => {
-  it("accepts a DS4-native DeepSeek 4 directory without reading tensor payload", async () => {
+  it("rejects the former canonical DeepSeek 4 directory", async () => {
     const result = await inspect(fixture());
 
     expect(result).toMatchObject({
-      compatible: true,
+      compatible: false,
       ggufVersion: 3,
       tensorCount: DS4_DEEPSEEK4_TENSOR_SIGNATURE.length,
       architecture: "deepseek4",
       splitCount: null,
       artifactFormat: null,
-      reason: null
+      reason: { code: "missing_tensor_signature" }
     });
+    expect(result.reason?.message).toContain("ExpertMajor v2");
   });
 
   it("recognizes the DS4-only DeepSeek ExpertMajor v2 tensor contract", async () => {
@@ -254,46 +257,67 @@ describe("DS4 GGUF compatibility inspection", () => {
     });
   });
 
-  it("accepts the normalized Qwen3.6 35B A3B text-only tensor contract", async () => {
+  it("recognizes the pinned Qwen3.6 ExpertMajor v2 header", async () => {
     const result = await inspect(createDs4QwenGgufFixture());
 
     expect(result).toMatchObject({
       compatible: true,
       ggufVersion: 3,
-      tensorCount: 733,
+      tensorCount: DS4_QWEN35MOE_NATIVE_TENSOR_COUNT,
       architecture: "qwen35moe",
       splitCount: null,
-      artifactFormat: null,
+      artifactFormat: "ds4-expert-major-v2",
       reason: null
     });
     expect(DS4_QWEN35MOE_TENSOR_SIGNATURE).toHaveLength(733);
-  });
-
-  it("recognizes the DS4-only Qwen ExpertMajor v1 tensor contract", async () => {
-    const result = await inspect(createDs4QwenGgufFixture({ nativeExpertMajorV1: true }));
-
-    expect(result).toMatchObject({
-      compatible: true,
-      architecture: "qwen35moe",
-      artifactFormat: "ds4-expert-major-v1",
-      tensorCount: 614,
-      reason: null
-    });
     expect(DS4_QWEN35MOE_NATIVE_TENSOR_SIGNATURE).toHaveLength(613);
+    expect(DS4_QWEN35MOE_EXPERT_STORE_BYTES).toBe(18_119_405_568);
   });
 
-  it("rejects the raw Unsloth Qwen artifact until its four tensors are normalized for DS4", async () => {
+  it("rejects the legacy Qwen ExpertMajor v1 tensor contract", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ legacyExpertMajorV1: true }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.artifactFormat).toBeNull();
+    expect(result.reason).toMatchObject({ code: "missing_tensor_signature" });
+    expect(result.reason?.message).toContain("v1 is no longer runnable");
+  });
+
+  it("rejects the canonical Qwen tensor contract", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ canonical: true }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.artifactFormat).toBeNull();
+    expect(result.reason?.message).toContain("ExpertMajor v2");
+  });
+
+  it("rejects a Qwen ExpertMajor store with a different routed payload extent", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ expertStoreBytes: 4096 }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "missing_tensor_signature",
+      invalidKeys: ["ds4.expert_major.v2"]
+    });
+  });
+
+  it("rejects Qwen ExpertMajor v2 mixed with canonical routed tensors", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ includeCanonicalRoutedTensor: true }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.reason).toMatchObject({
+      code: "missing_tensor_signature",
+      invalidKeys: ["blk.0.ffn_gate_exps.weight"]
+    });
+  });
+
+  it("rejects a Qwen v2 artifact whose non-routed output tensor is not normalized", async () => {
     const result = await inspect(createDs4QwenGgufFixture({ rawUnslothLayout: true }));
 
     expect(result.compatible).toBe(false);
     expect(result.reason).toMatchObject({
       code: "missing_tensor_signature",
-      invalidKeys: [
-        "output.weight",
-        "blk.34.ffn_down_exps.weight",
-        "blk.38.ffn_down_exps.weight",
-        "blk.39.ffn_down_exps.weight"
-      ]
+      invalidKeys: ["output.weight"]
     });
     expect(result.reason?.message).toContain("not normalized");
   });
@@ -337,7 +361,7 @@ describe("DS4 GGUF compatibility inspection", () => {
   });
 
   it("reports the missing deepseek4.vocab_size key explicitly", async () => {
-    const result = await inspect(fixture({ omitMetadata: "deepseek4.vocab_size" }));
+    const result = await inspect(createDs4GgufFixture({ includeVocabSize: false }));
 
     expect(result.reason).toMatchObject({
       code: "missing_metadata",
@@ -353,13 +377,11 @@ describe("DS4 GGUF compatibility inspection", () => {
     expect(result.reason?.message).toContain("ExpertMajor v2");
   });
 
-  it("requires a DS4-native tensor signature", async () => {
+  it("rejects a canonical DeepSeek tensor signature even when its metadata is complete", async () => {
     const result = await inspect(fixture({ tensors: DS4_DEEPSEEK4_TENSOR_SIGNATURE.slice(0, -1) }));
 
-    expect(result.reason).toMatchObject({
-      code: "missing_tensor_signature",
-      missingKeys: ["blk.0.ffn_gate_exps.weight"]
-    });
+    expect(result.reason?.code).toBe("missing_tensor_signature");
+    expect(result.reason?.message).toContain("ExpertMajor v2");
   });
 
   it("rejects older GGUF formats before parsing metadata", async () => {

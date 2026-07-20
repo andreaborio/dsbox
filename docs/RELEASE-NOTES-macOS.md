@@ -1,8 +1,9 @@
-## DSBox 0.2.9
+## DSBox 0.3.0
 
-This release moves the single-file GLM-5.2 DS4 ExpertMajor v2 artifact onto the
-unified DS4 `main` runtime and removes the retired experimental channel from
-normal setup.
+This breaking release makes ExpertMajor v2 the only runnable MoE format for
+Qwen3.6, DeepSeek V4 Flash, and GLM-5.2. It moves all three families onto the
+unified DS4 `main` runtime, removes legacy Qwen flags and branches, and selects
+only revision-pinned v2 files from the consolidated Hugging Face repositories.
 
 ### GLM-5.2 ExpertMajor v2
 
@@ -12,7 +13,7 @@ normal setup.
 - Enforces the 64 GB minimum and marks the artifact as **DS4 only** instead of
   implying compatibility with llama.cpp, MLX, or generic GGUF launchers.
 - Selects and builds DS4 `main` at qualified commit
-  `d28a8bcd6c992d9bf643f54115d9df84b6298d5d` or a verified descendant.
+  `fe0919b70571678408f2c8c52aec8d49525e715c` or a verified descendant.
 - Uses DS4's automatic SSD/cache plan and qualified GLM Metal profile without
   adding redundant SSD mode, full-layer, cache-size, or preload flags.
 - Reuses the unified ExpertMajor checkout and removes the obsolete GLM branch
@@ -29,9 +30,8 @@ normal setup.
   and an exact runtime commit.
 - Older GLM files, sidecars, layout revisions, and retired tuning modes are not
   accepted as compatibility fallbacks.
-- GLM remains outside the default recommendation slot because it is a
-  specialized 244 GiB artifact; existing Qwen and DeepSeek catalog behavior is
-  unchanged.
+- Qwen, DeepSeek, and GLM catalog downloads all require the same ExpertMajor v2
+  manifest and unified-runtime gate.
 
 ### Verification
 

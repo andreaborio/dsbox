@@ -84,7 +84,6 @@ function publisherLabel(publisher: CatalogPublisher, sources: CatalogSource[]): 
   if (declared?.label) return declared.label;
   const normalized = publisher.toLowerCase();
   if (normalized === "andreaborio") return "DSBox";
-  if (normalized === "antirez") return "DwarfStar";
   return publisher.replaceAll(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 

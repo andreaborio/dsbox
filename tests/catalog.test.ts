@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe("Hugging Face model catalog", () => {
-  it("groups a current-style multipart model for in-app download without recommending experimental builds", async () => {
+  it("hides the retired multipart GLM experimental repository", async () => {
     const repository = "andreaborio/glm52-ds4-native-64g-q2k-experimental";
     const revision = "696c749dada98815931d8f704e4ba1f1fdfeb5a7";
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -46,29 +46,7 @@ describe("Hugging Face model catalog", () => {
     const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
 
     expect(catalog.recommended).toBeNull();
-    expect(catalog.models).toHaveLength(1);
-    expect(catalog.models[0]).toMatchObject({
-      repository,
-      revision,
-      label: "GLM 5.2 DS4 Native 64 GB Q2_K Experimental",
-      experimental: true,
-      installable: true,
-      recommended: false,
-      outputFile: "model.gguf",
-      totalBytes: 244,
-      unavailableReason: null,
-      variantCount: 1
-    });
-    expect(catalog.models[0].files.map((file) => file.name)).toEqual([
-      "model.gguf.part-01",
-      "model.gguf.part-02"
-    ]);
-    expect(catalog.models[0].variants[0]).toMatchObject({
-      installable: true,
-      outputFile: "model.gguf",
-      totalBytes: 244,
-      assembly: { type: "concatenate", outputFile: "model.gguf" }
-    });
+    expect(catalog.models).toEqual([]);
   });
 
   it("recommends a compatible stable single-GGUF manifest and pins every lookup to its revision", async () => {
@@ -105,8 +83,16 @@ describe("Hugging Face model catalog", () => {
           minimumMemoryGb: 64,
           modelId: "deepseek-v4-flash",
           runtimeBranch: "main",
-          runtimeCommit: "d".repeat(40),
-          file: modelFile
+          runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
+          file: modelFile,
+          artifact: {
+            format: {
+              id: "ds4-expert-major",
+              version: 2,
+              tensor: "ds4.expert_major.v2",
+              requiresRuntime: "andreaborio/ds4"
+            }
+          }
         });
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -121,7 +107,7 @@ describe("Hugging Face model catalog", () => {
       revision,
       label: "DeepSeek V4 Flash for DSBox",
       runtimeBranch: "main",
-      runtimeCommit: "d".repeat(40),
+      runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
       outputFile: modelFile,
       installable: true,
       experimental: false,
@@ -203,69 +189,77 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.recommended).toBeNull();
   });
 
-  it("hides the redundant DSBox DeepSeek mirror while keeping other DSBox catalog entries", async () => {
-    const mirrorRepository = "andreaborio/DeepSeek-V4-Flash-DS4-GGUF";
-    const qwenRepository = "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF";
-    const mirrorRevision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const qwenRevision = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  it("hides retired repositories while keeping the three consolidated v2 entries", async () => {
+    const hiddenRepositories = [
+      "andreaborio/DeepSeek-V4-Flash-DS4-ExpertMajor-v2-GGUF",
+      "andreaborio/GLM-5.2-DS4-ExpertMajor-v2-GGUF",
+      "andreaborio/glm52-ds4-native-64g-q2k-experimental",
+      "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-GGUF",
+      "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-GGUF"
+    ];
+    const publicRepositories = [
+      "andreaborio/DeepSeek-V4-Flash-DS4-GGUF",
+      "andreaborio/GLM-5.2-DS4-GGUF",
+      "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF"
+    ];
+    const repositories = [...hiddenRepositories, ...publicRepositories];
+    const revisions = new Map(repositories.map((repository, index) => [repository, String(index + 1).repeat(40)]));
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = requestedUrl(input);
       if (url.includes("/api/models?")) {
-        return jsonResponse([
-          { id: mirrorRepository, sha: mirrorRevision },
-          { id: qwenRepository, sha: qwenRevision }
-        ]);
+        return jsonResponse(repositories.map((id) => ({ id, sha: revisions.get(id) })));
       }
-      if (url === `https://huggingface.co/api/models/${mirrorRepository}/revision/${mirrorRevision}?blobs=true`) {
-        return jsonResponse({
-          id: mirrorRepository,
-          sha: mirrorRevision,
-          tags: ["ds4", "deepseek-v4"],
-          siblings: [{ rfilename: "mirror.gguf", lfs: { size: 1024, sha256: "a".repeat(64) } }]
-        });
-      }
-      if (url === `https://huggingface.co/${mirrorRepository}/resolve/${mirrorRevision}/dsbox.json`) {
-        return jsonResponse({
-          schemaVersion: 1,
-          status: "stable",
-          file: "mirror.gguf",
-          minimumMemoryGb: 64,
-          modelId: "deepseek-v4-flash",
-          runtimeBranch: "main",
-          runtimeCommit: "c".repeat(40),
-          recommended: false
-        });
-      }
-      if (url === `https://huggingface.co/api/models/${qwenRepository}/revision/${qwenRevision}?blobs=true`) {
-        return jsonResponse({
-          id: qwenRepository,
-          sha: qwenRevision,
-          tags: ["ds4", "qwen3.6", "experimental"],
-          siblings: [{ rfilename: "qwen.gguf", lfs: { size: 2048, sha256: "b".repeat(64) } }]
-        });
-      }
-      if (url === `https://huggingface.co/${qwenRepository}/resolve/${qwenRevision}/dsbox.json`) {
-        return jsonResponse({
-          schemaVersion: 1,
-          status: "experimental",
-          file: "qwen.gguf",
-          minimumMemoryGb: 16,
-          modelId: "qwen3.6-35b-a3b",
-          runtimeBranch: "main",
-          runtimeCommit: "d".repeat(40)
-        });
+      for (const repository of repositories) {
+        const revision = revisions.get(repository)!;
+        const isQwen = repository.includes("Qwen3.6");
+        const isGlm = repository.toLowerCase().includes("glm");
+        const file = isQwen
+          ? "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-Q4_K_S.gguf"
+          : isGlm
+            ? "GLM-5.2-DS4-ExpertMajor-v2-Q2_K.gguf"
+            : "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf";
+        if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
+          return jsonResponse({
+            id: repository,
+            sha: revision,
+            tags: ["ds4", isQwen ? "qwen3.6" : isGlm ? "glm-5.2" : "deepseek-v4", "expert-major"],
+            siblings: [{ rfilename: file, lfs: { size: 2048, sha256: "b".repeat(64) } }]
+          });
+        }
+        if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
+          return jsonResponse({
+            schemaVersion: 1,
+            status: "stable",
+            file,
+            minimumMemoryGb: 64,
+            modelId: isQwen ? "qwen3.6-35b-a3b" : isGlm ? "glm-5.2" : "deepseek-v4-flash",
+            runtimeBranch: "main",
+            runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
+            artifact: {
+              format: {
+                id: "ds4-expert-major",
+                version: 2,
+                tensor: "ds4.expert_major.v2",
+                requiresRuntime: "andreaborio/ds4"
+              }
+            }
+          });
+        }
       }
       throw new Error(`Unexpected request: ${url}`);
     }));
 
     const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
 
-    expect(catalog.models.map((model) => model.repository)).not.toContain(mirrorRepository);
-    expect(catalog.models.map((model) => model.repository)).toContain(qwenRepository);
+    expect(catalog.models.map((model) => model.repository).sort()).toEqual([...publicRepositories].sort());
+    expect(catalog.models.every((model) =>
+      model.artifactFormat === "ds4-expert-major-v2" && model.installable
+    )).toBe(true);
   });
 
   it("exposes a revision-pinned DeepSeek ExpertMajor v2 artifact as DS4-only", async () => {
-    const repository = "andreaborio/DeepSeek-V4-Flash-DS4-ExpertMajor-v2-GGUF";
+    const repository = "andreaborio/DeepSeek-V4-Flash-DS4-GGUF";
+    const previousRepository = "andreaborio/DeepSeek-V4-Flash-DS4-ExpertMajor-v2-GGUF";
     const revision = "1".repeat(40);
     const nativeFile = "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf";
     const canonicalFile = "DeepSeek-V4-Flash-canonical.gguf";
@@ -291,9 +285,10 @@ describe("Hugging Face model catalog", () => {
           recommended: false,
           modelId: "deepseek-v4-flash",
           runtimeBranch: "main",
-          runtimeCommit: "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0",
+          runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
           file: nativeFile,
           minimumMemoryGb: 64,
+          previousRepositories: [previousRepository],
           architecture: "moe",
           artifact: {
             format: {
@@ -313,7 +308,8 @@ describe("Hugging Face model catalog", () => {
 
     expect(native).toMatchObject({
       artifactFormat: "ds4-expert-major-v2",
-      runtimeCommit: "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0",
+      runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
+      previousRepositories: [previousRepository],
       outputFile: nativeFile,
       installable: true,
       experimental: true,
@@ -329,10 +325,11 @@ describe("Hugging Face model catalog", () => {
   });
 
   it("exposes the single-file GLM-5.2 ExpertMajor v2 artifact with a 64 GB floor", async () => {
-    const repository = "andreaborio/GLM-5.2-DS4-ExpertMajor-v2-GGUF";
+    const repository = "andreaborio/GLM-5.2-DS4-GGUF";
+    const previousRepository = "andreaborio/GLM-5.2-DS4-ExpertMajor-v2-GGUF";
     const revision = "7".repeat(40);
     const nativeFile = "GLM-5.2-DS4-ExpertMajor-v2-Q2_K.gguf";
-    const runtimeCommit = "8".repeat(40);
+    const runtimeCommit = "fe0919b70571678408f2c8c52aec8d49525e715c";
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = requestedUrl(input);
       if (url.includes("/api/models?")) return jsonResponse([{ id: repository, sha: revision }]);
@@ -358,6 +355,7 @@ describe("Hugging Face model catalog", () => {
           runtimeCommit,
           file: nativeFile,
           minimumMemoryGb: 64,
+          previousRepositories: [previousRepository],
           architecture: "moe",
           artifact: {
             format: {
@@ -381,6 +379,7 @@ describe("Hugging Face model catalog", () => {
       runtimeCommit,
       outputFile: nativeFile,
       minimumMemoryGb: 64,
+      previousRepositories: [previousRepository],
       totalBytes: 262_147_193_504,
       installable: true,
       experimental: true,
@@ -391,11 +390,13 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.recommended).toBeNull();
   });
 
-  it("keeps a renamed Qwen ExpertMajor v1 install active through its previous repository id", async () => {
-    const repository = "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-GGUF";
-    const previousRepository = "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF";
+  it("selects only Qwen v2 from the consolidated public repository", async () => {
+    const repository = "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF";
+    const previousRepository = "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-GGUF";
     const revision = "2".repeat(40);
-    const modelFile = "Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-Q4_K_S.gguf";
+    const canonicalFile = "Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf";
+    const v1File = "Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-Q4_K_S.gguf";
+    const modelFile = "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-Q4_K_S.gguf";
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = requestedUrl(input);
       if (url.includes("/api/models?")) return jsonResponse([{ id: repository, sha: revision }]);
@@ -403,26 +404,30 @@ describe("Hugging Face model catalog", () => {
         return jsonResponse({
           id: repository,
           sha: revision,
-          tags: ["ds4", "qwen3.6", "experimental", "expert-major"],
-          siblings: [{ rfilename: modelFile, lfs: { size: 20_808_970_240, sha256: "c".repeat(64) } }]
+          tags: ["ds4", "qwen3.6", "expert-major"],
+          siblings: [
+            { rfilename: canonicalFile, lfs: { size: 20_808_563_424, sha256: "a".repeat(64) } },
+            { rfilename: v1File, lfs: { size: 20_808_970_240, sha256: "b".repeat(64) } },
+            { rfilename: modelFile, lfs: { size: 20_808_566_880, sha256: "c".repeat(64) } }
+          ]
         });
       }
       if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
         return jsonResponse({
           schemaVersion: 1,
-          status: "experimental",
-          recommended: false,
+          status: "stable",
+          recommended: true,
           modelId: "qwen3.6-35b-a3b",
           runtimeBranch: "main",
-          runtimeCommit: "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0",
+          runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
           file: modelFile,
-          minimumMemoryGb: 16,
+          minimumMemoryGb: 64,
           previousRepositories: [previousRepository, null, 42, "not a repository", previousRepository],
           artifact: {
             format: {
               id: "ds4-expert-major",
-              version: 1,
-              tensor: "ds4.expert_major.v1",
+              version: 2,
+              tensor: "ds4.expert_major.v2",
               requiresRuntime: "andreaborio/ds4"
             }
           }
@@ -435,16 +440,23 @@ describe("Hugging Face model catalog", () => {
     const qwen = catalog.models.find((model) => model.repository === repository);
 
     expect(qwen).toMatchObject({
-      artifactFormat: "ds4-expert-major-v1",
+      artifactFormat: "ds4-expert-major-v2",
       previousRepositories: [previousRepository],
       installable: true,
-      recommended: false,
+      recommended: true,
+      outputFile: modelFile,
       variantCount: 1
     });
+    expect(qwen?.variants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ outputFile: canonicalFile, installable: false }),
+      expect.objectContaining({ outputFile: v1File, installable: false }),
+      expect.objectContaining({ outputFile: modelFile, installable: true })
+    ]));
+    expect(catalog.recommended?.repository).toBe(repository);
   });
 
   it("refuses an ExpertMajor-named repository without the explicit DS4-only format contract", async () => {
-    const repository = "andreaborio/DeepSeek-V4-Flash-DS4-ExpertMajor-v2-GGUF";
+    const repository = "andreaborio/DeepSeek-V4-Flash-DS4-Lab-ExpertMajor-v2-GGUF";
     const revision = "3".repeat(40);
     const modelFile = "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf";
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
@@ -464,7 +476,7 @@ describe("Hugging Face model catalog", () => {
           status: "experimental",
           modelId: "deepseek-v4-flash",
           runtimeBranch: "main",
-          runtimeCommit: "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0",
+          runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
           file: modelFile,
           minimumMemoryGb: 64
         });
@@ -503,7 +515,7 @@ describe("Hugging Face model catalog", () => {
           status: "experimental",
           modelId: "deepseek-v4-flash",
           runtimeBranch: "main",
-          runtimeCommit: "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0",
+          runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
           file: modelFile,
           minimumMemoryGb: 64
         });
@@ -548,19 +560,28 @@ describe("Hugging Face model catalog", () => {
     const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
     const model = catalog.models.find((candidate) => candidate.repository === repository);
 
-    expect(model).toMatchObject({ installable: true, artifactFormat: null, variantCount: 2 });
+    expect(model).toMatchObject({
+      installable: false,
+      artifactFormat: null,
+      variantCount: 2,
+      unavailableReason: "deepseek-v4-flash requires a manifest-pinned DS4 ExpertMajor v2 artifact"
+    });
     expect(model?.variants).toEqual(expect.arrayContaining([
-      expect.objectContaining({ outputFile: canonicalFile, installable: true, unavailableReason: null }),
+      expect.objectContaining({
+        outputFile: canonicalFile,
+        installable: false,
+        unavailableReason: "deepseek-v4-flash requires a manifest-pinned DS4 ExpertMajor v2 artifact"
+      }),
       expect.objectContaining({
         outputFile: unknownNativeFile,
         installable: false,
-        unavailableReason: "DSBox does not support DS4 ExpertMajor v3"
+        unavailableReason: "deepseek-v4-flash requires a manifest-pinned DS4 ExpertMajor v2 artifact"
       })
     ]));
   });
 
   it("requires the ExpertMajor manifest version to be an exact JSON integer", async () => {
-    const repository = "andreaborio/DeepSeek-V4-Flash-DS4-ExpertMajor-v2-GGUF";
+    const repository = "andreaborio/DeepSeek-V4-Flash-DS4-Lab-ExpertMajor-v2-GGUF";
     const revision = "6".repeat(40);
     const modelFile = "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf";
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
@@ -580,7 +601,7 @@ describe("Hugging Face model catalog", () => {
           status: "experimental",
           modelId: "deepseek-v4-flash",
           runtimeBranch: "main",
-          runtimeCommit: "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0",
+          runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
           file: modelFile,
           minimumMemoryGb: 64,
           artifact: {
@@ -727,90 +748,20 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.recommended).toBeNull();
   });
 
-  it("offers only the checksum-pinned DS4-native DwarfStar model for one-click download", async () => {
-    const repository = "antirez/deepseek-v4-gguf";
-    const revision = "9170bf42beb77f38006e016503ecace31f2bd9a0";
-    const modelFile = "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf";
-    const modelSha256 = "efc7ed607ff27076e3e501fc3fefefa33c0ed8cf1eff483a2b7fdc0c2e616668";
+  it("removes the canonical antirez source from the catalog", async () => {
     const urls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = requestedUrl(input);
       urls.push(url);
       if (url.includes("author=andreaborio")) return jsonResponse([]);
-      if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
-        return jsonResponse({
-          id: repository,
-          sha: revision,
-          lastModified: "2026-05-31T11:28:43.000Z",
-          siblings: [
-            { rfilename: modelFile, lfs: { size: 86_720_111_488, sha256: modelSha256 } },
-            { rfilename: "unverified-alternative.gguf", lfs: { size: 12, sha256: "a".repeat(64) } }
-          ]
-        });
-      }
-      throw new Error(`Unexpected request: ${url}`);
+      return jsonResponse({ error: "not found" }, 404);
     }));
 
     const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
 
-    expect(catalog.sources).toContainEqual({
-      id: "antirez",
-      label: "DwarfStar",
-      url: "https://huggingface.co/antirez/deepseek-v4-gguf"
-    });
-    expect(catalog.recommended).toMatchObject({
-      publisher: "antirez",
-      repository,
-      revision,
-      label: "DeepSeek V4 Flash Q2 Imatrix",
-      modelId: "deepseek-v4-flash",
-      runtimeBranch: "main",
-      runtimeCommit: "1523b2681eefaf2688fc98be3fe629641ac314b0",
-      minimumMemoryGb: 64,
-      architecture: "moe",
-      installable: true,
-      recommended: true,
-      outputFile: modelFile,
-      totalBytes: 86_720_111_488,
-      variantCount: 1,
-      unavailableReason: null,
-      sourceUrl: `https://huggingface.co/${repository}/tree/${revision}`
-    });
-    expect(catalog.recommended?.files).toEqual([{
-      name: modelFile,
-      sizeBytes: 86_720_111_488,
-      sha256: modelSha256
-    }]);
-    expect(catalog.recommended?.variants).toHaveLength(1);
-    expect(catalog.recommended?.variants[0]?.files).toHaveLength(1);
-    expect(urls.filter((url) => url.includes(repository))).toEqual([
-      `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`
-    ]);
-  });
-
-  it("does not expose the trusted model if Hugging Face metadata differs from its pin", async () => {
-    const repository = "antirez/deepseek-v4-gguf";
-    const revision = "9170bf42beb77f38006e016503ecace31f2bd9a0";
-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
-      const url = requestedUrl(input);
-      if (url.includes("author=andreaborio")) return jsonResponse([]);
-      if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
-        return jsonResponse({
-          id: repository,
-          sha: revision,
-          siblings: [{
-            rfilename: "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf",
-            lfs: { size: 86_720_111_488, sha256: "0".repeat(64) }
-          }]
-        });
-      }
-      throw new Error(`Unexpected request: ${url}`);
-    }));
-
-    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
-
+    expect(catalog.sources.map((source) => source.id)).toEqual(["andreaborio", "unsloth"]);
     expect(catalog.models).toEqual([]);
     expect(catalog.recommended).toBeNull();
-    expect(catalog.stale).toBe(false);
+    expect(urls.some((url) => url.includes("antirez/deepseek-v4-gguf"))).toBe(false);
   });
 });

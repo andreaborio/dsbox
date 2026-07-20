@@ -8,6 +8,7 @@ import type { CatalogModel, DsboxConfig, LocalModelCandidate } from "../src/type
 import {
   buildEngineArguments,
   ds4BuildInfoMatchesHead,
+  EXPERT_MAJOR_RUNTIME_BRANCH,
   EXPERT_MAJOR_RUNTIME_COMMIT,
   GLM52_RUNTIME_BRANCH,
   GLM52_RUNTIME_COMMIT,
@@ -15,9 +16,6 @@ import {
   parseEnvironment,
   parseFallbackModelFilename,
   parseVmStatSwapoutPages,
-  qwen35LaunchEnvironment,
-  QWEN35_RUNTIME_BRANCH,
-  QWEN35_RUNTIME_COMMIT,
   remainingDownloadBytes,
   RuntimeManager,
   tokenizeArguments
@@ -78,28 +76,6 @@ describe("environment parser", () => {
     expect(() => parseEnvironment("BAD-NAME=1")).toThrow(/variable name/);
   });
 
-  it("forces the Qwen Metal gate and removes unsupported inherited tuning", () => {
-    expect(qwen35LaunchEnvironment({
-      PATH: "/usr/bin",
-      DS4_EXPERT_PROFILE: "/tmp/profile.json",
-      DS4_METAL_STREAMING_PIN_NON_ROUTED: "1",
-      DS4_METAL_STREAMING_EXPERT_HOTLIST_PRIORITY: "1",
-      DS4_SERVER_STREAMING_DECODE_STATS: "1",
-      DS4_QWEN_EXPERIMENTAL_METAL: "0"
-    }, {
-      DS4_EXPERT_HOTLIST: "1,2,3",
-      CUSTOM_VALUE: "kept"
-    })).toMatchObject({
-      PATH: "/usr/bin",
-      CUSTOM_VALUE: "kept",
-      DS4_QWEN_EXPERIMENTAL_METAL: "1"
-    });
-    const environment = qwen35LaunchEnvironment({ DS4_EXPERT_PROFILE: "x" }, { DS4_EXPERT_HOTLIST: "y" });
-    expect(environment.DS4_EXPERT_PROFILE).toBeUndefined();
-    expect(environment.DS4_EXPERT_HOTLIST).toBeUndefined();
-    expect(qwen35LaunchEnvironment({}, { DS4_METAL_STREAMING_EXPERT_HOTLIST_PRIORITY: "1" }).DS4_METAL_STREAMING_EXPERT_HOTLIST_PRIORITY).toBeUndefined();
-    expect(qwen35LaunchEnvironment({ DS4_SERVER_STREAMING_DECODE_STATS: "1" }, {}).DS4_SERVER_STREAMING_DECODE_STATS).toBeUndefined();
-  });
 });
 
 describe("DS4 build identity", () => {
@@ -256,8 +232,36 @@ describe("engine arguments", () => {
   });
 });
 
-describe("Qwen one-click preparation", () => {
-  it("replaces an older Qwen-capable checkout with the qualified optimized runtime", async () => {
+describe("ExpertMajor v2 one-click preparation", () => {
+  it("shows a plain Qwen startup command without an environment gate prefix", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.model = {
+      path: "/models/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-Q4_K_S.gguf",
+      id: "qwen3.6-35b-a3b"
+    };
+    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const internal = runtime as unknown as {
+      inspectLocalModel(modelPath: string, selectedPath: string): Promise<LocalModelCandidate | null>;
+    };
+    vi.spyOn(internal, "inspectLocalModel").mockResolvedValue({
+      path: config.model.path,
+      name: "Qwen3.6 ExpertMajor v2",
+      sizeBytes: 20_808_566_880,
+      modelId: config.model.id,
+      selected: true,
+      compatibility: { status: "compatible", code: "ds4_native", reason: null },
+      architecture: "qwen35moe",
+      artifactFormat: "ds4-expert-major-v2"
+    });
+
+    const command = await runtime.commandPreview();
+
+    expect(command[0]).toBe(`${config.repository.directory}/ds4-server`);
+    expect(command.join(" ")).not.toContain("DS4_QWEN_EXPERIMENTAL_METAL");
+  });
+
+  it("replaces an older Qwen checkout with the unified ExpertMajor v2 runtime", async () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     config.repository.directory = "/work/ds4-qwen-support";
     config.repository.branch = "feat/qwen-support";
@@ -276,31 +280,44 @@ describe("Qwen one-click preparation", () => {
     } as unknown as ConfigStore;
     const runtime = new RuntimeManager(store, new EventBus());
     const internal = runtime as unknown as {
-      checkoutHasQualifiedQwenRuntime(directory: string): Promise<boolean>;
-      binaryHasQwenRuntime(directory: string): Promise<boolean>;
+      checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
+      binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
       binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
-      ensureQwenRuntimeCheckout(config: DsboxConfig): Promise<DsboxConfig>;
+      runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<DsboxConfig>;
     };
-    vi.spyOn(internal, "checkoutHasQualifiedQwenRuntime").mockImplementation(async (directory) => directory === "/work/ds4-qwen-metal-opt");
-    vi.spyOn(internal, "binaryHasQwenRuntime").mockResolvedValue(true);
+    vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockImplementation(async (directory) => directory === "/work/ds4-main");
+    vi.spyOn(internal, "runtimeIncludesCommit").mockImplementation(async (directory, commit) =>
+      directory === "/work/ds4-main" && commit === EXPERT_MAJOR_RUNTIME_COMMIT);
+    vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
     vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([
       { path: "/work/ds4-qwen-support", branch: "feat/qwen-support", head: "91d311d58" },
-      { path: "/work/ds4-qwen-metal-opt", branch: QWEN35_RUNTIME_BRANCH, head: QWEN35_RUNTIME_COMMIT.slice(0, 9) }
+      { path: "/work/ds4-main", branch: EXPERT_MAJOR_RUNTIME_BRANCH, head: EXPERT_MAJOR_RUNTIME_COMMIT.slice(0, 9) }
     ]);
     vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
 
-    const selected = await internal.ensureQwenRuntimeCheckout(config);
+    const selected = await internal.ensureExpertMajorRuntimeCheckout(
+      config,
+      "ds4-expert-major-v2",
+      false,
+      "qwen35moe"
+    );
 
-    expect(QWEN35_RUNTIME_COMMIT).toMatch(/^[a-f0-9]{40}$/);
+    expect(EXPERT_MAJOR_RUNTIME_COMMIT).toMatch(/^[a-f0-9]{40}$/);
     expect(selected.repository).toMatchObject({
-      directory: "/work/ds4-qwen-metal-opt",
-      branch: QWEN35_RUNTIME_BRANCH
+      directory: "/work/ds4-main",
+      branch: EXPERT_MAJOR_RUNTIME_BRANCH
     });
     expect(store.set).toHaveBeenCalledOnce();
   });
 
-  it("selects the Qwen-capable checkout before considering the default runtime install", async () => {
+  it("selects the unified v2 checkout before considering a default runtime install", async () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     config.model = {
       path: "/models/Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf",
@@ -319,29 +336,35 @@ describe("Qwen one-click preparation", () => {
       modelId: config.model.id,
       selected: true,
       compatibility: { status: "compatible", code: "ds4_native", reason: null },
-      architecture: "qwen35moe"
+      architecture: "qwen35moe",
+      artifactFormat: "ds4-expert-major-v2"
     };
     vi.spyOn(runtime, "refresh").mockResolvedValueOnce(initial).mockResolvedValue(ready);
     vi.spyOn(runtime, "validateLocalModel").mockResolvedValue(candidate);
     const internal = runtime as unknown as {
-      ensureQwenRuntimeCheckout(config: DsboxConfig): Promise<DsboxConfig>;
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<DsboxConfig>;
     };
-    const prepareQwen = vi.spyOn(internal, "ensureQwenRuntimeCheckout").mockResolvedValue(config);
+    const prepareV2 = vi.spyOn(internal, "ensureExpertMajorRuntimeCheckout").mockResolvedValue(config);
     const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
     const build = vi.spyOn(runtime, "build").mockResolvedValue();
     const start = vi.spyOn(runtime, "start").mockResolvedValue();
 
     await runtime.oneClickStart();
 
-    expect(prepareQwen).toHaveBeenCalledWith(config);
+    expect(prepareV2).toHaveBeenCalledWith(config, "ds4-expert-major-v2", false, "qwen35moe");
     expect(install).not.toHaveBeenCalled();
     expect(build).not.toHaveBeenCalled();
     expect(start).toHaveBeenCalledOnce();
   });
 
-  it("keeps Qwen ExpertMajor v1 off the legacy tool branch and requires the unified main ancestry", async () => {
+  it("moves Qwen ExpertMajor v2 off a legacy branch and requires unified main ancestry", async () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
-    config.repository.branch = QWEN35_RUNTIME_BRANCH;
+    config.repository.branch = "codex/qwen-tool-dialect";
     config.repository.directory = "/work/ds4-qwen-tool-legacy";
     let current = structuredClone(config);
     const store = {
@@ -353,29 +376,38 @@ describe("Qwen one-click preparation", () => {
       })
     } as unknown as ConfigStore;
     const runtime = new RuntimeManager(store, new EventBus());
-    const ancestryChecks: string[][] = [];
+    const ancestryChecks: string[] = [];
     const internal = runtime as unknown as {
       ensureExpertMajorRuntimeCheckout(
         config: DsboxConfig,
-        format: "ds4-expert-major-v1",
-        allowModelSwitch?: boolean
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
       ): Promise<DsboxConfig>;
-      runtimeIncludesCommits(directory: string, commits: readonly string[]): Promise<boolean>;
+      checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
+      runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
       binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
-      binaryHasQwenRuntime(directory: string): Promise<boolean>;
+      binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
     };
     vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([]);
-    vi.spyOn(internal, "runtimeIncludesCommits").mockImplementation(async (directory, commits) => {
-      ancestryChecks.push([...commits]);
+    vi.spyOn(internal, "checkoutHasExpertMajorV2Source")
+      .mockImplementation(async (directory) => directory === "/home/alice/.dsbox/runtime/andreaborio-ds4");
+    vi.spyOn(internal, "runtimeIncludesCommit").mockImplementation(async (directory, commit) => {
+      ancestryChecks.push(commit);
       return directory === "/home/alice/.dsbox/runtime/andreaborio-ds4";
     });
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValueOnce(false).mockResolvedValue(true);
-    vi.spyOn(internal, "binaryHasQwenRuntime").mockResolvedValue(true);
+    vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
     vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
     const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
     const build = vi.spyOn(runtime, "build").mockResolvedValue();
 
-    const selected = await internal.ensureExpertMajorRuntimeCheckout(config, "ds4-expert-major-v1", true);
+    const selected = await internal.ensureExpertMajorRuntimeCheckout(
+      config,
+      "ds4-expert-major-v2",
+      true,
+      "qwen35moe"
+    );
 
     expect(selected.repository).toMatchObject({
       url: "https://github.com/andreaborio/ds4.git",
@@ -383,8 +415,7 @@ describe("Qwen one-click preparation", () => {
       directory: "/home/alice/.dsbox/runtime/andreaborio-ds4"
     });
     expect(ancestryChecks).not.toHaveLength(0);
-    expect(ancestryChecks.every((commits) => commits.length === 1)).toBe(true);
-    expect(ancestryChecks.every((commits) => commits.includes(EXPERT_MAJOR_RUNTIME_COMMIT))).toBe(true);
+    expect(ancestryChecks.every((commit) => commit === EXPERT_MAJOR_RUNTIME_COMMIT)).toBe(true);
     expect(install).toHaveBeenCalledWith(true);
     expect(build).toHaveBeenCalledWith(true);
   });
@@ -401,13 +432,13 @@ describe("Qwen one-click preparation", () => {
         allowModelSwitch: boolean,
         modelIdentity: string
       ): Promise<DsboxConfig>;
-      checkoutHasGlmExpertMajorV2Source(directory: string): Promise<boolean>;
-      binaryHasGlmExpertMajorV2Runtime(directory: string): Promise<boolean>;
+      checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
+      binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
       binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
       runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
     };
-    const sourceCapability = vi.spyOn(internal, "checkoutHasGlmExpertMajorV2Source").mockResolvedValue(true);
-    const binaryCapability = vi.spyOn(internal, "binaryHasGlmExpertMajorV2Runtime").mockResolvedValue(true);
+    const sourceCapability = vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockResolvedValue(true);
+    const binaryCapability = vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
     const pinnedAncestry = vi.spyOn(internal, "runtimeIncludesCommit").mockResolvedValue(true);
     const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
@@ -453,17 +484,17 @@ describe("Qwen one-click preparation", () => {
         allowModelSwitch: boolean,
         modelIdentity: string
       ): Promise<DsboxConfig>;
-      checkoutHasGlmExpertMajorV2Source(directory: string): Promise<boolean>;
+      checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
       runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
-      binaryHasGlmExpertMajorV2Runtime(directory: string): Promise<boolean>;
+      binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
       binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
     };
     vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([]);
-    vi.spyOn(internal, "checkoutHasGlmExpertMajorV2Source")
+    vi.spyOn(internal, "checkoutHasExpertMajorV2Source")
       .mockImplementation(async (directory) => directory === targetDirectory);
     vi.spyOn(internal, "runtimeIncludesCommit")
       .mockImplementation(async (directory, commit) => directory === targetDirectory && commit === GLM52_RUNTIME_COMMIT);
-    vi.spyOn(internal, "binaryHasGlmExpertMajorV2Runtime").mockResolvedValue(true);
+    vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
     vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
     const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
@@ -519,10 +550,18 @@ describe("Qwen one-click preparation", () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
     const runtime = new RuntimeManager(store, new EventBus());
-    const model = { artifactFormat: "ds4-expert-major-v1" } as CatalogModel;
+    const model = {
+      artifactFormat: "ds4-expert-major-v2",
+      modelId: "qwen3.6-35b-a3b"
+    } as CatalogModel;
     const internal = runtime as unknown as {
       ensureCatalogRuntime(model: CatalogModel): Promise<void>;
-      ensureExpertMajorRuntimeCheckout(config: DsboxConfig, format: "ds4-expert-major-v1"): Promise<DsboxConfig>;
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<DsboxConfig>;
     };
     let expertMajorPrepared = false;
     const fullPolicy = vi.spyOn(internal, "ensureExpertMajorRuntimeCheckout").mockImplementation(async () => {
@@ -536,7 +575,7 @@ describe("Qwen one-click preparation", () => {
     await runtime.prepareCatalogRuntime(model);
 
     expect(pinRuntime).toHaveBeenCalledWith(model);
-    expect(fullPolicy).toHaveBeenCalledWith(config, "ds4-expert-major-v1");
+    expect(fullPolicy).toHaveBeenCalledWith(config, "ds4-expert-major-v2", false, "qwen3.6-35b-a3b");
   });
 
   it("passes the GLM model identity into ExpertMajor catalog runtime preparation", async () => {

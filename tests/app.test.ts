@@ -167,14 +167,14 @@ describe("DSBox API", () => {
   it("enforces the catalog artifact layout against the downloaded GGUF header", async () => {
     const canonicalPath = path.join(home, "deepseek-canonical.gguf");
     const nativePath = path.join(home, "deepseek-expert-major-v2.gguf");
-    await writeFile(canonicalPath, createDs4GgufFixture());
+    await writeFile(canonicalPath, createDs4GgufFixture({ canonical: true }));
     await writeFile(nativePath, createDs4GgufFixture({ nativeExpertMajorV2: true }));
 
     await expect(services.runtime.validateLocalModel(
       canonicalPath,
       canonicalPath,
       "ds4-expert-major-v2"
-    )).rejects.toThrow(/catalog declared ds4-expert-major-v2/i);
+    )).rejects.toThrow(/not compatible with DS4/i);
     await expect(services.runtime.validateLocalModel(
       nativePath,
       nativePath,
@@ -759,6 +759,15 @@ describe("DSBox API", () => {
     const modelPath = path.join(home, "safe-local.gguf");
     await writeFile(modelPath, createDs4GgufFixture());
     await services.runtime.selectLocalModel(modelPath);
+    const internal = services.runtime as unknown as {
+      ensureExpertMajorRuntimeCheckout(
+        config: ReturnType<AppServices["store"]["get"]>,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<ReturnType<AppServices["store"]["get"]>>;
+    };
+    vi.spyOn(internal, "ensureExpertMajorRuntimeCheckout").mockResolvedValue(services.store.get());
     services.runtime.prepareOneClickStart();
     vi.spyOn(services.runtime, "installOrUpdate").mockRejectedValue(new TaskCancelledError());
     await expect(services.runtime.oneClickStart()).rejects.toBeInstanceOf(TaskCancelledError);

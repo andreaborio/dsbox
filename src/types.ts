@@ -160,7 +160,7 @@ export type CatalogPublisher = string;
  * them because the canonical routed tensor descriptors are intentionally
  * absent.
  */
-export type Ds4ArtifactFormat = "ds4-expert-major-v1" | "ds4-expert-major-v2";
+export type Ds4ArtifactFormat = "ds4-expert-major-v2";
 
 export interface CatalogSource {
   id: CatalogPublisher;

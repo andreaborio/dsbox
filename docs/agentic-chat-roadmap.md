@@ -155,10 +155,9 @@ Deliverable:
 
 Exit gate: test unitari completi, typecheck/build, sanitizer DS4, round-trip reale
 tool -> result -> risposta finale su entrambi i modelli. La patch DS4 e' stata
-pubblicata nel [draft PR #2](https://github.com/andreaborio/ds4/pull/2) e DSBox
-punta al relativo commit verificato; prima del rilascio stabile il PR va unito e
-il canale runtime riportato da `codex/qwen-tool-dialect` a `main`, usando come
-pin lo SHA effettivo su `main` che contiene la patch (merge o squash).
+pubblicata nel [draft PR #2](https://github.com/andreaborio/ds4/pull/2). Il
+runtime di rilascio e' ora il canale unificato `main`, con ExpertMajor v2 e pin
+minimo `fe0919b70571678408f2c8c52aec8d49525e715c`.
 
 ### P1 - Policy, approval e audit
 

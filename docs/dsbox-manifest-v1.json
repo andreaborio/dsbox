@@ -6,7 +6,7 @@
   "recommended": false,
   "modelId": "deepseek-v4-flash",
   "runtimeBranch": "main",
-  "runtimeCommit": "bd62a0bf36336fc5e3b199ac97bdacf820c4c7f0",
+  "runtimeCommit": "fe0919b70571678408f2c8c52aec8d49525e715c",
   "file": "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf",
   "minimumMemoryGb": 64,
   "architecture": "moe",

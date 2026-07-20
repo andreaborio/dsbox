@@ -125,8 +125,7 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
   const commandPreview = useMemo(() => {
     try {
       return [
-        ...(qwenManaged ? ["DS4_QWEN_EXPERIMENTAL_METAL=1"] : []),
-        qwenManaged ? "<Qwen-capable DS4 checkout>/ds4-server" : `${draft.repository.directory}/ds4-server`,
+        qwenManaged ? "<Unified ExpertMajor v2 DS4 checkout>/ds4-server" : `${draft.repository.directory}/ds4-server`,
         ...buildEngineArguments(draft)
       ].map(shellDisplayArgument).join(" ");
     } catch (error) {
@@ -242,7 +241,7 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
                   {qwenManaged ? (
                     <>
                       <div className="managed-profile-row">
-                        <div><strong>Qwen-capable checkout</strong><p>DSBox selects and verifies the compatible DS4 checkout automatically when the model starts.</p></div>
+                        <div><strong>Unified ExpertMajor v2 checkout</strong><p>DSBox selects and verifies the compatible DS4 main checkout automatically when the model starts.</p></div>
                         <span className="managed-setting-badge">Managed</span>
                       </div>
                       <Field label="Private port"><input type="number" min={1024} max={65535} value={draft.server.internalPort} onChange={(event) => update("server", { ...draft.server, internalPort: Number(event.target.value) })} /></Field>
@@ -295,7 +294,7 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
                 </div>
 
                 <div className="advanced-group command-preview-card">
-                  <div className="advanced-group__head"><div><h3>{qwenManaged ? "Launch profile" : "Launch command"}</h3><p>{qwenManaged ? "DSBox resolves the verified Qwen checkout at startup; the flags below are the effective profile." : "The exact command DSBox will run."}</p></div><CopyButton value={commandPreview} /></div>
+                  <div className="advanced-group__head"><div><h3>{qwenManaged ? "Launch profile" : "Launch command"}</h3><p>{qwenManaged ? "DSBox resolves the unified ExpertMajor v2 checkout at startup; the flags below are the effective profile." : "The exact command DSBox will run."}</p></div><CopyButton value={commandPreview} /></div>
                   <pre><code>{commandPreview}</code></pre>
                 </div>
               </motion.div>

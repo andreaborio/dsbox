@@ -314,8 +314,8 @@ describe("transparent Hugging Face downloads", () => {
     expect(readyCalls).toEqual([]);
   });
 
-  it("rejects a canonical GGUF when the downloaded catalog entry declares ExpertMajor v1", async () => {
-    const data = createDs4QwenGgufFixture();
+  it("rejects a canonical GGUF when the downloaded catalog entry declares ExpertMajor v2", async () => {
+    const data = createDs4QwenGgufFixture({ canonical: true });
     files.set("qwen-canonical.gguf", data);
     const variant: CatalogModelVariant = {
       id: "variant-qwen-canonical",
@@ -336,14 +336,14 @@ describe("transparent Hugging Face downloads", () => {
         if (detected !== expectedArtifactFormat) throw new Error("Catalog artifact format does not match the downloaded GGUF");
       }
     });
-    const model = catalogModel(variant, "ds4-expert-major-v1");
+    const model = catalogModel(variant, "ds4-expert-major-v2");
     model.modelId = "qwen3.6-35b-a3b";
     const started = await downloads.start(model, variant.id);
     const failed = await waitForDownload(downloads, started.id, (snapshot) => snapshot.stage === "error");
 
-    expect(failed.artifactFormat).toBe("ds4-expert-major-v1");
+    expect(failed.artifactFormat).toBe("ds4-expert-major-v2");
     expect(failed.error).toBe("Catalog artifact format does not match the downloaded GGUF");
-    expect(expectedFormats).toEqual(["ds4-expert-major-v1"]);
+    expect(expectedFormats).toEqual(["ds4-expert-major-v2"]);
     expect(store.get().model).toEqual(initialModel);
   });
 

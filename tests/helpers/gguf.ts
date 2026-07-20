@@ -208,6 +208,7 @@ function shapedTensorDescriptor(name: string, type: number, dimensions: readonly
 }
 
 export interface Ds4GgufFixtureOptions {
+  canonical?: boolean;
   includeVocabSize?: boolean;
   nativeExpertMajorV2?: boolean;
   vocabSize?: number;
@@ -232,7 +233,8 @@ export function createDs4GgufFixture(options: Ds4GgufFixtureOptions = {}): Buffe
     metadata.push(uint32Metadata("deepseek4.vocab_size", options.vocabSize ?? 129_280));
   }
 
-  const tensors = options.nativeExpertMajorV2
+  const nativeExpertMajorV2 = !options.canonical && options.nativeExpertMajorV2 !== false;
+  const tensors = nativeExpertMajorV2
     ? [
         ...DS4_TENSOR_SIGNATURE.filter((name) => name !== "blk.0.ffn_gate_exps.weight").map((name) => ({ name, type: GGML_TYPE_F32, dimensions: [1] })),
         { name: "ds4.expert_major.v2", type: GGML_TYPE_I8, dimensions: [4096] }
@@ -448,11 +450,14 @@ function createQwen35MoeTensorLayout(): QwenTensorFixture[] {
 }
 
 export interface Ds4QwenGgufFixtureOptions {
+  canonical?: boolean;
+  expertStoreBytes?: number;
+  includeCanonicalRoutedTensor?: boolean;
   invalidChatTemplate?: boolean;
   paddingTokenId?: number;
   /** Recreates the original Unsloth artifact's unsupported output quant. */
   rawUnslothLayout?: boolean;
-  nativeExpertMajorV1?: boolean;
+  legacyExpertMajorV1?: boolean;
 }
 
 /**
@@ -506,13 +511,22 @@ export function createDs4QwenGgufFixture(options: Ds4QwenGgufFixtureOptions = {}
       }
     }
   }
-  if (options.nativeExpertMajorV1) {
+  if (options.legacyExpertMajorV1) {
     const canonical = tensors.filter((tensor) => !/^blk\.\d+\.ffn_(?:gate|up|down)_exps\.weight$/.test(tensor.name));
     tensors.splice(0, tensors.length, ...canonical, {
       name: "ds4.expert_major.v1",
       type: GGML_TYPE_I8,
       dimensions: [4096]
     });
+  } else if (!options.canonical) {
+    const routed = tensors.filter((tensor) => /^blk\.\d+\.ffn_(?:gate|up|down)_exps\.weight$/.test(tensor.name));
+    const nonRouted = tensors.filter((tensor) => !/^blk\.\d+\.ffn_(?:gate|up|down)_exps\.weight$/.test(tensor.name));
+    tensors.splice(0, tensors.length, ...nonRouted, {
+      name: "ds4.expert_major.v2",
+      type: GGML_TYPE_I8,
+      dimensions: [options.expertStoreBytes ?? 18_119_405_568]
+    });
+    if (options.includeCanonicalRoutedTensor && routed[0]) tensors.push(routed[0]);
   }
 
   return Buffer.concat([

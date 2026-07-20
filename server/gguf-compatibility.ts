@@ -262,6 +262,8 @@ const GLM52_CHAT_TEMPLATE_SHA256 = "bf78575b301b56fa74337b470f6560d5366ff15378dd
 const GLM52_TOKEN_TYPES_SHA256 = "dee3060106b017abcc4a2fa9ba429287b0cc246eeb00fc2a38fe6c1ad4274b3a";
 export const DS4_GLM52_NATIVE_TENSOR_COUNT = 1297;
 export const DS4_GLM52_EXPERT_STORE_BYTES = 240_987_951_104;
+export const DS4_QWEN35MOE_NATIVE_TENSOR_COUNT = 614;
+export const DS4_QWEN35MOE_EXPERT_STORE_BYTES = 18_119_405_568;
 
 export const DS4_DEEPSEEK4_TENSOR_SIGNATURE = [
   "token_embd.weight",
@@ -854,7 +856,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       tensors.set(name, { dimensions, type });
     }
 
-    const expertMajorV1Tensor = ds4ArtifactFormatTensor("ds4-expert-major-v1");
+    const expertMajorV1Tensor = "ds4.expert_major.v1";
     const expertMajorV2Tensor = ds4ArtifactFormatTensor("ds4-expert-major-v2");
     const expertMajorV1 = tensors.get(expertMajorV1Tensor);
     const expertMajorV2 = tensors.get(expertMajorV2Tensor);
@@ -864,13 +866,14 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         message: "This GGUF mixes two incompatible DS4 ExpertMajor store versions."
       });
     }
-    header.artifactFormat = expertMajorV1
-      ? "ds4-expert-major-v1"
-      : expertMajorV2
-        ? "ds4-expert-major-v2"
-        : null;
-    const expertMajorStore = expertMajorV1 ?? expertMajorV2;
-    if (expertMajorStore && !expertMajorStoreDescriptorMatches(expertMajorStore)) {
+    if (expertMajorV1) {
+      return result(header, {
+        code: "missing_tensor_signature",
+        message: "DS4 ExpertMajor v1 is no longer runnable. Select or convert the ExpertMajor v2 artifact."
+      });
+    }
+    header.artifactFormat = expertMajorV2 ? "ds4-expert-major-v2" : null;
+    if (expertMajorV2 && !expertMajorStoreDescriptorMatches(expertMajorV2)) {
       return result(header, {
         code: "missing_tensor_signature",
         message: `The ${header.artifactFormat} store has an invalid opaque I8 tensor descriptor.`
@@ -911,27 +914,22 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       });
     }
 
-    if (header.artifactFormat === "ds4-expert-major-v1" && header.architecture !== "qwen35moe") {
-      return result(header, {
-        code: "missing_tensor_signature",
-        message: "DS4 ExpertMajor v1 is the fixed Qwen3.6 35B-A3B layout and cannot be used with this architecture."
-      });
-    }
     if (header.artifactFormat === "ds4-expert-major-v2" &&
         header.architecture !== "deepseek4" &&
-        header.architecture !== "glm-dsa") {
+        header.architecture !== "glm-dsa" &&
+        header.architecture !== "qwen35moe") {
       return result(header, {
         code: "missing_tensor_signature",
-        message: "DS4 ExpertMajor v2 requires a pinned DeepSeek 4 or GLM-5.2 layout."
+        message: "DS4 ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek 4, or GLM-5.2 layout."
       });
     }
 
     const isQwen35Moe = header.architecture === "qwen35moe";
     const isGlm52 = header.architecture === "glm-dsa";
-    if (isGlm52 && header.artifactFormat !== "ds4-expert-major-v2") {
+    if (header.artifactFormat !== "ds4-expert-major-v2") {
       return result(header, {
         code: "missing_tensor_signature",
-        message: "DSBox currently qualifies GLM-5.2 only as a single-file DS4 ExpertMajor v2 artifact."
+        message: `DSBox qualifies ${isQwen35Moe ? "Qwen3.6 35B A3B" : isGlm52 ? "GLM-5.2" : "DeepSeek 4"} only as a single-file DS4 ExpertMajor v2 artifact.`
       });
     }
     const metadataContract = isQwen35Moe
@@ -970,14 +968,12 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         });
       }
 
-      const qwenTensorLayout = header.artifactFormat === "ds4-expert-major-v1"
-        ? QWEN35MOE_NATIVE_TENSOR_LAYOUT
-        : QWEN35MOE_TENSOR_LAYOUT;
+      const qwenTensorLayout = QWEN35MOE_NATIVE_TENSOR_LAYOUT;
       const missingTensors = [...qwenTensorLayout.keys()].filter((name) => !tensors.has(name));
       if (missingTensors.length > 0) {
         return result(header, {
           code: "missing_tensor_signature",
-          message: `This GGUF does not contain the DS4 Qwen3.6 35B A3B ${header.artifactFormat ? "ExpertMajor" : "text-model"} tensor layout: ${missingTensors.join(", ")}.`,
+          message: `This GGUF does not contain the DS4 Qwen3.6 35B A3B ExpertMajor v2 tensor layout: ${missingTensors.join(", ")}.`,
           missingKeys: [...missingTensors]
         });
       }
@@ -994,11 +990,26 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         });
       }
 
-      const expectedQwenTensorCount = qwenTensorLayout.size + (header.artifactFormat ? 1 : 0);
-      if (tensorCount !== expectedQwenTensorCount) {
+      const qwenStore = tensors.get(expertMajorV2Tensor);
+      if (qwenStore?.dimensions[0] !== DS4_QWEN35MOE_EXPERT_STORE_BYTES) {
         return result(header, {
           code: "missing_tensor_signature",
-          message: `DS4 requires the ${expectedQwenTensorCount}-tensor Qwen3.6 35B A3B ${header.artifactFormat ? "ExpertMajor v1" : "text-only, no-MTP"} layout; this GGUF contains ${tensorCount} tensors.`
+          message: "This Qwen3.6 GGUF has an incompatible ExpertMajor v2 routed-store extent.",
+          invalidKeys: [expertMajorV2Tensor]
+        });
+      }
+      const canonicalRoutedTensors = [...tensors.keys()].filter((name) => QWEN35MOE_ROUTED_TENSOR.test(name));
+      if (canonicalRoutedTensors.length > 0) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: "This Qwen3.6 GGUF mixes ExpertMajor v2 with canonical routed expert tensors.",
+          invalidKeys: canonicalRoutedTensors.slice(0, 16)
+        });
+      }
+      if (tensorCount !== DS4_QWEN35MOE_NATIVE_TENSOR_COUNT) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: `DS4 requires the ${DS4_QWEN35MOE_NATIVE_TENSOR_COUNT}-tensor Qwen3.6 35B A3B ExpertMajor v2 layout; this GGUF contains ${tensorCount} tensors.`
         });
       }
 
@@ -1054,9 +1065,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       return result(header, null);
     }
 
-    const deepseekSignature = header.artifactFormat === "ds4-expert-major-v2"
-      ? DS4_DEEPSEEK4_NATIVE_TENSOR_SIGNATURE
-      : DS4_DEEPSEEK4_TENSOR_SIGNATURE;
+    const deepseekSignature = DS4_DEEPSEEK4_NATIVE_TENSOR_SIGNATURE;
     const missingTensors = deepseekSignature.filter((name) => !tensors.has(name));
     if (missingTensors.length > 0) {
       return result(header, {
@@ -1066,15 +1075,13 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       });
     }
 
-    if (header.artifactFormat === "ds4-expert-major-v2") {
-      const canonicalRoutedTensors = [...tensors.keys()].filter((name) => QWEN35MOE_ROUTED_TENSOR.test(name));
-      if (canonicalRoutedTensors.length > 0) {
-        return result(header, {
-          code: "missing_tensor_signature",
-          message: "This GGUF mixes DS4 ExpertMajor v2 with canonical routed expert tensors.",
-          invalidKeys: canonicalRoutedTensors.slice(0, 16)
-        });
-      }
+    const canonicalRoutedTensors = [...tensors.keys()].filter((name) => QWEN35MOE_ROUTED_TENSOR.test(name));
+    if (canonicalRoutedTensors.length > 0) {
+      return result(header, {
+        code: "missing_tensor_signature",
+        message: "This GGUF mixes DS4 ExpertMajor v2 with canonical routed expert tensors.",
+        invalidKeys: canonicalRoutedTensors.slice(0, 16)
+      });
     }
 
     return result(header, null);
