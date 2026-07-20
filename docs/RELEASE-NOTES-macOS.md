@@ -1,38 +1,41 @@
-## DSBox 0.2.7
+## DSBox 0.2.8
 
-This release adds explicit support for DS4 ExpertMajor model artifacts and
-keeps their runtime boundary visible from discovery through local selection.
+This release adds one-click support for the single-file GLM-5.2 DS4
+ExpertMajor v2 artifact while keeping its experimental runtime isolated from
+the DS4 main line.
 
-### DS4 ExpertMajor models
+### GLM-5.2 ExpertMajor v2
 
-- Recognizes the native `ds4.expert_major.v1` Qwen and
-  `ds4.expert_major.v2` DeepSeek tensor layouts during the lightweight GGUF
-  preflight.
-- Shows ExpertMajor files as **DS4 only** in Discover, the download review, and
-  the local Library instead of presenting them as portable llama.cpp GGUFs.
-- Requires ExpertMajor manifests to publish an exact format declaration and a
-  pinned `andreaborio/ds4` runtime commit, with file checksums supplied by the
-  pinned Hugging Face LFS metadata, before DSBox enables download.
-- Prepares the unified ExpertMajor runtime before download and rechecks it for
-  Finder, Library, and transactional live model switches.
-- Keeps experimental artifacts out of the DSBox recommendation slot; the
-  canonical checksum-pinned DeepSeek model remains the default.
+- Recognizes the pinned `glm-dsa` metadata, tokenizer, 1,297-tensor inventory,
+  and embedded `ds4.expert_major.v2` store during the lightweight GGUF header
+  preflight; model weight payloads are not scanned.
+- Enforces the 64 GB minimum and marks the artifact as **DS4 only** instead of
+  implying compatibility with llama.cpp, MLX, or generic GGUF launchers.
+- Selects and builds the dedicated
+  `codex/glm52-upstream-clean-bench` runtime at qualified DS4 commit
+  `08f3ebedcf000aadafe0b58211c571dd9dba14a8` or a verified descendant.
+- Uses DS4 AUTO residency and the qualified GLM Metal profile without adding
+  redundant SSD mode, full-layer, cache-size, or preload flags.
+- Applies the same runtime check to catalog downloads, Finder selection, the
+  local Library, and transactional model switches.
 
-### Repository rename continuity
+### Release safety
 
-- Supports manifest-declared previous Hugging Face repository ids, so an
-  already-installed Qwen ExpertMajor bundle remains marked active after the
-  repository receives its format-specific name.
-- New downloads continue to use the current immutable repository revision;
-  aliases are used only to recognize existing local paths.
+- A GLM file with changed geometry, tokenizer digests, routed-store extent,
+  canonical routed tensors, or an unexpected tensor count is rejected before
+  launch.
+- The model manifest must pin one file, the ExpertMajor v2 format, the
+  dedicated runtime branch, and an exact runtime commit.
+- Experimental GLM remains outside the recommendation slot; existing Qwen and
+  DeepSeek catalog behavior is unchanged.
 
 ### Verification
 
-- Added catalog policy tests for exact v1/v2 format declarations, runtime pins,
-  checksums, experimental status, and missing-contract failures.
-- Added header-level fixtures for both layouts and verified the compatibility
-  gate against the published-size 20.8 GB Qwen v1 and 86.7 GB DeepSeek v2
-  artifacts without reading their weight payloads.
+- Added header fixtures for valid and deliberately corrupted GLM contracts,
+  catalog policy coverage, runtime-channel selection tests, and AUTO argument
+  tests.
+- Verified the real 262,147,193,504-byte internal GGUF through the same
+  lightweight preflight used by DSBox.
 
 ### macOS community build
 

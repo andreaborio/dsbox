@@ -9,6 +9,8 @@ import {
   buildEngineArguments,
   ds4BuildInfoMatchesHead,
   EXPERT_MAJOR_RUNTIME_COMMIT,
+  GLM52_RUNTIME_BRANCH,
+  GLM52_RUNTIME_COMMIT,
   orderedLocalModelScanRoots,
   parseEnvironment,
   parseFallbackModelFilename,
@@ -153,7 +155,15 @@ describe("engine arguments", () => {
     const glm = createDefaultConfig(16 * 1024 ** 3);
     glm.model.id = "glm-5.2";
     glm.model.path = "/models/glm-5.2.gguf";
-    expect(buildEngineArguments(glm)).not.toContain("--ssd-streaming-cache-experts");
+    glm.streaming.cacheMode = "manual";
+    glm.streaming.cacheSizeGb = 32;
+    glm.streaming.coldStart = true;
+    glm.streaming.preloadExperts = 528;
+    const glmArgs = buildEngineArguments(glm);
+    expect(glmArgs).not.toContain("--ssd-streaming");
+    expect(glmArgs).not.toContain("--ssd-streaming-cache-experts");
+    expect(glmArgs).not.toContain("--ssd-streaming-cold");
+    expect(glmArgs).not.toContain("--ssd-streaming-preload-experts");
   });
 
   it("preserves manual GB and advanced exact overrides without duplicates", () => {
@@ -379,6 +389,96 @@ describe("Qwen one-click preparation", () => {
     expect(build).toHaveBeenCalledWith(true);
   });
 
+  it("qualifies GLM ExpertMajor v2 from explicit source and current-binary capabilities", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.repository.directory = "/work/ds4-glm-expert-major";
+    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const internal = runtime as unknown as {
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<DsboxConfig>;
+      checkoutHasGlmExpertMajorV2Source(directory: string): Promise<boolean>;
+      binaryHasGlmExpertMajorV2Runtime(directory: string): Promise<boolean>;
+      binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
+      runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
+    };
+    const sourceCapability = vi.spyOn(internal, "checkoutHasGlmExpertMajorV2Source").mockResolvedValue(true);
+    const binaryCapability = vi.spyOn(internal, "binaryHasGlmExpertMajorV2Runtime").mockResolvedValue(true);
+    vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
+    const pinnedAncestry = vi.spyOn(internal, "runtimeIncludesCommit").mockResolvedValue(true);
+    const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
+    const build = vi.spyOn(runtime, "build").mockResolvedValue();
+
+    const selected = await internal.ensureExpertMajorRuntimeCheckout(
+      config,
+      "ds4-expert-major-v2",
+      false,
+      "glm-dsa"
+    );
+
+    expect(selected.repository.directory).toBe(config.repository.directory);
+    expect(sourceCapability).toHaveBeenCalledWith(config.repository.directory);
+    expect(binaryCapability).toHaveBeenCalledWith(config.repository.directory);
+    expect(pinnedAncestry).toHaveBeenCalledWith(config.repository.directory, GLM52_RUNTIME_COMMIT);
+    expect(install).not.toHaveBeenCalled();
+    expect(build).not.toHaveBeenCalled();
+  });
+
+  it("installs the dedicated qualified GLM channel when no usable checkout exists", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    let current = structuredClone(config);
+    const store = {
+      homeDirectory: "/home/alice/.dsbox",
+      get: vi.fn(() => structuredClone(current)),
+      set: vi.fn(async (next: DsboxConfig) => {
+        current = structuredClone(next);
+        return structuredClone(current);
+      })
+    } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const targetDirectory = "/home/alice/.dsbox/runtime/andreaborio-ds4-glm52";
+    const internal = runtime as unknown as {
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<DsboxConfig>;
+      checkoutHasGlmExpertMajorV2Source(directory: string): Promise<boolean>;
+      runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
+      binaryHasGlmExpertMajorV2Runtime(directory: string): Promise<boolean>;
+      binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
+    };
+    vi.spyOn(runtime, "discoveredCheckouts").mockResolvedValue([]);
+    vi.spyOn(internal, "checkoutHasGlmExpertMajorV2Source")
+      .mockImplementation(async (directory) => directory === targetDirectory);
+    vi.spyOn(internal, "runtimeIncludesCommit")
+      .mockImplementation(async (directory, commit) => directory === targetDirectory && commit === GLM52_RUNTIME_COMMIT);
+    vi.spyOn(internal, "binaryHasGlmExpertMajorV2Runtime").mockResolvedValue(true);
+    vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
+    vi.spyOn(runtime, "refresh").mockResolvedValue(runtime.getState());
+    const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
+
+    const selected = await internal.ensureExpertMajorRuntimeCheckout(
+      config,
+      "ds4-expert-major-v2",
+      false,
+      "glm-dsa"
+    );
+
+    expect(selected.repository).toMatchObject({
+      url: "https://github.com/andreaborio/ds4.git",
+      branch: GLM52_RUNTIME_BRANCH,
+      directory: targetDirectory
+    });
+    expect(GLM52_RUNTIME_COMMIT).toMatch(/^[a-f0-9]{40}$/);
+    expect(install).toHaveBeenCalledWith(false);
+  });
+
   it("passes the transactional switch allowance into runtime preparation", async () => {
     const runtime = new RuntimeManager({} as ConfigStore, new EventBus());
     const internal = runtime as unknown as {
@@ -431,6 +531,31 @@ describe("Qwen one-click preparation", () => {
 
     expect(pinRuntime).toHaveBeenCalledWith(model);
     expect(fullPolicy).toHaveBeenCalledWith(config, "ds4-expert-major-v1");
+  });
+
+  it("passes the GLM model identity into ExpertMajor catalog runtime preparation", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const model = {
+      artifactFormat: "ds4-expert-major-v2",
+      modelId: "glm-5.2"
+    } as CatalogModel;
+    const internal = runtime as unknown as {
+      ensureCatalogRuntime(model: CatalogModel): Promise<void>;
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<DsboxConfig>;
+    };
+    const fullPolicy = vi.spyOn(internal, "ensureExpertMajorRuntimeCheckout").mockResolvedValue(config);
+    vi.spyOn(internal, "ensureCatalogRuntime").mockResolvedValue();
+
+    await runtime.prepareCatalogRuntime(model);
+
+    expect(fullPolicy).toHaveBeenCalledWith(config, "ds4-expert-major-v2", false, "glm-5.2");
   });
 });
 

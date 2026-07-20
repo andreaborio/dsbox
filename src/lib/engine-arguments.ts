@@ -3,11 +3,19 @@ import { argumentOptionName, tokenizeArguments } from "./arguments.js";
 
 export const QWEN35_MODEL_ID = "qwen3.6-35b-a3b";
 export const QWEN35_ARCHITECTURE = "qwen35moe";
+export const GLM52_MODEL_ID = "glm-5.2";
+export const GLM52_ARCHITECTURE = "glm-dsa";
 
 export function isQwen35Model(config: Pick<DsboxConfig, "model">, modelArchitecture?: string | null): boolean {
   return modelArchitecture === undefined
     ? config.model.id.trim().toLowerCase() === QWEN35_MODEL_ID
     : modelArchitecture?.trim().toLowerCase() === QWEN35_ARCHITECTURE;
+}
+
+export function isGlm52Model(config: Pick<DsboxConfig, "model">, modelArchitecture?: string | null): boolean {
+  return modelArchitecture === undefined
+    ? config.model.id.trim().toLowerCase() === GLM52_MODEL_ID
+    : modelArchitecture?.trim().toLowerCase() === GLM52_ARCHITECTURE;
 }
 
 const qwenManagedBooleanOptions = new Set([
@@ -76,6 +84,8 @@ function qwenSafeExtraArguments(extraArgs: string[]): string[] {
 
 export function buildEngineArguments(config: DsboxConfig, modelArchitecture?: string | null): string[] {
   const qwen35 = isQwen35Model(config, modelArchitecture);
+  const glm52 = isGlm52Model(config, modelArchitecture);
+  const runtimeOwnsResidency = qwen35 || glm52;
   const tokenizedExtraArgs = tokenizeArguments(config.advanced.extraArgs);
   const extraArgs = qwen35 ? qwenSafeExtraArguments(tokenizedExtraArgs) : tokenizedExtraArgs;
   const advancedCacheOverride = extraArgs.some(
@@ -92,10 +102,11 @@ export function buildEngineArguments(config: DsboxConfig, modelArchitecture?: st
     "--port", String(config.server.internalPort)
   ];
 
-  // Qwen's validated Metal runtime owns the residency decision. With neither
-  // override present, DS4 keeps the model resident when its live memory and
-  // working-set preflight pass, and falls back to SSD streaming otherwise.
-  if (config.streaming.enabled && !qwen35) {
+  // Qualified Qwen and GLM runtimes own the residency decision. DS4 keeps the
+  // model resident when its live memory preflight passes and otherwise selects
+  // SSD streaming plus the architecture-specific profile. DSBox must not turn
+  // AUTO into an explicit streaming/cache override for these two paths.
+  if (config.streaming.enabled && !runtimeOwnsResidency) {
     args.push("--ssd-streaming");
     if (!advancedCacheOverride && config.streaming.cacheMode === "manual") {
       args.push("--ssd-streaming-cache-experts", `${config.streaming.cacheSizeGb}GB`);
