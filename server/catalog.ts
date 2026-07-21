@@ -9,7 +9,10 @@ import type {
   CatalogSource,
   Ds4ArtifactFormat
 } from "../src/types.js";
-import { ds4ArtifactFormatTensor } from "../src/lib/model-format.js";
+import {
+  ds4ArtifactFormatTensor,
+  EXPERT_MAJOR_MINIMUM_MEMORY_GB
+} from "../src/lib/model-format.js";
 
 const AUTHOR = "andreaborio" as const;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -19,6 +22,11 @@ const HIDDEN_REPOSITORIES = new Set([
   "andreaborio/glm52-ds4-native-64g-q2k-experimental",
   "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-GGUF",
   "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-GGUF"
+]);
+const SUPPORTED_EXPERT_MAJOR_MODEL_IDS = new Set([
+  "deepseek-v4-flash",
+  "glm-5.2",
+  "qwen3.6-35b-a3b"
 ]);
 
 interface CatalogSourceDefinition extends CatalogSource {
@@ -394,6 +402,12 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   const expertMajorIdentity = expectedArtifactFormat(repository, requestedFile);
   const expectedFormat = expertMajorIdentity.format;
   const artifactFormat = parsedFormat.format;
+  const minimumMemoryGb = Number.isFinite(manifest?.minimumMemoryGb)
+    ? Number(manifest?.minimumMemoryGb)
+    : Number.isFinite(manifest?.requirements?.minUnifiedMemoryBytes)
+      ? Number(manifest?.requirements?.minUnifiedMemoryBytes) / 1024 ** 3
+      : null;
+  const memoryFits = minimumMemoryGb !== null && totalMemoryBytes >= minimumMemoryGb * 1024 ** 3;
   let artifactPolicyError = parsedFormat.error;
   if (!artifactPolicyError && expertMajorIdentity.present && !expectedFormat) {
     artifactPolicyError = expertMajorIdentity.version
@@ -406,9 +420,8 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   if (!artifactPolicyError && expectedFormat && artifactFormat !== expectedFormat) {
     artifactPolicyError = `The repository name and manifest disagree about ${expectedFormat}`;
   }
-  if (!artifactPolicyError && artifactFormat === "ds4-expert-major-v2" &&
-      !modelId.startsWith("deepseek") && modelId !== "glm-5.2" && modelId !== "qwen3.6-35b-a3b") {
-    artifactPolicyError = "DS4 ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek 4, or GLM-5.2 model contract";
+  if (!artifactPolicyError && artifactFormat && !SUPPORTED_EXPERT_MAJOR_MODEL_IDS.has(modelId)) {
+    artifactPolicyError = "DS4 ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek V4 Flash, or GLM-5.2 model contract";
   }
   const requiresExpertMajorV2 = modelId === "qwen3.6-35b-a3b"
     || modelId.startsWith("deepseek")
@@ -416,13 +429,41 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   if (!artifactPolicyError && publisher !== "unsloth" && requiresExpertMajorV2 && artifactFormat !== "ds4-expert-major-v2") {
     artifactPolicyError = `${modelId} requires a manifest-pinned DS4 ExpertMajor v2 artifact`;
   }
+  if (!artifactPolicyError && artifactFormat && (
+    minimumMemoryGb === null || minimumMemoryGb < EXPERT_MAJOR_MINIMUM_MEMORY_GB
+  )) {
+    artifactPolicyError = `DS4 ExpertMajor v2 requires a minimumMemoryGb declaration of at least ${EXPERT_MAJOR_MINIMUM_MEMORY_GB}`;
+  }
+  if (!artifactPolicyError && artifactFormat && manifest?.artifact?.assembly) {
+    artifactPolicyError = "DS4 ExpertMajor v2 releases must publish one complete GGUF; multipart assembly is not supported";
+  }
   if (!artifactPolicyError && artifactFormat && !requestedFile) {
     artifactPolicyError = "DS4 ExpertMajor manifests must pin one output file";
+  }
+  if (!artifactPolicyError && artifactFormat && runtimeBranch !== "main") {
+    artifactPolicyError = "DS4 ExpertMajor v2 artifacts must pin the andreaborio/ds4 main runtime";
   }
   if (!artifactPolicyError && artifactFormat && (
     !runtimeBranch || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeCommit ?? "")
   )) {
     artifactPolicyError = "DS4 ExpertMajor artifacts require a revision-pinned DS4 runtime";
+  }
+  const declaredFiles = declaredSelectedVariant?.files ?? [];
+  const declaredArtifactSize = manifest?.artifact?.sizeBytes;
+  const declaredArtifactSha256 = manifest?.artifact?.sha256?.trim().toLowerCase() ?? null;
+  const singleFileContractDeclared = manifest?.artifact?.output === requestedFile
+    && Number.isSafeInteger(declaredArtifactSize)
+    && Number(declaredArtifactSize) > 0
+    && /^[a-f0-9]{64}$/.test(declaredArtifactSha256 ?? "");
+  if (!artifactPolicyError && artifactFormat && !manifestFileMissing && !singleFileContractDeclared) {
+    artifactPolicyError = "DS4 ExpertMajor v2 manifests must pin the single output file, byte size, and SHA-256";
+  }
+  if (!artifactPolicyError && artifactFormat && !manifestFileMissing && (
+    declaredFiles.length !== 1
+    || declaredFiles[0].sizeBytes !== declaredArtifactSize
+    || declaredFiles[0].sha256?.toLowerCase() !== declaredArtifactSha256
+  )) {
+    artifactPolicyError = "The DSBox manifest size or SHA-256 does not match the pinned Hugging Face artifact";
   }
 
   const unsupportedUnverifiedGguf = publisher === "unsloth" && !manifest;
@@ -441,7 +482,10 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   variants = variants.map((variant) => {
     const selected = declaredSelectedVariant?.id === variant.id;
     const variantIdentity = expectedArtifactFormat(repository, variant.outputFile);
-    let unavailableReason = artifactPolicyError;
+    let unavailableReason = artifactPolicyError
+      ?? (artifactFormat && !memoryFits
+        ? `This ExpertMajor v2 model requires at least ${minimumMemoryGb} GiB of unified memory`
+        : null);
     if (!unavailableReason && variantIdentity.present && !variantIdentity.format) {
       unavailableReason = variantIdentity.version
         ? `DSBox does not support DS4 ExpertMajor v${variantIdentity.version}`
@@ -469,12 +513,6 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     ? variants.find((variant) => variant.id === declaredSelectedVariant.id)
     : undefined;
   const files = selectedVariant?.files ?? [];
-  const minimumMemoryGb = Number.isFinite(manifest?.minimumMemoryGb)
-    ? Number(manifest?.minimumMemoryGb)
-    : Number.isFinite(manifest?.requirements?.minUnifiedMemoryBytes)
-      ? Number(manifest?.requirements?.minUnifiedMemoryBytes) / 1024 ** 3
-      : null;
-  const memoryFits = minimumMemoryGb !== null && totalMemoryBytes >= minimumMemoryGb * 1024 ** 3;
   const stable = manifest?.status?.toLowerCase() === "stable";
   const compatibilityDeclared = minimumMemoryGb !== null
     && Boolean(explicitModelId)

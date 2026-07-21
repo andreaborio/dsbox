@@ -3,7 +3,7 @@ import type { Readable } from "node:stream";
 import { access, lstat, mkdir, readFile, readdir, rename, stat, statfs, writeFile } from "node:fs/promises";
 import { constants as fsConstants, createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
-import { cpus, homedir } from "node:os";
+import { cpus, homedir, totalmem } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
@@ -32,6 +32,7 @@ import {
   inspectDs4Gguf,
   type Ds4GgufCompatibility
 } from "./gguf-compatibility.js";
+import { EXPERT_MAJOR_MINIMUM_MEMORY_GB } from "../src/lib/model-format.js";
 
 export { tokenizeArguments } from "../src/lib/arguments.js";
 export { buildEngineArguments } from "../src/lib/engine-arguments.js";
@@ -52,9 +53,19 @@ const fallbackModelVariables: Record<string, string> = {
 
 const localModelInventoryVersion = 1;
 export const EXPERT_MAJOR_RUNTIME_BRANCH = "main";
-export const EXPERT_MAJOR_RUNTIME_COMMIT = "7c99924f93c4be46d065421c46e1541b29bd28dd";
+export const EXPERT_MAJOR_RUNTIME_COMMIT = "57acfd408a3154851a0c59be432904300abb3b6c";
 export const GLM52_RUNTIME_BRANCH = EXPERT_MAJOR_RUNTIME_BRANCH;
 export const GLM52_RUNTIME_COMMIT = EXPERT_MAJOR_RUNTIME_COMMIT;
+const retiredExpertMajorEnvironmentKeys = [
+  "DS4_QWEN_EXPERIMENTAL_METAL",
+  "DS4_EXPERT_PROFILE",
+  "DS4_EXPERT_HOTLIST",
+  "DS4_METAL_STREAMING_EXPERT_HOTLIST",
+  "DS4_METAL_STREAMING_EXPERT_HOTLIST_PRIORITY",
+  "DS4_METAL_STREAMING_EXPERT_HOTLIST_PROFILE",
+  "DS4_METAL_STREAMING_PIN_NON_ROUTED",
+  "DS4_SERVER_STREAMING_DECODE_STATS"
+] as const;
 
 interface ManagedCheckoutIdentity {
   exists: boolean;
@@ -138,6 +149,15 @@ export function parseVmStatSwapoutPages(output: string): number | null {
   if (!match) return null;
   const pages = Number(match[1]);
   return Number.isSafeInteger(pages) && pages >= 0 ? pages : null;
+}
+
+export function expertMajorLaunchEnvironment(
+  inherited: NodeJS.ProcessEnv,
+  configured: Record<string, string>
+): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = { ...inherited, ...configured };
+  for (const key of retiredExpertMajorEnvironmentKeys) delete environment[key];
+  return environment;
 }
 
 export function ds4BuildInfoMatchesHead(output: string, head: string): boolean {
@@ -272,6 +292,7 @@ function optionName(value: string): string {
 export class RuntimeManager {
   private readonly store: ConfigStore;
   private readonly bus: EventBus;
+  private readonly totalMemoryBytes: number;
   private state: RuntimeState = structuredClone(initialState);
   private logs: LogEntry[] = [];
   private nextLogId = 1;
@@ -298,9 +319,10 @@ export class RuntimeManager {
   private automaticMemoryPollPending = false;
   private automaticSafetyStopPromise: Promise<void> | null = null;
 
-  constructor(store: ConfigStore, bus: EventBus) {
+  constructor(store: ConfigStore, bus: EventBus, totalMemoryBytes = totalmem()) {
     this.store = store;
     this.bus = bus;
+    this.totalMemoryBytes = totalMemoryBytes;
   }
 
   getState(): RuntimeState {
@@ -1965,6 +1987,9 @@ export class RuntimeManager {
   }
 
   private async startEngine(modelSwitch = false): Promise<void> {
+    if (this.totalMemoryBytes < EXPERT_MAJOR_MINIMUM_MEMORY_GB * 1024 ** 3) {
+      throw new Error(`DS4 ExpertMajor v2 requires at least ${EXPERT_MAJOR_MINIMUM_MEMORY_GB} GiB of unified memory`);
+    }
     let config = this.store.get();
     const selectedModel = await this.validateLocalModel(config.model.path, config.model.path);
     const modelId = this.localModelId(selectedModel, config.model.id);
@@ -2014,7 +2039,9 @@ export class RuntimeManager {
       await mkdir(path.dirname(config.observability.imatrixPath), { recursive: true, mode: 0o700 });
     }
     const extraEnvironment = parseEnvironment(config.advanced.environment);
-    const environment = { ...process.env, ...extraEnvironment };
+    const environment = expertMajorManaged
+      ? expertMajorLaunchEnvironment(process.env, extraEnvironment)
+      : { ...process.env, ...extraEnvironment };
 
     this.clearAutomaticMemoryWatchdog();
     this.automaticMemoryGuard = null;

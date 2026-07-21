@@ -1,3 +1,31 @@
+## DSBox 0.3.2
+
+This closeout release pins DSBox to DwarfStar v0.2.0 at
+`57acfd408a3154851a0c59be432904300abb3b6c` and tightens the public model
+contract without adding startup flags.
+
+### Release hardening
+
+- Requires at least 64 GiB unified memory in the live catalog, download
+  readiness, local startup, and hardware guidance.
+- Requires one complete ExpertMajor v2 GGUF whose declared filename, byte size,
+  and SHA-256 match the revision-pinned Hugging Face LFS metadata.
+- Keeps model path, context, output limit, thread count, loopback bind, port,
+  working directory, and CORS policy authoritative even when advanced arguments
+  contain conflicting short, long, or `--option=value` forms.
+- Removes retired ExpertMajor tuning variables from managed launch environments.
+- Keeps the 0.3.1 DS4 AUTO command shape. Qwen and DeepSeek select residency
+  adaptively; GLM selects its SSD profile. GLM 32K remains available because it
+  completed the release gate on the 64 GiB host, although it is a slow test.
+- Corrects the example DeepSeek artifact SHA-256 and pins all release metadata
+  to the same DS4 runtime commit.
+
+### Verification
+
+- Live Hugging Face catalog checked at 64 and 32 GiB.
+- TypeScript, production build, theme guard, and the complete automated suite
+  rerun after the final runtime and manifest pins.
+
 ## DSBox 0.3.1
 
 This release completes the ExpertMajor v2-only startup contract for Qwen3.6,

@@ -10,6 +10,7 @@ import {
   ds4BuildInfoMatchesHead,
   EXPERT_MAJOR_RUNTIME_BRANCH,
   EXPERT_MAJOR_RUNTIME_COMMIT,
+  expertMajorLaunchEnvironment,
   gitRemoteIdentity,
   GLM52_RUNTIME_BRANCH,
   GLM52_RUNTIME_COMMIT,
@@ -84,6 +85,16 @@ describe("environment parser", () => {
 
   it("rejects invalid names", () => {
     expect(() => parseEnvironment("BAD-NAME=1")).toThrow(/variable name/);
+  });
+
+  it("removes retired ExpertMajor tuning from managed launch environments", () => {
+    expect(expertMajorLaunchEnvironment(
+      { DS4_EXPERT_PROFILE: "old", KEEP_ME: "yes" },
+      { DS4_QWEN_EXPERIMENTAL_METAL: "1", DS4_METAL_MEMORY_REPORT: "1" }
+    )).toEqual({
+      KEEP_ME: "yes",
+      DS4_METAL_MEMORY_REPORT: "1"
+    });
   });
 
 });
@@ -281,9 +292,56 @@ describe("engine arguments", () => {
     config.model.id = "custom-moe";
     expect(buildEngineArguments(config, "qwen35moe")).not.toContain("--quality");
   });
+
+  it("keeps managed identity, context, output, threads, and loopback binding authoritative", () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.model = { path: "/models/release.gguf", id: "deepseek-v4-flash" };
+    config.server.contextTokens = 32_768;
+    config.server.maxOutputTokens = 512;
+    config.server.threads = 8;
+    config.server.internalHost = "127.0.0.1";
+    config.server.internalPort = 5678;
+    config.advanced.extraArgs = [
+      "-m /tmp/evil.gguf",
+      "--model=/tmp/also-evil.gguf",
+      "-c 1",
+      "--ctx=2",
+      "-n 3",
+      "--tokens=4",
+      "-t 1",
+      "--threads=2",
+      "--host 0.0.0.0",
+      "--port=9999",
+      "--chdir /tmp",
+      "--cors"
+    ].join(" ");
+
+    const args = buildEngineArguments(config, "deepseek4");
+
+    expect(args).toEqual(expect.arrayContaining([
+      "-m", "/models/release.gguf",
+      "--ctx", "32768",
+      "--tokens", "512",
+      "--threads", "8",
+      "--host", "127.0.0.1",
+      "--port", "5678"
+    ]));
+    expect(args.join(" ")).not.toMatch(/evil|0\.0\.0\.0|9999|--chdir|--cors/);
+    expect(args.filter((value) => value === "-m" || value === "--model")).toHaveLength(1);
+    expect(args.filter((value) => value === "--ctx" || value === "-c")).toHaveLength(1);
+  });
 });
 
 describe("ExpertMajor v2 one-click preparation", () => {
+  it("fails local ExpertMajor startup below the 64 GiB release floor", async () => {
+    const config = createDefaultConfig(32 * 1024 ** 3);
+    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus(), 32 * 1024 ** 3);
+    const internal = runtime as unknown as { startEngine(): Promise<void> };
+
+    await expect(internal.startEngine()).rejects.toThrow("requires at least 64 GiB");
+  });
+
   it("shows a plain Qwen startup command without an environment gate prefix", async () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     config.model = {
@@ -364,7 +422,7 @@ describe("ExpertMajor v2 one-click preparation", () => {
       "qwen35moe"
     );
 
-    expect(EXPERT_MAJOR_RUNTIME_COMMIT).toMatch(/^[a-f0-9]{40}$/);
+    expect(EXPERT_MAJOR_RUNTIME_COMMIT).toBe("57acfd408a3154851a0c59be432904300abb3b6c");
     expect(selected.repository).toMatchObject({
       url: "https://github.com/andreaborio/ds4.git",
       directory: managedDirectory,

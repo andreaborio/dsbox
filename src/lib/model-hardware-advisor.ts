@@ -129,7 +129,7 @@ function performance(
 
   const ratioText = `${ratio.toFixed(ratio >= 10 ? 0 : 1)}×`;
   const guidance = belowPublishedGuidance
-    ? ` The publisher's guidance is ${model.minimumMemoryGb} GB, but this is a performance warning—not an install limit.`
+    ? ` This release requires at least ${model.minimumMemoryGb} GiB of unified memory, so installation is blocked on this Mac.`
     : "";
   const uncertainty = architectureUncertain
     ? " Actual speed also depends on the architecture, quantization, context, and SSD behavior."

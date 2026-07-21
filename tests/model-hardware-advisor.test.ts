@@ -58,7 +58,7 @@ describe("DS4 SSD-streaming hardware advisor", () => {
     expect(assessment.compatibility.explanation).toContain("Generic GGUF loaders are not compatible");
   });
 
-  it("warns but never marks a 90 GB model incompatible on a 16 GB Mac", () => {
+  it("explains the install floor for a 90 GB model on a 16 GB Mac", () => {
     const assessment = assessModelHardware(model({ minimumMemoryGb: 64 }), {
       totalMemoryBytes: 16 * GIB,
       diskFreeBytes: 180 * GIB
@@ -66,7 +66,8 @@ describe("DS4 SSD-streaming hardware advisor", () => {
 
     expect(assessment.compatibility.status).toBe("verified");
     expect(assessment.performance.label).toBe("Very slow likely");
-    expect(assessment.performance.explanation).toContain("performance warning—not an install limit");
+    expect(assessment.performance.explanation).toContain("requires at least 64 GiB");
+    expect(assessment.performance.explanation).toContain("installation is blocked");
     expect(assessment.storage.status).toBe("enough");
     expect(assessment.requiresAcknowledgement).toBe(true);
   });

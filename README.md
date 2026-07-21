@@ -34,8 +34,8 @@
 
 - **One power control.** Once a model is selected, DSBox can prepare the checkout, build `ds4-server`, validate flags, start it, and wait for real readiness.
 - **Models without path hunting.** Scan the Mac, choose a GGUF with Finder, or review and download a Hugging Face variant inside DSBox.
-- **SSD streaming without artificial lockouts.** DSBox warns when a model may be very slow, but does not block an experiment merely because the GGUF is larger than unified memory.
-- **The right memory path automatically.** Qwen3.6, DeepSeek V4 Flash, and GLM-5.2 ExpertMajor v2 delegate backend, power, and resident-or-SSD planning to the unified DS4 AUTO runtime.
+- **SSD streaming with a qualified floor.** Release models require at least 64 GiB of unified memory; above that floor, DSBox can stream even when the GGUF is larger than RAM.
+- **The right memory path automatically.** Qwen3.6 and DeepSeek delegate resident-or-SSD planning to DS4 AUTO; GLM-5.2 uses the same minimal startup and resolves to its qualified SSD-only path.
 - **A complete local chat.** Threads, reasoning, stop control, automatic scrolling, syntax-highlighted code, one-click copy, and response-level prefill/generation timings.
 - **A bounded agent loop.** Agent mode can inspect the local runtime and model, optionally search the web, and show reasoning, tool activity, results, and sources as they stream.
 - **Bring your coding agent.** The Agents screen exposes model-aware loopback endpoints, copy-ready configurations, and honest unavailable states when the active runtime lacks a required protocol.
@@ -117,7 +117,7 @@ A generic GGUF container is not enough: DS4 requires its own architecture metada
 
 ### Download inside DSBox
 
-The catalog reads DS4-oriented sources from the Hugging Face `andreaborio` profile. Every installable Qwen, DeepSeek, or GLM model must have a revision-pinned `dsbox.json` declaring ExpertMajor v2, `ds4.expert_major.v2`, the required `andreaborio/ds4` `main` runtime, and an exact runtime commit; the pinned Hugging Face revision must also publish the selected file's content hash. DSBox enables download only when both halves of that contract are present, then verifies and builds the unified runtime before the download starts. Each public family repository may retain canonical, v1, chunked, or sidecar files for download continuity and reproducibility, but its root manifest selects only the v2 file and DSBox marks every other variant unavailable. Canonical inference, the retired antirez catalog entry, old GLM sidecars, and legacy runtime branches are not compatibility targets. Unsloth repositories remain visible for provenance, but their standard GGUF builds cannot be selected or downloaded. The exact revision, total size, file count, free-space check, and hardware advisory are shown before any compatible download begins.
+The catalog reads DS4-oriented sources from the Hugging Face `andreaborio` profile. Every installable Qwen, DeepSeek, or GLM model must have a revision-pinned `dsbox.json` declaring ExpertMajor v2, `ds4.expert_major.v2`, the required `andreaborio/ds4` `main` runtime, an exact runtime commit, and one complete GGUF whose byte size and SHA-256 match Hugging Face LFS metadata. DSBox enables download only when that complete contract is present, then verifies and builds the unified runtime before the download starts. Each public family repository may retain canonical, v1, chunked, or sidecar files for download continuity and reproducibility, but its root manifest selects only the v2 file and DSBox marks every other variant unavailable. Canonical inference, old GLM sidecars, and legacy runtime branches are not compatibility targets. Unsloth repositories remain visible for provenance, but their standard GGUF builds cannot be selected or downloaded.
 
 A renamed model repository can declare `previousRepositories` in the same manifest. DSBox uses those ids only to recognize an already-installed bundle at its old local path; new downloads always use the current revision-pinned repository.
 
@@ -206,12 +206,12 @@ codex --model <selected-model-id> -c model_provider=ds4
 
 ## SSD streaming and safety
 
-DSBox does not pretend that “fits on SSD” means “will be fast.” A model larger than unified memory may run through DS4 SSD streaming, but speed depends on model structure, quantization, storage, thermal state, and cache warmth. Hardware guidance is advisory; insufficient disk space is the hard download blocker.
+DSBox does not pretend that “fits on SSD” means “will be fast.” ExpertMajor v2 release models require at least 64 GiB of unified memory. On supported Macs, a model larger than unified memory may run through DS4 SSD streaming, but speed still depends on model structure, quantization, storage, thermal state, and cache warmth. Insufficient memory or disk space blocks installation.
 
 Adaptive mode lets DS4 calculate its expert-cache budget from live model geometry and available memory. DSBox independently watches macOS pressure and swap activity while the runtime is active, and performs a safety stop if pressure becomes unsafe or required signals repeatedly disappear. Manual cache, residency, and power controls remain available only for unmanaged/custom runtimes. DeepSeek and GLM retain disk-KV; DeepSeek also retains imatrix and directional steering. Qwen keeps live context reuse but cannot serialize its recurrent session payload yet, while GLM keeps its graph-selected prefill schedule. Context, trace, safe extra flags, and environment controls remain available in Settings.
 
 For Qwen3.6, DeepSeek V4 Flash, and GLM-5.2, DSBox requires the unified DS4
-[`7c99924`](https://github.com/andreaborio/ds4/commit/7c99924f93c4be46d065421c46e1541b29bd28dd)
+[`57acfd4`](https://github.com/andreaborio/ds4/commit/57acfd408a3154851a0c59be432904300abb3b6c)
 ExpertMajor v2 runtime or newer. On the normal managed path, all three families
 receive no backend, power, residency, streaming, cache, preload, or cold-start
 override from DSBox. DS4 selects its validated AUTO plan from the model and live
@@ -253,7 +253,6 @@ The table below uses the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF and the i
 
 | Mac | Bounded workload | Generation throughput |
 | --- | --- | ---: |
-| M1 Pro, 16 GB | DSBox API, 9 prompt + 2 output tokens | 0.30 t/s cold; ~0.52 t/s warm |
 | M5 Pro, 64 GB | two DSBox API requests, 22–23 prompt + 64 output tokens | 9.88 / 12.86 t/s |
 | M5 Pro, 64 GB | `ds4-bench`, 128 prompt + 64 decode tokens | 13.05 / 13.59 t/s |
 

@@ -148,7 +148,7 @@ Omit `value` for indeterminate work. Always provide a specific label. The compon
 
 ```tsx
 <InlineNotice tone="advisory" title="May be slow on this Mac">
-  DS4 can stream this 90 GB model from SSD, but generation may be slow with 16 GB of unified memory.
+  DS4 can stream this 244 GB model from SSD, but generation may be slow with 64 GB of unified memory.
 </InlineNotice>
 ```
 

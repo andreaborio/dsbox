@@ -22,6 +22,7 @@ npm run build
 - Do not add automatic CPU fallbacks on macOS.
 - Do not send `SIGKILL` during normal shutdown. SIGTERM must give ds4 time to drain requests and save KV state.
 - Validate flags against `ds4-server --help all` from the unified `main` runtime; managed ExpertMajor v2 startup must not reintroduce backend, power, residency, streaming, cache, preload, or cold-start overrides.
+- Keep release admission at 64 GiB unified memory or above, and require one manifest-pinned ExpertMajor v2 GGUF whose byte size and SHA-256 match Hugging Face metadata.
 - Do not display Metal or I/O metrics that cannot be measured reliably.
 - Treat traces and KV caches as potentially sensitive data.
 - Never start a model download implicitly from the power action. Users must select a local GGUF or explicitly confirm a catalog download.

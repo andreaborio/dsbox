@@ -39,7 +39,10 @@ export function chooseDefaultCatalogVariant(
 }
 
 export function catalogModelIsReady(model: CatalogModel, totalMemoryBytes: number): boolean {
-  return model.installable && Boolean(chooseDefaultCatalogVariant(model, totalMemoryBytes));
+  const minimumBytes = (model.minimumMemoryGb ?? 0) * 1024 ** 3;
+  return model.installable
+    && totalMemoryBytes >= minimumBytes
+    && Boolean(chooseDefaultCatalogVariant(model, totalMemoryBytes));
 }
 
 export function catalogModelForVariant(

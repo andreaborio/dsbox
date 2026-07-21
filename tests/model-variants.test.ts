@@ -69,4 +69,10 @@ describe("catalog variant defaults", () => {
     expect(catalogModelIsReady(model([variant("incomplete", 70, false)]), 16 * GIB)).toBe(false);
     expect(catalogModelIsReady({ ...model([variant("complete", 70)]), installable: false }, 16 * GIB)).toBe(false);
   });
+
+  it("enforces the catalog publisher memory floor", () => {
+    const releaseModel = { ...model([variant("release", 70)]), minimumMemoryGb: 64 };
+    expect(catalogModelIsReady(releaseModel, 64 * GIB)).toBe(true);
+    expect(catalogModelIsReady(releaseModel, 32 * GIB)).toBe(false);
+  });
 });

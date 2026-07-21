@@ -12,6 +12,20 @@ function requestedUrl(input: string | URL | Request): string {
   return input instanceof Request ? input.url : String(input);
 }
 
+function expertMajorArtifact(output: string, sizeBytes: number, sha256: string) {
+  return {
+    output,
+    sizeBytes,
+    sha256,
+    format: {
+      id: "ds4-expert-major",
+      version: 2,
+      tensor: "ds4.expert_major.v2",
+      requiresRuntime: "andreaborio/ds4"
+    }
+  };
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -85,14 +99,7 @@ describe("Hugging Face model catalog", () => {
           runtimeBranch: "main",
           runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
           file: modelFile,
-          artifact: {
-            format: {
-              id: "ds4-expert-major",
-              version: 2,
-              tensor: "ds4.expert_major.v2",
-              requiresRuntime: "andreaborio/ds4"
-            }
-          }
+          artifact: expertMajorArtifact(modelFile, 48 * 1024 ** 3, modelSha256)
         });
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -124,6 +131,71 @@ describe("Hugging Face model catalog", () => {
     expect(urls.filter((url) => url.includes(repository))).toSatisfy(
       (repositoryUrls: string[]) => repositoryUrls.every((url) => url.includes(revision))
     );
+
+    const constrained = await new ModelCatalog().list(32 * 1024 ** 3, true);
+    expect(constrained.models[0]).toMatchObject({
+      repository,
+      installable: false,
+      recommended: false,
+      unavailableReason: "This ExpertMajor v2 model requires at least 64 GiB of unified memory"
+    });
+  });
+
+  it.each([
+    ["missing size and checksum pins", "main", 64, undefined, undefined, "deepseek-v4-flash", "DS4 ExpertMajor v2 manifests must pin the single output file, byte size, and SHA-256"],
+    ["a non-main runtime branch", "codex/legacy", 64, 4096, "a".repeat(64), "deepseek-v4-flash", "DS4 ExpertMajor v2 artifacts must pin the andreaborio/ds4 main runtime"],
+    ["a memory floor below the release minimum", "main", 32, 4096, "a".repeat(64), "deepseek-v4-flash", "DS4 ExpertMajor v2 requires a minimumMemoryGb declaration of at least 64"],
+    ["a mismatched byte size", "main", 64, 4097, "a".repeat(64), "deepseek-v4-flash", "The DSBox manifest size or SHA-256 does not match the pinned Hugging Face artifact"],
+    ["a mismatched checksum", "main", 64, 4096, "b".repeat(64), "deepseek-v4-flash", "The DSBox manifest size or SHA-256 does not match the pinned Hugging Face artifact"],
+    ["an unsupported DeepSeek family", "main", 64, 4096, "a".repeat(64), "deepseek-v4-pro", "DS4 ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek V4 Flash, or GLM-5.2 model contract"]
+  ])("rejects a single-file ExpertMajor manifest with %s", async (_case, runtimeBranch, minimumMemoryGb, sizeBytes, sha256, modelId, unavailableReason) => {
+    const repository = "andreaborio/DeepSeek-V4-Flash-DS4-GGUF";
+    const revision = "f".repeat(40);
+    const modelFile = "deepseek-v4-flash-expert-major-v2.gguf";
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestedUrl(input);
+      if (url.includes("/api/models?")) return jsonResponse([{ id: repository, sha: revision }]);
+      if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
+        return jsonResponse({
+          id: repository,
+          sha: revision,
+          siblings: [{ rfilename: modelFile, lfs: { size: 4096, sha256: "a".repeat(64) } }]
+        });
+      }
+      if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
+        return jsonResponse({
+          schemaVersion: 1,
+          status: "stable",
+          recommended: true,
+          minimumMemoryGb,
+          modelId,
+          runtimeBranch,
+          runtimeCommit: "d".repeat(40),
+          file: modelFile,
+          artifact: {
+            output: modelFile,
+            sizeBytes,
+            sha256,
+            format: {
+              id: "ds4-expert-major",
+              version: 2,
+              tensor: "ds4.expert_major.v2",
+              requiresRuntime: "andreaborio/ds4"
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+
+    expect(catalog.models[0]).toMatchObject({
+      installable: false,
+      recommended: false,
+      unavailableReason
+    });
+    expect(catalog.recommended).toBeNull();
   });
 
   it("never labels an experimental model as recommended even with a stable manifest", async () => {
@@ -235,14 +307,7 @@ describe("Hugging Face model catalog", () => {
             modelId: isQwen ? "qwen3.6-35b-a3b" : isGlm ? "glm-5.2" : "deepseek-v4-flash",
             runtimeBranch: "main",
             runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
-            artifact: {
-              format: {
-                id: "ds4-expert-major",
-                version: 2,
-                tensor: "ds4.expert_major.v2",
-                requiresRuntime: "andreaborio/ds4"
-              }
-            }
+            artifact: expertMajorArtifact(file, 2048, "b".repeat(64))
           });
         }
       }
@@ -290,14 +355,7 @@ describe("Hugging Face model catalog", () => {
           minimumMemoryGb: 64,
           previousRepositories: [previousRepository],
           architecture: "moe",
-          artifact: {
-            format: {
-              id: "ds4-expert-major",
-              version: 2,
-              tensor: "ds4.expert_major.v2",
-              requiresRuntime: "andreaborio/ds4"
-            }
-          }
+          artifact: expertMajorArtifact(nativeFile, 86_720_114_272, "a".repeat(64))
         });
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -357,14 +415,7 @@ describe("Hugging Face model catalog", () => {
           minimumMemoryGb: 64,
           previousRepositories: [previousRepository],
           architecture: "moe",
-          artifact: {
-            format: {
-              id: "ds4-expert-major",
-              version: 2,
-              tensor: "ds4.expert_major.v2",
-              requiresRuntime: "andreaborio/ds4"
-            }
-          }
+          artifact: expertMajorArtifact(nativeFile, 262_147_193_504, "9".repeat(64))
         });
       }
       throw new Error(`Unexpected request: ${url}`);
@@ -423,14 +474,7 @@ describe("Hugging Face model catalog", () => {
           file: modelFile,
           minimumMemoryGb: 64,
           previousRepositories: [previousRepository, null, 42, "not a repository", previousRepository],
-          artifact: {
-            format: {
-              id: "ds4-expert-major",
-              version: 2,
-              tensor: "ds4.expert_major.v2",
-              requiresRuntime: "andreaborio/ds4"
-            }
-          }
+          artifact: expertMajorArtifact(modelFile, 20_808_566_880, "c".repeat(64))
         });
       }
       throw new Error(`Unexpected request: ${url}`);

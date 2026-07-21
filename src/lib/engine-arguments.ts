@@ -42,6 +42,7 @@ export function isManagedExpertMajorV2Model(
 }
 
 const managedExpertMajorV2BooleanOptions = new Set([
+  "--cors",
   "--quality",
   "--warm-weights",
   "--ssd-streaming",
@@ -57,6 +58,17 @@ const managedExpertMajorV2BooleanOptions = new Set([
 ]);
 
 const managedExpertMajorV2SingleValueOptions = new Set([
+  "-m",
+  "--model",
+  "-c",
+  "--ctx",
+  "-n",
+  "--tokens",
+  "-t",
+  "--threads",
+  "--host",
+  "--port",
+  "--chdir",
   "--power",
   "--backend",
   "--ssd-streaming-cache-experts",
