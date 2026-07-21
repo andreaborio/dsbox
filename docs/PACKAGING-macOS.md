@@ -14,6 +14,7 @@ The community package is:
 - branded with the temporary H mark recorded in
   `scripts/macos-package-contract.json` while the final logo is replaced;
 - an ASAR-packaged Electron UI and control plane;
+- bundled project, third-party, Electron, and Chromium legal notices;
 - independent of engine delivery: no Hebrus or legacy DS4 executable is
   embedded. Hebrus Studio discovers and builds the compatible engine separately.
 
@@ -49,8 +50,8 @@ The verifier checks the disk image when present, application and executable
 names, canonical DMG filename, the current app icon byte for byte, bundle
 identifier, package and bundle versions, exact architecture, ASAR header
 integrity, packaged `package.json`, absence of embedded engine executables,
-checksum when required by the release lane, and the sealed ad-hoc code
-signature.
+the four required legal-notice files, checksum when required by the release
+lane, and the sealed ad-hoc code signature.
 
 An optional launch smoke uses disposable Hebrus Studio state and Electron user-data
 directories:

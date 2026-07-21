@@ -1,9 +1,10 @@
 # Hebrus Studio 0.4.0
 
-This is the first public **Hebrus Studio** bridge release. It renames the DSBox
-desktop experience and presents the inference engine as **Hebrus**, while
-deliberately preserving every persistent and wire-level identifier needed by
-existing installations.
+This is the candidate for the first public **Hebrus Studio** bridge release. It
+renames the DSBox desktop experience and presents the inference engine as
+**Hebrus**, while deliberately preserving every persistent and wire-level
+identifier needed by existing installations. It is not published until the
+external release gates below are complete.
 
 ## Identity and upgrade safety
 
@@ -24,6 +25,8 @@ existing installations.
   using disposable state and profiles and no model inference. It verifies that
   legacy settings, model/download inventory, theme, onboarding, view, model
   disclosure, and conversation state remain readable in both directions.
+- Bundles the project license, project third-party notices, Electron license,
+  and Chromium notice set as verifier-enforced release contents.
 
 ## Runtime and model contract
 

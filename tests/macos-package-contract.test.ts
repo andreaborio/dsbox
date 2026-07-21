@@ -32,6 +32,12 @@ describe("macOS package contract", () => {
       },
       architecture: "arm64",
       engineDelivery: "external",
+      requiredLegalNotices: [
+        "LICENSE.txt",
+        "THIRD_PARTY_NOTICES.md",
+        "LICENSE.electron.txt",
+        "LICENSES.chromium.html"
+      ],
       compatibility: {
         legacyProductName: "DSBox",
         legacyUserDataDirectoryName: "DSBox",
@@ -51,7 +57,12 @@ describe("macOS package contract", () => {
     expect(builder).toMatch(/^asar: true$/m);
     expect(builder).toMatch(/^  identity: "-"$/m);
     expect(builder).toMatch(/^        - arm64$/m);
-    expect(builder).not.toMatch(/^(extraFiles|extraResources):/m);
+    expect(builder).not.toMatch(/^extraFiles:/m);
+    expect(builder).toMatch(/^extraResources:\n(?:  - .+\n(?:    .+\n)*)+/m);
+    expect(builder).toContain("from: LICENSE\n    to: LICENSE.txt");
+    expect(builder).toContain("from: THIRD_PARTY_NOTICES.md\n    to: THIRD_PARTY_NOTICES.md");
+    expect(builder).toContain("from: node_modules/electron/dist/LICENSE\n    to: LICENSE.electron.txt");
+    expect(builder).toContain("from: node_modules/electron/dist/LICENSES.chromium.html\n    to: LICENSES.chromium.html");
     expect(packageJson.scripts["verify:mac"]).toBe("bash scripts/verify-macos-release.sh");
     expect(packageJson.scripts["build:icon"]).toBe("bash scripts/build-macos-icon.sh");
     expect(packageJson.scripts["pack:mac"]).toMatch(/^npm run build:icon && /);
@@ -59,6 +70,8 @@ describe("macOS package contract", () => {
     expect(packageJson.name).toBe("hebrus-studio");
     expect(verifier).toContain('cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON"');
     expect(verifier).not.toContain("Expected exactly one packaged Hebrus logo");
+    expect(verifier).toContain("requiredLegalNotices.join('\\n')");
+    expect(verifier).toContain('Required legal notice is missing: $REQUIRED_NOTICE');
   });
 
   it("pins Electron to the legacy user-data directory before setting the new name", async () => {

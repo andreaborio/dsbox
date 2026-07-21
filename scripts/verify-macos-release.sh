@@ -126,6 +126,14 @@ cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON" || {
   exit 1
 }
 
+while IFS= read -r REQUIRED_NOTICE; do
+  [[ -n "$REQUIRED_NOTICE" ]] || continue
+  [[ -f "$APP_PATH/Contents/Resources/$REQUIRED_NOTICE" ]] || {
+    echo "Required legal notice is missing: $REQUIRED_NOTICE" >&2
+    exit 1
+  }
+done < <(node -p "require('$CONTRACT').requiredLegalNotices.join('\n')")
+
 ARCHITECTURES=$(lipo -archs "$EXECUTABLE")
 [[ "$ARCHITECTURES" == "$EXPECTED_ARCHITECTURE" ]] || {
   echo "Unexpected app architecture: $ARCHITECTURES" >&2
@@ -216,5 +224,5 @@ if [[ "${DSBOX_VERIFY_LAUNCH:-0}" == "1" ]]; then
   fi
 fi
 
-echo "Verified ${PRODUCT_NAME} ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ${EXECUTABLE_NAME}, ${ICON_NAME}, external engine, ad-hoc signed."
+echo "Verified ${PRODUCT_NAME} ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ${EXECUTABLE_NAME}, ${ICON_NAME}, legal notices, external engine, ad-hoc signed."
 echo "Developer ID signing and notarization are intentionally not asserted."
