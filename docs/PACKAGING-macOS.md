@@ -148,6 +148,15 @@ npm run verify:mac:dev -- "release/Hebrus-Studio-0.4.0-macOS-arm64.dmg"
 npm run verify:upgrade-rollback:e2e:dev-dmg
 ```
 
+Before `dist:mac:dev` writes the development DMG, it removes only the exact
+current-version public filenames declared by the checksum contract plus
+`SHA256SUMS.txt`. This prevents a development DMG from sitting beside a stale
+public SBOM, signing attestation, upgrade report, or checksum that refers to an
+older DMG. The cleanup uses no glob and no recursive deletion: older-version
+release files, `release/development-evidence/`, unrelated files, and all source
+branding assets remain untouched. The newly built DMG is still explicitly
+development-only and cannot authorize a release.
+
 Development provenance is deliberately not valid release provenance, so
 `npm run verify:mac` rejects this package; `verify:mac:dev` validates its
 explicit development provenance and the remaining package invariants. Exact release verification belongs
