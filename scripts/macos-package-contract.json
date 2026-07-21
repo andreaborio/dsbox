@@ -48,6 +48,13 @@
     "reportFileNameTemplate": "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.json",
     "logFileNameTemplate": "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.log"
   },
+  "developmentEvidence": {
+    "schemaVersion": 1,
+    "qualification": "development",
+    "directory": "development-evidence",
+    "reportFileNameTemplate": "Hebrus-Studio-{version}-Development-Upgrade-Rollback-E2E.json",
+    "logFileNameTemplate": "Hebrus-Studio-{version}-Development-Upgrade-Rollback-E2E.log"
+  },
   "checksums": {
     "fileName": "SHA256SUMS.txt",
     "requiredFileNameTemplates": [

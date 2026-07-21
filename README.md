@@ -338,6 +338,7 @@ npm run pack:mac
 npm run verify:mac:dev -- "release/mac-arm64/Hebrus Studio.app"
 npm run dist:mac:dev
 npm run verify:mac:dev -- "release/Hebrus-Studio-0.4.0-macOS-arm64.dmg"
+npm run verify:upgrade-rollback:e2e:dev-dmg
 ```
 
 This ad-hoc bundle is for local development only and must not be published. The
@@ -352,6 +353,13 @@ Finder and choose **Open**. The
 single-app `xattr` exception. That exception is only for a bundle you built or
 received through a trusted development channel; it is never the public release
 path.
+
+The development final-DMG compatibility command builds only the frozen DSBox
+checkpoint, mounts the already-built development DMG read-only, and runs the
+real DSBox -> Hebrus Studio -> DSBox sequence. Its atomic JSON report and log
+live under `release/development-evidence/`, carry `qualification: development`,
+and cannot enter the public SBOM or checksum set. They are local compatibility
+evidence, never release authorization.
 
 State-compatibility changes must also pass the real packaged sequence:
 

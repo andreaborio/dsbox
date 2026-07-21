@@ -62,6 +62,13 @@ describe("macOS package contract", () => {
         reportFileNameTemplate: "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.json",
         logFileNameTemplate: "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.log"
       },
+      developmentEvidence: {
+        schemaVersion: 1,
+        qualification: "development",
+        directory: "development-evidence",
+        reportFileNameTemplate: "Hebrus-Studio-{version}-Development-Upgrade-Rollback-E2E.json",
+        logFileNameTemplate: "Hebrus-Studio-{version}-Development-Upgrade-Rollback-E2E.log"
+      },
       requiredLegalNotices: [
         "LICENSE.txt",
         "THIRD_PARTY_NOTICES.md",
@@ -116,6 +123,8 @@ describe("macOS package contract", () => {
     expect(packageJson.scripts["dist:mac"]).toMatch(/^npm run build:legal-notices && npm run build:icon && /);
     expect(packageJson.scripts["dist:mac"]).not.toContain("electron-builder.dev.yml");
     expect(packageJson.scripts["dist:mac:dev"]).toContain("--config electron-builder.dev.yml --mac dmg --arm64");
+    expect(packageJson.scripts["verify:upgrade-rollback:e2e:dev-dmg"]).toBe("bash scripts/run-upgrade-rollback-e2e.sh --development");
+    expect(packageJson.scripts["development:e2e:report:validate"]).toBe("node scripts/validate-development-upgrade-rollback-report.mjs");
     expect(packageJson.name).toBe("hebrus-studio");
     expect(verifier).toContain('cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON"');
     expect(verifier).toContain("requiredLegalNotices.join('\\n')");
@@ -163,6 +172,27 @@ describe("macOS package contract", () => {
     expect(ci).toContain("npm run verify:mac:dev -- \"release/mac-arm64/Hebrus Studio.app\"");
     expect(ci).toContain("npm run verify:upgrade-rollback:e2e -- --source");
     expect(ci).not.toContain("npm run verify:mac -- \"release/mac-arm64/Hebrus Studio.app\"");
+  });
+
+  it("keeps development final-DMG evidence separate from public release evidence", async () => {
+    const contract = JSON.parse(await text("scripts/macos-package-contract.json"));
+    const runner = await text("scripts/run-upgrade-rollback-e2e.sh");
+    const releaseWorkflow = await text(".github/workflows/release-macos.yml");
+    const developmentStart = runner.indexOf('if [[ "$mode" == "--development" ]]');
+    const releaseStart = runner.indexOf('\nversion="$(node -p', developmentStart);
+    const developmentLane = runner.slice(developmentStart, releaseStart);
+
+    expect(developmentStart).toBeGreaterThan(0);
+    expect(releaseStart).toBeGreaterThan(developmentStart);
+    expect(developmentLane).toContain('expected_commit="$(git -C "$repo_root" rev-parse HEAD)"');
+    expect(developmentLane).toContain("run-development-dmg-upgrade-rollback-e2e.mjs");
+    expect(developmentLane).toContain("validate-development-upgrade-rollback-report.mjs");
+    expect(developmentLane).not.toContain("new_tree");
+    expect(developmentLane).not.toContain("SBOM");
+    expect(developmentLane).not.toContain("checksum");
+    expect(contract.checksums.requiredFileNameTemplates).not.toContain(contract.developmentEvidence.reportFileNameTemplate);
+    expect(contract.checksums.requiredFileNameTemplates).not.toContain(contract.developmentEvidence.logFileNameTemplate);
+    expect(releaseWorkflow).not.toContain("development-evidence");
   });
 
   it("keeps public packaging on fail-closed Developer ID and outer-DMG notarization", async () => {

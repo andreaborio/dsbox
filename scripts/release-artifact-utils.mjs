@@ -98,3 +98,29 @@ export function validateReleaseProvenance(provenance, { packageJson, contract, e
   if (errors.length) throw new Error(`Invalid release provenance:\n${[...new Set(errors)].map((error) => `- ${error}`).join("\n")}`);
   return provenance;
 }
+
+export function validateDevelopmentProvenance(provenance, { packageJson, contract, expectedCommit } = {}) {
+  const errors = [];
+  const requireValue = (condition, message) => {
+    if (!condition) errors.push(message);
+  };
+  const hasOnlyKeys = (value, keys) => value && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+  requireValue(hasOnlyKeys(provenance, ["schemaVersion", "subject", "source", "build"]), "development provenance contains unexpected top-level fields");
+  requireValue(hasOnlyKeys(provenance?.subject, ["name", "packageName", "version", "platform", "architecture"]), "development provenance subject contains unexpected fields");
+  requireValue(hasOnlyKeys(provenance?.source, ["commit", "tag", "treeState"]), "development provenance source contains unexpected fields");
+  requireValue(hasOnlyKeys(provenance?.build, ["provider", "workflow"]), "development provenance build contains unexpected fields");
+  requireValue(provenance?.schemaVersion === contract?.provenance?.schemaVersion, `schemaVersion must be ${contract?.provenance?.schemaVersion}`);
+  requireValue(provenance?.subject?.name === contract?.productName, `subject.name must be ${contract?.productName}`);
+  requireValue(provenance?.subject?.packageName === packageJson?.name, `subject.packageName must be ${packageJson?.name}`);
+  requireValue(provenance?.subject?.version === packageJson?.version, `subject.version must be ${packageJson?.version}`);
+  requireValue(provenance?.subject?.platform === "macOS", "subject.platform must be macOS");
+  requireValue(provenance?.subject?.architecture === contract?.architecture, `subject.architecture must be ${contract?.architecture}`);
+  requireValue(/^[a-f0-9]{40}$/i.test(provenance?.source?.commit ?? ""), "source.commit must be a full commit id");
+  requireValue(provenance?.source?.tag === null, "source.tag must be null for development provenance");
+  requireValue(provenance?.source?.treeState === "development", "source.treeState must be development");
+  requireValue(provenance?.build?.provider === "local-development", "build.provider must be local-development");
+  requireValue(provenance?.build?.workflow === "local-development", "build.workflow must be local-development");
+  if (expectedCommit) requireValue(provenance?.source?.commit === expectedCommit, `source.commit must equal current commit ${expectedCommit}`);
+  if (errors.length) throw new Error(`Invalid development provenance:\n${[...new Set(errors)].map((error) => `- ${error}`).join("\n")}`);
+  return provenance;
+}
