@@ -39,11 +39,16 @@
   "provenance": {
     "embeddedFile": "release-provenance.json",
     "sourceFile": "build/release-provenance.json",
-    "schemaVersion": 1,
+    "schemaVersion": 2,
+    "developmentSchemaVersion": 1,
     "workflow": "release-macos"
   },
-  "upgradeRollback": {
+  "releaseAttestation": {
     "schemaVersion": 1,
+    "fileNameTemplate": "Hebrus-Studio-{version}-Release-Attestation.json"
+  },
+  "upgradeRollback": {
+    "schemaVersion": 2,
     "legacyCommit": "595e9952c4fd1197de3aa3ccde66a5ddccddd397",
     "reportFileNameTemplate": "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.json",
     "logFileNameTemplate": "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.log"
@@ -59,6 +64,7 @@
     "fileName": "SHA256SUMS.txt",
     "requiredFileNameTemplates": [
       "Hebrus-Studio-{version}-macOS-arm64.dmg",
+      "Hebrus-Studio-{version}-Release-Attestation.json",
       "Hebrus-Studio-{version}-SBOM.cdx.json",
       "Hebrus-Studio-{version}-THIRD-PARTY-LICENSES.md",
       "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.json",

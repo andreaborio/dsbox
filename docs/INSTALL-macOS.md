@@ -8,8 +8,8 @@ gates are pending; this page describes the post-gate public installation.
 ## Install the public release
 
 1. Download `SHA256SUMS.txt` and every file it names from the same GitHub
-   release: the DMG, CycloneDX SBOM, third-party license inventory, and the
-   upgrade/rollback JSON report and log.
+   release: the DMG, signing/notarization attestation, CycloneDX SBOM,
+   third-party license inventory, and the upgrade/rollback JSON report and log.
 2. In Terminal, verify the complete release set from that folder:
 
    ```sh

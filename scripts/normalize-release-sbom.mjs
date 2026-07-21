@@ -5,6 +5,9 @@ import path from "node:path";
 import {
   cycloneDxLicenseExpression,
   cycloneDxLicensesFromPackageMetadata,
+  lockComponentRef,
+  lockDependencyGraph,
+  packageNameFromLockPath,
   readJson,
   sha256Buffer,
   validateReleaseProvenance
@@ -14,16 +17,18 @@ const repositoryRoot = path.resolve(import.meta.dirname, "..");
 
 function parseArgs(argv) {
   let provenancePath = "";
+  let attestationPath = "";
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--provenance") provenancePath = path.resolve(argv[++index] || "");
+    else if (argument === "--attestation") attestationPath = path.resolve(argv[++index] || "");
     else if (["--help", "-h"].includes(argument)) {
-      console.log("Usage: npm sbom ... | node scripts/normalize-release-sbom.mjs --provenance <release-provenance.json>");
+      console.log("Usage: npm sbom ... | node scripts/normalize-release-sbom.mjs --provenance <release-provenance.json> --attestation <release-attestation.json>");
       process.exit(0);
     } else throw new Error(`Unknown argument: ${argument}`);
   }
-  if (!provenancePath) throw new Error("--provenance is required");
-  return { provenancePath };
+  if (!provenancePath || !attestationPath) throw new Error("--provenance and --attestation are required");
+  return { provenancePath, attestationPath };
 }
 
 async function stdin() {
@@ -66,13 +71,14 @@ async function installedLicense(component, lock) {
 }
 
 async function main() {
-  const { provenancePath } = parseArgs(process.argv.slice(2));
-  const [raw, packageText, lockfile, contract, provenance] = await Promise.all([
+  const { provenancePath, attestationPath } = parseArgs(process.argv.slice(2));
+  const [raw, packageText, lockfile, contract, provenance, attestationBytes] = await Promise.all([
     stdin(),
     readFile(path.join(repositoryRoot, "package.json"), "utf8"),
     readFile(path.join(repositoryRoot, "package-lock.json")),
     readJson(path.join(repositoryRoot, "scripts", "macos-package-contract.json")),
-    readJson(provenancePath)
+    readJson(provenancePath),
+    readFile(attestationPath)
   ]);
   const packageJson = JSON.parse(packageText);
   const lock = JSON.parse(lockfile.toString("utf8"));
@@ -105,11 +111,38 @@ async function main() {
     enrichedLicenses += 1;
   }
 
+  const componentsByCoordinate = new Map();
+  for (const component of sbom.components ?? []) {
+    const key = `${component.name}\u0000${component.version}`;
+    if (componentsByCoordinate.has(key)) throw new Error(`npm sbom returned duplicate coordinate ${component.name}@${component.version}`);
+    componentsByCoordinate.set(key, component);
+  }
+  const completeComponents = [];
+  for (const packagePath of Object.keys(lock.packages ?? {}).filter(Boolean).sort()) {
+    const metadata = lock.packages[packagePath];
+    const name = packageNameFromLockPath(packagePath);
+    const template = componentsByCoordinate.get(`${name}\u0000${metadata.version}`);
+    if (!template) throw new Error(`npm sbom omitted locked coordinate ${name}@${metadata.version} at ${packagePath}`);
+    const component = structuredClone(template);
+    component["bom-ref"] = lockComponentRef(packagePath);
+    const componentProperties = Array.isArray(component.properties) ? component.properties : [];
+    component.properties = componentProperties.filter((property) => ![
+      "hebrus:package-lock:path",
+      "cdx:npm:package:development"
+    ].includes(property?.name));
+    component.properties.push({ name: "hebrus:package-lock:path", value: packagePath });
+    if (metadata.dev === true) component.properties.push({ name: "cdx:npm:package:development", value: "true" });
+    completeComponents.push(component);
+  }
+  sbom.components = completeComponents;
+  sbom.dependencies = lockDependencyGraph(lock, root["bom-ref"]);
+
   const propertyNames = new Set([
     "hebrus:package-lock:sha256",
     "hebrus:source-commit",
     "hebrus:source-tag",
     "hebrus:release-provenance:sha256",
+    "hebrus:release-attestation:sha256",
     "hebrus:license-components-enriched"
   ]);
   const properties = Array.isArray(sbom.metadata.properties) ? sbom.metadata.properties : [];
@@ -119,6 +152,7 @@ async function main() {
     { name: "hebrus:source-commit", value: provenance.source.commit },
     { name: "hebrus:source-tag", value: provenance.source.tag },
     { name: "hebrus:release-provenance:sha256", value: sha256Buffer(await readFile(provenancePath)) },
+    { name: "hebrus:release-attestation:sha256", value: sha256Buffer(attestationBytes) },
     { name: "hebrus:license-components-enriched", value: String(enrichedLicenses) }
   );
   process.stdout.write(`${JSON.stringify(sbom, null, 2)}\n`);

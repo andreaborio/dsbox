@@ -27,7 +27,23 @@ documentation therefore never asks users to bypass Gatekeeper.
 
 The release workflow also refuses to continue without `CSC_LINK`,
 `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
-`APPLE_TEAM_ID`. After electron-builder signs and notarizes the app, the
+`APPLE_TEAM_ID`. The release job is attached to the `public-release` GitHub
+Environment. Configure that environment with required reviewers, prevent
+self-review, restrict deployment tags to the approved `v*` policy, and store
+all five credentials there rather than as unreviewed repository secrets.
+
+The same environment must define protected variables
+`HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME`,
+`HEBRUS_SIGNING_CERTIFICATE_SHA1`, and `HEBRUS_SIGNING_TEAM_ID`. They must
+exactly match the common name, leaf-certificate SHA-1 fingerprint, and ten
+character Apple team identifier recorded by the ready `developer-id-signing`
+gate. Strict readiness rejects a mismatch, provenance records the authorized
+identity, `APPLE_TEAM_ID` must equal the protected team variable, and both the
+app and DMG are inspected after signing to prove they use that exact leaf
+certificate and team. A merely well-formed Developer ID signature is not
+sufficient.
+
+After electron-builder signs and notarizes the app, the
 workflow verifies the signed outer DMG, submits that DMG to `notarytool`,
 staples it, and validates the ticket. The release verifier then checks the DMG
 Developer ID authority/team and stapling before mounting it, and checks the
@@ -68,7 +84,25 @@ that tag resolves to the same commit, and the run is a tagged GitHub Actions
 push. The resulting `build/release-provenance.json` is embedded at
 `Contents/Resources/release-provenance.json`. The package verifier requires its
 commit and tag to match the release run; the SBOM records the same commit, tag,
-and provenance-file SHA-256.
+provenance-file SHA-256, and release-attestation SHA-256. Provenance also binds
+the reviewed readiness-manifest hash, exact signing identity, and the prior
+notarization qualification submission.
+
+## Signing and notarization attestation
+
+The `notarization-stapling` readiness evidence contains the UUID of the real
+qualification run reviewed before launch. It is intentionally not the UUID of
+the future release submission: Apple creates a new submission UUID when the
+tagged final DMG is uploaded. The workflow captures `notarytool` with
+`--output-format json`, requires the current result to be `Accepted`, then writes
+`Hebrus-Studio-<version>-Release-Attestation.json` after stapling.
+
+That persistent evidence contains the current submission UUID, final stapled
+DMG hash, embedded-provenance hash, source commit/tag, and the actual app and
+DMG certificate common name, SHA-1, and team. Its validator requires both
+signatures to equal the identity authorized in provenance. The SBOM and
+upgrade/rollback report bind the attestation hash, and the final checksum set
+includes the attestation itself.
 
 ## Release SBOM
 
@@ -88,7 +122,12 @@ stop the release instead of being replaced with guesses.
 
 `scripts/validate-release-sbom.mjs` enforces the versioned filename, CycloneDX
 1.5 identity, component references, complete dependency set, Electron presence,
-lockfile/provenance hashes, and an identifiable license on every component.
+lockfile/provenance/attestation hashes, and an identifiable license on every
+component. Every non-root `package-lock.packages` path becomes one component
+with a unique path-derived `bom-ref`, so nested duplicate name/version
+occurrences cannot collapse into one row. Dependency nodes and resolved edges
+must exactly match the path-aware lockfile graph; deleting a transitive
+occurrence or edge stops the release.
 The same validated data produces
 `Hebrus-Studio-<version>-THIRD-PARTY-LICENSES.md`, a publishable sorted inventory.
 Neither asset is claimed as published while readiness remains blocked.
@@ -194,8 +233,9 @@ npm run verify:upgrade-rollback:e2e -- --release
 
 It builds only the frozen legacy side, mounts the already-built final DMG
 read-only, and runs the Hebrus phase from that mounted app. It atomically writes
-a versioned JSON report and log containing the final DMG and SBOM hashes, source
-commit/tag, embedded provenance hash, frozen legacy commit, and tested sequence.
+a versioned JSON report and log containing the final DMG, attestation, and SBOM
+hashes, source commit/tag, embedded provenance hash, current notary submission,
+frozen legacy commit, and tested sequence.
 The report is independently validated before checksums are generated.
 
 The gate proves that the packaged applications preserve the bundle identifier,
@@ -215,8 +255,9 @@ two already-built bundles without release evidence, invoke
 
 Only after the final-DMG E2E passes does the workflow create `SHA256SUMS.txt`.
 The checksum contract requires exactly the DMG, SBOM, license inventory, E2E
-JSON report, and E2E log. The package verifier validates both the exact filename
-set and every digest before `gh release create` can run.
+JSON report, E2E log, and signing/notarization attestation. The package verifier
+validates both the exact filename set and every digest before `gh release
+create` can run.
 
 ### Scope and deliberate limits
 

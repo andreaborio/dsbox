@@ -53,11 +53,16 @@ describe("macOS package contract", () => {
       provenance: {
         embeddedFile: "release-provenance.json",
         sourceFile: "build/release-provenance.json",
-        schemaVersion: 1,
+        schemaVersion: 2,
+        developmentSchemaVersion: 1,
         workflow: "release-macos"
       },
-      upgradeRollback: {
+      releaseAttestation: {
         schemaVersion: 1,
+        fileNameTemplate: "Hebrus-Studio-{version}-Release-Attestation.json"
+      },
+      upgradeRollback: {
+        schemaVersion: 2,
         legacyCommit: "595e9952c4fd1197de3aa3ccde66a5ddccddd397",
         reportFileNameTemplate: "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.json",
         logFileNameTemplate: "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.log"
@@ -115,6 +120,8 @@ describe("macOS package contract", () => {
     expect(packageJson.scripts["verify:mac:dev"]).toBe("bash scripts/verify-macos-release.sh --development");
     expect(packageJson.scripts["release:sbom:validate"]).toBe("node scripts/validate-release-sbom.mjs");
     expect(packageJson.scripts["release:provenance"]).toContain("generate-release-provenance.mjs");
+    expect(packageJson.scripts["release:attestation:create"]).toContain("create-release-attestation.mjs");
+    expect(packageJson.scripts["release:attestation:validate"]).toContain("validate-release-attestation.mjs");
     expect(packageJson.scripts["release:checksums"]).toContain("create-release-checksums.mjs");
     expect(packageJson.scripts["build:icon"]).toBe("bash scripts/build-macos-icon.sh");
     expect(packageJson.scripts["build:provenance:dev"]).toContain("generate-development-provenance.mjs");
@@ -136,6 +143,9 @@ describe("macOS package contract", () => {
     expect(verifier).toContain("Release DMG has no valid Apple signing team identifier.");
     expect(verifier).toContain("xcrun stapler validate");
     expect(verifier).toContain("spctl --assess --type execute");
+    expect(verifier).toContain("HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME");
+    expect(verifier).toContain("--extract-certificates");
+    expect(verifier).toContain("certificate SHA-1 does not match the protected release identity");
   });
 
   it("pins Electron to the legacy user-data directory before setting the new name", async () => {
@@ -203,6 +213,11 @@ describe("macOS package contract", () => {
     }
     expect(workflow).toContain('Required release secret $secret_name is missing.');
     expect(workflow).toContain("xcrun notarytool submit \"$DMG\"");
+    expect(workflow).toContain("environment: public-release");
+    expect(workflow).toContain("--output-format json");
+    expect(workflow).toContain("create-release-attestation.mjs");
+    expect(workflow).toContain("validate-release-attestation.mjs");
+    expect(workflow).toContain("Hebrus-Studio-${{ steps.version.outputs.version }}-Release-Attestation.json#Signing and notarization attestation");
     expect(workflow).toContain("timeout-minutes: 60");
     expect(workflow).toContain("codesign --verify --verbose=2 \"$DMG\"");
     expect(workflow).toContain("xcrun stapler staple \"$DMG\"");

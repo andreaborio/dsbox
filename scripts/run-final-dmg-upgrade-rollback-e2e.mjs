@@ -9,6 +9,7 @@ import {
   readJson,
   sha256Buffer,
   sha256File,
+  validateReleaseAttestation,
   validateReleaseProvenance,
   versioned,
   writeJsonAtomic,
@@ -22,7 +23,7 @@ function usage() {
   return [
     "Usage: node scripts/run-final-dmg-upgrade-rollback-e2e.mjs",
     "  --old-app /path/to/legacy.app --old-commit <commit>",
-    "  --dmg /path/to/final.dmg --sbom /path/to/final.cdx.json",
+    "  --dmg /path/to/final.dmg --attestation /path/to/release-attestation.json --sbom /path/to/final.cdx.json",
     "  --expected-commit <commit> --expected-tag <tag>",
     "  --report /path/to/report.json --log /path/to/e2e.log",
     "  [--old-build-log /path/to/build.log]"
@@ -32,7 +33,7 @@ function usage() {
 function parseArgs(argv) {
   const options = {};
   const names = new Set([
-    "old-app", "old-commit", "dmg", "sbom", "expected-commit", "expected-tag",
+    "old-app", "old-commit", "dmg", "attestation", "sbom", "expected-commit", "expected-tag",
     "report", "log", "old-build-log"
   ]);
   for (let index = 0; index < argv.length; index += 1) {
@@ -47,7 +48,7 @@ function parseArgs(argv) {
   for (const name of [...names].filter((name) => name !== "old-build-log")) {
     if (!options[name]) throw new Error(`${usage()}\n\nMissing --${name}`);
   }
-  for (const name of ["old-app", "dmg", "sbom", "report", "log", "old-build-log"]) {
+  for (const name of ["old-app", "dmg", "attestation", "sbom", "report", "log", "old-build-log"]) {
     if (options[name]) options[name] = path.resolve(options[name]);
   }
   if (!/^[a-f0-9]{40}$/i.test(options["old-commit"])) throw new Error("--old-commit must be a full commit id");
@@ -70,10 +71,12 @@ async function main() {
   const expectedLog = versioned(contract.upgradeRollback.logFileNameTemplate, packageJson.version);
   const expectedDmg = `${contract.artifactBaseName}-${packageJson.version}-macOS-${contract.architecture}.dmg`;
   const expectedSbom = versioned(contract.sbom.fileNameTemplate, packageJson.version);
+  const expectedAttestation = versioned(contract.releaseAttestation.fileNameTemplate, packageJson.version);
   if (path.basename(options.report) !== expectedReport) throw new Error(`report filename must be ${expectedReport}`);
   if (path.basename(options.log) !== expectedLog) throw new Error(`log filename must be ${expectedLog}`);
   if (path.basename(options.dmg) !== expectedDmg) throw new Error(`DMG filename must be ${expectedDmg}`);
   if (path.basename(options.sbom) !== expectedSbom) throw new Error(`SBOM filename must be ${expectedSbom}`);
+  if (path.basename(options.attestation) !== expectedAttestation) throw new Error(`attestation filename must be ${expectedAttestation}`);
   if (options["old-commit"] !== contract.upgradeRollback.legacyCommit) {
     throw new Error(`legacy commit must be ${contract.upgradeRollback.legacyCommit}`);
   }
@@ -89,11 +92,14 @@ async function main() {
     attached = true;
     const appPath = path.join(mountDirectory, `${contract.productName}.app`);
     const provenancePath = path.join(appPath, "Contents", "Resources", contract.provenance.embeddedFile);
-    const [provenanceBytes, provenance, sbom, oldBuildLog] = await Promise.all([
+    const [provenanceBytes, provenance, attestationBytes, attestation, sbom, oldBuildLog, dmgHash] = await Promise.all([
       readFile(provenancePath),
       readJson(provenancePath),
+      readFile(options.attestation),
+      readJson(options.attestation),
       readJson(options.sbom),
-      options["old-build-log"] ? readFile(options["old-build-log"], "utf8") : ""
+      options["old-build-log"] ? readFile(options["old-build-log"], "utf8") : "",
+      sha256File(options.dmg)
     ]);
     validateReleaseProvenance(provenance, {
       packageJson,
@@ -102,10 +108,20 @@ async function main() {
       expectedTag: options["expected-tag"]
     });
     const provenanceHash = sha256Buffer(provenanceBytes);
+    validateReleaseAttestation(attestation, {
+      packageJson,
+      contract,
+      provenance,
+      provenanceSha256: provenanceHash,
+      dmgSha256: dmgHash,
+      expectedCommit: options["expected-commit"],
+      expectedTag: options["expected-tag"]
+    });
     const sbomProperties = new Map((sbom.metadata?.properties ?? []).map((property) => [property?.name, property?.value]));
     if (sbomProperties.get("hebrus:source-commit") !== provenance.source.commit) throw new Error("SBOM source commit does not match the packaged provenance");
     if (sbomProperties.get("hebrus:source-tag") !== provenance.source.tag) throw new Error("SBOM source tag does not match the packaged provenance");
     if (sbomProperties.get("hebrus:release-provenance:sha256") !== provenanceHash) throw new Error("SBOM provenance hash does not match the packaged provenance");
+    if (sbomProperties.get("hebrus:release-attestation:sha256") !== sha256Buffer(attestationBytes)) throw new Error("SBOM release-attestation hash does not match release evidence");
 
     if (oldBuildLog) logSections.push("--- frozen legacy package build ---\n" + oldBuildLog.trimEnd());
     let verification;
@@ -151,10 +167,17 @@ async function main() {
         provenanceSha256: provenanceHash
       },
       artifacts: {
-        dmg: { fileName: path.basename(options.dmg), sha256: await sha256File(options.dmg) },
+        dmg: { fileName: path.basename(options.dmg), sha256: dmgHash },
+        attestation: { fileName: path.basename(options.attestation), sha256: sha256Buffer(attestationBytes) },
         sbom: { fileName: path.basename(options.sbom), sha256: await sha256File(options.sbom) },
         log: { fileName: path.basename(options.log), sha256: sha256Buffer(Buffer.from(logContents)) },
         packagedAppPath: `${contract.productName}.app`
+      },
+      release: {
+        signingIdentity: attestation.signing.application.certificateCommonName,
+        signingCertificateSha1: attestation.signing.application.certificateSha1,
+        teamIdentifier: attestation.signing.application.teamIdentifier,
+        notarySubmissionId: attestation.notarization.submissionId
       },
       compatibility: {
         legacyCommit: options["old-commit"],
