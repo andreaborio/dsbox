@@ -1,11 +1,16 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  ConfigStore,
   configSchema,
   createDefaultConfig,
   hardwareProfile,
   migrateVersion1Config,
   type LegacyDsboxConfig
 } from "../server/config.js";
+import { persistedConfigFixtures } from "./fixtures/hebrus-runtime-compatibility.js";
 
 describe("default config", () => {
   it("prioritizes expert-cache headroom on a 16 GB Mac", () => {
@@ -65,5 +70,35 @@ describe("default config", () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     expect(() => configSchema.parse({ ...config, server: { ...config.server, internalHost: "0.0.0.0" } })).toThrow();
     expect(() => configSchema.parse({ ...config, repository: { ...config.repository, url: "git@github.com:andreaborio/ds4.git" } })).toThrow();
+  });
+});
+
+describe("Hebrus bridge persistence", () => {
+  it.each(persistedConfigFixtures)("opens the version-2 $name fixture twice without rewriting or losing paths", async ({ config }) => {
+    const home = await mkdtemp(path.join(tmpdir(), "dsbox-hebrus-config-"));
+    const configPath = path.join(home, "config.json");
+    const serialized = `${JSON.stringify(config, null, 2)}\n`;
+    const previousHome = process.env.DSBOX_HOME;
+    process.env.DSBOX_HOME = home;
+    try {
+      await writeFile(configPath, serialized, { mode: 0o600 });
+
+      const first = await ConfigStore.open(64 * 1024 ** 3);
+      const second = await ConfigStore.open(64 * 1024 ** 3);
+
+      expect(first.homeDirectory).toBe(home);
+      expect(second.homeDirectory).toBe(home);
+      expect(first.get()).toEqual(config);
+      expect(second.get()).toEqual(config);
+      expect(first.get().version).toBe(2);
+      expect(path.isAbsolute(first.get().repository.directory)).toBe(true);
+      expect(path.isAbsolute(first.get().model.path)).toBe(true);
+      expect(path.isAbsolute(first.get().kvCache.directory)).toBe(true);
+      expect(await readFile(configPath, "utf8")).toBe(serialized);
+    } finally {
+      if (previousHome === undefined) delete process.env.DSBOX_HOME;
+      else process.env.DSBOX_HOME = previousHome;
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });

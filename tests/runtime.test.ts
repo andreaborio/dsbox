@@ -6,6 +6,7 @@ import { EventBus } from "../server/event-bus.js";
 import { shellDisplayArgument } from "../src/lib/arguments.js";
 import type { CatalogModel, DsboxConfig, LocalModelCandidate } from "../src/types.js";
 import {
+  allowsLegacyCapabilityFallback,
   buildEngineArguments,
   ds4BuildInfoMatchesHead,
   engineBuildTargetFromMakefile,
@@ -28,6 +29,7 @@ import {
   RuntimeManager,
   tokenizeArguments
 } from "../server/runtime.js";
+import { runtimeCompatibilityMatrix } from "./fixtures/hebrus-runtime-compatibility.js";
 
 function engineCapabilities(engineId: "ds4" | "hebrus" = "ds4"): EngineCapabilities {
   return {
@@ -231,6 +233,32 @@ describe("ExpertMajor engine capability bridge", () => {
       ...engineCapabilities(),
       executable_role: "cli"
     }))).toThrow(/server executable/);
+  });
+});
+
+describe("DS4 to Hebrus cross-version compatibility matrix", () => {
+  it.each(runtimeCompatibilityMatrix)("classifies $name", async ({ remote, binaryName, capability, expected }) => {
+    const binary = await resolveEngineBinaryPath("/runtime", async (candidate) => candidate.endsWith(`/${binaryName}`));
+    expect(binary).toBe(`/runtime/${binaryName}`);
+    expect(isSupportedEngineRemote(remote)).toBe(true);
+
+    const admission = async (): Promise<"legacy" | "structured"> => {
+      const result = await probeEngineCapabilities(binary!, "/runtime", async () => {
+        if (!capability) {
+          throw Object.assign(new Error("exit 2"), {
+            stdout: "",
+            stderr: `${binaryName}: unknown option: --capabilities=json\n`
+          });
+        }
+        return { stdout: `${JSON.stringify(capability)}\n`, stderr: "" };
+      });
+      if (result) return "structured";
+      if (allowsLegacyCapabilityFallback(binary!)) return "legacy";
+      throw new Error("hebrus-server does not expose the required structured capability contract");
+    };
+
+    if (expected === "reject") await expect(admission()).rejects.toThrow();
+    else await expect(admission()).resolves.toBe(expected);
   });
 });
 

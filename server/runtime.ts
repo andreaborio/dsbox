@@ -125,6 +125,10 @@ export function engineBuildTargetFromMakefile(makefile: string): (typeof ENGINE_
   return hasHebrusTarget ? "hebrus-server" : "ds4-server";
 }
 
+export function allowsLegacyCapabilityFallback(binary: string): boolean {
+  return path.basename(binary) === "ds4-server";
+}
+
 export interface EngineCapabilities {
   schema_version: 1;
   engine_id: "ds4" | "hebrus";
@@ -2079,7 +2083,7 @@ export class RuntimeManager {
       }
       return true;
     }
-    if (path.basename(binary) !== "ds4-server") {
+    if (!allowsLegacyCapabilityFallback(binary)) {
       throw new Error("hebrus-server does not expose the required structured capability contract");
     }
     return await this.checkoutHasExpertMajorV2Source(directory)
