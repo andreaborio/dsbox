@@ -105,6 +105,7 @@ npm run pack:mac
 npm run verify:mac:dev -- "release/mac-arm64/Hebrus Studio.app"
 npm run dist:mac:dev
 npm run verify:mac:dev -- "release/Hebrus-Studio-0.4.0-macOS-arm64.dmg"
+npm run verify:upgrade-rollback:e2e:dev-dmg
 ```
 
 Development provenance is deliberately not valid release provenance, so
@@ -126,6 +127,20 @@ open "/Applications/Hebrus Studio.app"
 This is a local-development exception, not a public install path. Never apply a
 broad quarantine removal to `/Applications`, and never use the exception for a
 public release artifact.
+
+`verify:upgrade-rollback:e2e:dev-dmg` is a separate, non-release final-DMG
+qualification lane. It requires the already-built DMG to embed development
+provenance for the exact current commit (`tag: null`, `treeState: development`,
+and the `local-development` provider/workflow). It builds only the frozen DSBox
+checkpoint, mounts that DMG read-only, and runs DSBox -> Hebrus Studio -> DSBox.
+
+The atomic outputs are
+`release/development-evidence/Hebrus-Studio-<version>-Development-Upgrade-Rollback-E2E.json`
+and the matching `.log`. Both are visibly non-release; the report binds the DMG,
+embedded provenance, log, legacy commit, and current commit. The development
+validator rejects release provenance, release-shaped evidence, changed files,
+and evidence outside `release/development-evidence/`. These files are excluded
+from the SBOM, `SHA256SUMS.txt`, the release workflow, and publication.
 
 `npm run build:icon` reproducibly derives the macOS ICNS variants from the
 temporary H mark without requiring a source logo asset. The web UI renders the

@@ -6,11 +6,17 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 Usage:
   npm run verify:upgrade-rollback:e2e -- --source
   npm run verify:upgrade-rollback:e2e -- --release
+  npm run verify:upgrade-rollback:e2e -- --development
 
 --source builds the frozen legacy checkpoint and current commit in disposable
 worktrees for normal CI. --release builds only the frozen legacy checkpoint,
 then tests the application mounted from the already-built final DMG and writes
 an atomic, versioned report and log under release/.
+
+--development also builds only the frozen legacy checkpoint, but accepts only
+an exact-current-commit development DMG and writes explicitly non-release
+evidence under release/development-evidence/. It never reads an SBOM or public
+checksums and cannot authorize a release.
 
 Environment overrides:
   DSBOX_UPGRADE_E2E_OLD_REF   Frozen legacy checkpoint
@@ -19,12 +25,13 @@ Environment overrides:
   HEBRUS_RELEASE_SBOM         Final SBOM for --release
   HEBRUS_VERIFY_COMMIT        Expected source commit for --release
   HEBRUS_VERIFY_TAG           Expected source tag for --release
+  HEBRUS_DEVELOPMENT_DMG      Already-built development DMG for --development
 EOF
   exit 0
 fi
 
 mode="${1:---source}"
-if [[ "$mode" != "--source" && "$mode" != "--release" ]]; then
+if [[ "$mode" != "--source" && "$mode" != "--release" && "$mode" != "--development" ]]; then
   echo "Unknown mode: $mode (use --help)" >&2
   exit 2
 fi
@@ -85,6 +92,44 @@ if [[ "$mode" == "--source" ]]; then
   node "$repo_root/scripts/verify-upgrade-rollback-e2e.mjs" \
     --old-app "$old_tree/release/mac-arm64/DSBox.app" \
     --new-app "$new_tree/release/mac-arm64/Hebrus Studio.app"
+  exit 0
+fi
+
+if [[ "$mode" == "--development" ]]; then
+  version="$(node -p "require('$repo_root/package.json').version")"
+  release_dir="$repo_root/release"
+  evidence_dir="$release_dir/development-evidence"
+  dmg="${HEBRUS_DEVELOPMENT_DMG:-$release_dir/Hebrus-Studio-${version}-macOS-arm64.dmg}"
+  report="$evidence_dir/Hebrus-Studio-${version}-Development-Upgrade-Rollback-E2E.json"
+  log="$evidence_dir/Hebrus-Studio-${version}-Development-Upgrade-Rollback-E2E.log"
+  provenance="$repo_root/build/release-provenance.json"
+  expected_commit="$(git -C "$repo_root" rev-parse HEAD)"
+
+  [[ -f "$dmg" ]] || { echo "Final development DMG is missing: $dmg" >&2; exit 1; }
+  [[ -f "$provenance" ]] || { echo "Development provenance is missing: $provenance" >&2; exit 1; }
+
+  echo "Building frozen legacy package $old_commit for development final-DMG qualification..."
+  git -C "$repo_root" worktree add --detach "$old_tree" "$old_commit" >/dev/null
+  (
+    cd "$old_tree"
+    npm ci
+    npm run pack:mac
+  ) >"$old_log" 2>&1
+
+  node "$repo_root/scripts/run-development-dmg-upgrade-rollback-e2e.mjs" \
+    --old-app "$old_tree/release/mac-arm64/DSBox.app" \
+    --old-commit "$old_commit" \
+    --old-build-log "$old_log" \
+    --dmg "$dmg" \
+    --expected-commit "$expected_commit" \
+    --report "$report" \
+    --log "$log"
+
+  node "$repo_root/scripts/validate-development-upgrade-rollback-report.mjs" "$report" \
+    --dmg "$dmg" \
+    --log "$log" \
+    --provenance "$provenance" \
+    --expected-commit "$expected_commit"
   exit 0
 fi
 
