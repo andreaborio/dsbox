@@ -10,19 +10,39 @@ npm run dev
 Before submitting a change, run:
 
 ```sh
+npm audit --audit-level=high
 npm run typecheck
 npm test
 npm run build
 ```
 
+Changes to Electron packaging, release identity, engine delivery, or bundled
+files must also pass the arm64 package contract on macOS:
+
+```sh
+npm run pack:mac
+npm run verify:mac -- release/mac-arm64/DSBox.app
+```
+
 ## Runtime rules
 
 - Never construct interpolated shell commands; always use an executable and an `argv` array.
-- Keep `ds4-server` on `127.0.0.1`; LAN exposure is not part of the base profile.
+- Keep the resolved `hebrus-server` or `ds4-server` compatibility command on
+  `127.0.0.1`; LAN exposure is not part of the base profile.
 - Do not add automatic CPU fallbacks on macOS.
-- Do not send `SIGKILL` during normal shutdown. SIGTERM must give ds4 time to drain requests and save KV state.
-- Validate flags against `ds4-server --help all` from the unified `main` runtime; managed ExpertMajor v2 startup must not reintroduce backend, power, residency, streaming, cache, preload, or cold-start overrides.
-- Keep release admission at 64 GiB unified memory or above, and require one manifest-pinned ExpertMajor v2 GGUF whose byte size and SHA-256 match Hugging Face metadata.
+- Do not send `SIGKILL` during normal shutdown. SIGTERM must give the engine
+  time to drain requests and save KV state.
+- Prefer the versioned `--capabilities=json` contract over source filenames,
+  C symbols, diagnostics, or embedded-string probes. A malformed or unknown
+  capability document fails closed; legacy probing remains limited to a
+  pre-capability `ds4-server` during the compatibility window.
+- Validate flags against `--help all` from the selected runtime. Managed
+  ExpertMajor v2 startup must not reintroduce backend, power, residency,
+  streaming, cache, preload, or cold-start overrides.
+- Preserve the qualified hardware floors: 64 GiB for DeepSeek V4 Flash and
+  GLM 5.2, and 16 GiB for Qwen3.6-35B-A3B. Require an immutable-revision,
+  manifest-pinned ExpertMajor v2 GGUF whose filename, byte size, SHA-256, and
+  minimum runtime commit match catalog metadata.
 - Do not display Metal or I/O metrics that cannot be measured reliably.
 - Treat traces and KV caches as potentially sensitive data.
 - Never start a model download implicitly from the power action. Users must select a local GGUF or explicitly confirm a catalog download.
@@ -39,3 +59,6 @@ npm run build
 ## Tests
 
 Use fixtures or fake servers for logs, SSE, and process tests. Never start real model downloads in the test suite. Tests requiring a GGUF or the actual Metal backend must be separate and opt-in.
+
+Freeze public catalog records as offline fixtures. Tests must not depend on a
+mutable branch, the current Hugging Face response, or an unpinned download URL.

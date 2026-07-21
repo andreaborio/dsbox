@@ -5,7 +5,7 @@
 DSBox is designed for a single user on the same Mac:
 
 - control plane: `127.0.0.1:4242`;
-- internal ds4 server: `127.0.0.1:8000` by default;
+- internal Hebrus/DS4 compatibility server: `127.0.0.1:8000` by default;
 - the control plane does not support binding to `0.0.0.0`;
 - CORS is not enabled on the runtime;
 - an anti-CSRF header is required for mutating `/api/*` requests;
@@ -24,4 +24,18 @@ ds4 traces can contain requests, rendered prompts, outputs, and tool calls. KV c
 
 ## Reporting a vulnerability
 
-Do not open public issues containing working exploits, tokens, or private data. First share a minimal, reproducible description privately with the maintainer of the repository that hosts DSBox.
+The project intends to receive reports through GitHub private vulnerability
+reporting:
+
+<https://github.com/andreaborio/dsbox/security/advisories/new>
+
+Private vulnerability reporting is not asserted as enabled yet. Enabling and
+testing it is an administrative launch gate. Until it is available, open only
+a minimal public issue asking the repository owner for a private channel; do
+not include vulnerability details, reproduction steps, logs, tokens, private
+data, or attachments.
+
+Include the exact DSBox version or commit, macOS version, hardware, installation
+method, engine build identity, and a minimal reproduction in a private report.
+Do not attach model weights, config files containing gateway keys, raw chat
+history, traces, or KV checkpoints.

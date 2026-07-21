@@ -299,7 +299,9 @@ A version tag matching `package.json` runs the same checks on GitHub Actions and
 
 ## Security
 
-Please report security issues privately to the repository owner. Do not expose DSBox or `ds4-server` directly on `0.0.0.0`; use an SSH tunnel for access from another machine.
+Follow the [security policy](SECURITY.md) for private reporting. Do not expose
+DSBox or its Hebrus/DS4 engine server directly on `0.0.0.0`; use an
+authenticated tunnel for access from another machine.
 
 ## License
 

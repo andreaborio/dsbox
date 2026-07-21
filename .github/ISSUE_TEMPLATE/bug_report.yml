@@ -1,0 +1,64 @@
+name: Bug report
+description: Report a reproducible DSBox application, packaging, or engine-bridge problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Do not post secrets, private conversations, model weights, traces, KV checkpoints, or undisclosed vulnerabilities. Use SECURITY.md for security reports.
+  - type: input
+    id: version
+    attributes:
+      label: DSBox version or commit
+      placeholder: v0.3.2 or a full Git commit
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Mac and macOS
+      placeholder: MacBook Pro M5 Pro, 64 GiB, macOS build 25A...
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation
+      options:
+        - GitHub release DMG
+        - Local packaged application
+        - Source checkout
+    validations:
+      required: true
+  - type: textarea
+    id: engine
+    attributes:
+      label: Engine identity
+      description: Paste sanitized build-info and capabilities JSON when the engine is involved.
+      render: text
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed secrets, personal paths, private prompts, model data, traces, and KV contents.
+          required: true
