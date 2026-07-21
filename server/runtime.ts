@@ -42,6 +42,7 @@ export { buildEngineArguments } from "../src/lib/engine-arguments.js";
 
 const execFileAsync = promisify(execFile);
 type ManagedChild = ChildProcessByStdio<null, Readable, Readable>;
+type EngineCommandResult = { stdout: string; stderr: string };
 const ansiPattern = /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*)?\u0007|(?:(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 const automaticMemoryPollMs = 1_000;
 const automaticMemoryReadFailureLimit = 3;
@@ -59,6 +60,10 @@ export const EXPERT_MAJOR_RUNTIME_BRANCH = "main";
 export const EXPERT_MAJOR_RUNTIME_COMMIT = "57acfd408a3154851a0c59be432904300abb3b6c";
 export const GLM52_RUNTIME_BRANCH = EXPERT_MAJOR_RUNTIME_BRANCH;
 export const GLM52_RUNTIME_COMMIT = EXPERT_MAJOR_RUNTIME_COMMIT;
+export const ENGINE_BINARY_NAMES = ["hebrus-server", "ds4-server"] as const;
+export const ENGINE_RUNTIME_IDENTITIES = ["github.com/andreaborio/ds4", "github.com/andreaborio/hebrus"] as const;
+const legacyManagedRuntimeUrl = "https://github.com/andreaborio/ds4.git";
+const hebrusManagedRuntimeUrl = "https://github.com/andreaborio/hebrus.git";
 const retiredExpertMajorEnvironmentKeys = [
   "DS4_QWEN_EXPERIMENTAL_METAL",
   "DS4_EXPERT_PROFILE",
@@ -84,6 +89,153 @@ export function gitRemoteIdentity(remote: string): string {
     .replace(/^git@github\.com:/, "github.com/")
     .replace(/\/+$/, "")
     .replace(/\.git$/, "");
+}
+
+export function isSupportedEngineRemote(remote: string): boolean {
+  const identity = gitRemoteIdentity(remote);
+  return ENGINE_RUNTIME_IDENTITIES.some((candidate) => candidate === identity);
+}
+
+export async function resolveEngineBinaryPath(
+  directory: string,
+  isExecutable: (candidate: string) => Promise<boolean> = async (candidate) => {
+    try {
+      await access(candidate, fsConstants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+): Promise<string | null> {
+  for (const name of ENGINE_BINARY_NAMES) {
+    const candidate = path.join(directory, name);
+    if (await isExecutable(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function engineBuildTargetFromMakefile(makefile: string): (typeof ENGINE_BINARY_NAMES)[number] {
+  const hasHebrusTarget = makefile.split(/\r?\n/).some((line) => {
+    const content = line.replace(/#.*$/, "");
+    if (!content.trim() || /^\s/.test(content)) return false;
+    const colon = content.indexOf(":");
+    if (colon < 0) return false;
+    return content.slice(0, colon).trim().split(/\s+/).includes("hebrus-server");
+  });
+  return hasHebrusTarget ? "hebrus-server" : "ds4-server";
+}
+
+export interface EngineCapabilities {
+  schema_version: 1;
+  engine_id: "ds4" | "hebrus";
+  build_git_sha: string;
+  backend: "metal";
+  executable_role: "server";
+  model_families: ["deepseek4", "glm-dsa", "qwen35moe"];
+  expert_major: {
+    version: 2;
+    tensor: "ds4.expert_major.v2";
+    storage_formats: [
+      { id: "ggml"; wire_value: 0; group_sizes: [] },
+      { id: "mlx-affine4"; wire_value: 1; group_sizes: [64] }
+    ];
+  };
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+}
+
+export function parseEngineCapabilitiesJson(output: string): EngineCapabilities {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    throw new Error("Engine capability command returned malformed JSON");
+  }
+  const root = record(parsed);
+  if (!root) throw new Error("Engine capability document must be a JSON object");
+  if (root.schema_version !== 1) {
+    throw new Error(`Unsupported engine capability schema version: ${String(root.schema_version)}`);
+  }
+  if (!exactKeys(root, [
+    "schema_version",
+    "engine_id",
+    "build_git_sha",
+    "backend",
+    "executable_role",
+    "model_families",
+    "expert_major"
+  ])) {
+    throw new Error("Engine capability document has an unexpected top-level shape");
+  }
+  if (root.engine_id !== "ds4" && root.engine_id !== "hebrus") {
+    throw new Error(`Unsupported engine identity: ${String(root.engine_id)}`);
+  }
+  if (typeof root.build_git_sha !== "string" || !root.build_git_sha.trim()) {
+    throw new Error("Engine capability document does not identify its build revision");
+  }
+  if (root.backend !== "metal") {
+    throw new Error(`Managed ExpertMajor requires the Metal backend, received: ${String(root.backend)}`);
+  }
+  if (root.executable_role !== "server") {
+    throw new Error(`Managed ExpertMajor requires a server executable, received: ${String(root.executable_role)}`);
+  }
+  if (JSON.stringify(root.model_families) !== JSON.stringify(["deepseek4", "glm-dsa", "qwen35moe"])) {
+    throw new Error("Engine capability document has contradictory ExpertMajor model-family support");
+  }
+  const expertMajor = record(root.expert_major);
+  if (!expertMajor || !exactKeys(expertMajor, ["version", "tensor", "storage_formats"])) {
+    throw new Error("Engine capability document has an invalid ExpertMajor shape");
+  }
+  if (expertMajor.version !== 2 || expertMajor.tensor !== "ds4.expert_major.v2") {
+    throw new Error("Engine capability document contradicts the ExpertMajor v2 tensor contract");
+  }
+  const expectedStorage = [
+    { id: "ggml", wire_value: 0, group_sizes: [] },
+    { id: "mlx-affine4", wire_value: 1, group_sizes: [64] }
+  ];
+  if (JSON.stringify(expertMajor.storage_formats) !== JSON.stringify(expectedStorage)) {
+    throw new Error("Engine capability document contradicts the ExpertMajor storage wire contract");
+  }
+  return parsed as EngineCapabilities;
+}
+
+export function engineCapabilityOptionUnsupported(error: unknown): boolean {
+  const failure = error as { stdout?: string; stderr?: string };
+  const output = `${failure.stdout ?? ""}\n${failure.stderr ?? ""}`;
+  return /(?:unknown|unrecognized) option:\s*--capabilities(?:=json)?(?:\s|$)/i.test(output);
+}
+
+export async function probeEngineCapabilities(
+  binary: string,
+  cwd: string,
+  run: (binary: string, args: string[], options: { cwd: string; maxBuffer: number; timeout: number }) => Promise<EngineCommandResult>
+    = (command, args, options) => execFileAsync(command, args, options)
+): Promise<EngineCapabilities | null> {
+  let result: EngineCommandResult;
+  try {
+    result = await run(binary, ["--capabilities=json"], {
+      cwd,
+      maxBuffer: 1024 * 1024,
+      timeout: 15_000
+    });
+  } catch (error) {
+    if (engineCapabilityOptionUnsupported(error)) return null;
+    const failure = error as { stdout?: string; stderr?: string; message?: string };
+    const detail = `${failure.stdout ?? ""}\n${failure.stderr ?? ""}`.trim() || failure.message || "unknown error";
+    throw new Error(`Unable to read engine capability contract: ${detail}`);
+  }
+  if (result.stderr.trim()) {
+    throw new Error("Engine capability command returned unexpected diagnostic output");
+  }
+  return parseEngineCapabilitiesJson(result.stdout);
 }
 
 interface LocalModelInventoryRecord {
@@ -546,6 +698,20 @@ export class RuntimeManager {
     }
   }
 
+  private async engineBinary(directory: string): Promise<string | null> {
+    return resolveEngineBinaryPath(directory, (candidate) => this.pathExists(candidate, true));
+  }
+
+  private async engineBuildTarget(directory: string): Promise<(typeof ENGINE_BINARY_NAMES)[number]> {
+    try {
+      const makefile = await readFile(path.join(directory, "Makefile"), "utf8");
+      return engineBuildTargetFromMakefile(makefile);
+    } catch {
+      // `make` will provide the authoritative error if the checkout has no Makefile.
+    }
+    return "ds4-server";
+  }
+
   private async sha256(target: string): Promise<string> {
     const hash = createHash("sha256");
     await new Promise<void>((resolve, reject) => {
@@ -571,19 +737,29 @@ export class RuntimeManager {
   private async recordBuildHead(directory: string): Promise<void> {
     const head = await this.fullGitHead(directory);
     if (!head) return;
-    const binarySha256 = await this.sha256(path.join(directory, "ds4-server"));
+    const binary = await this.engineBinary(directory);
+    if (!binary) throw new Error("The engine build did not produce hebrus-server or ds4-server");
+    const binarySha256 = await this.sha256(binary);
     const clean = await execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
       .then((result) => !result.stdout.trim())
       .catch(() => false);
     const stamp = this.buildStampPath(directory);
     await mkdir(path.dirname(stamp), { recursive: true, mode: 0o700 });
     const partial = `${stamp}.partial-${process.pid}`;
-    await writeFile(partial, `${JSON.stringify({ directory: path.resolve(directory), head, clean, binarySha256, builtAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
+    await writeFile(partial, `${JSON.stringify({
+      directory: path.resolve(directory),
+      head,
+      clean,
+      binaryPath: path.resolve(binary),
+      binarySha256,
+      builtAt: new Date().toISOString()
+    }, null, 2)}\n`, { mode: 0o600 });
     await rename(partial, stamp);
   }
 
   private async buildMatchesHead(directory: string): Promise<boolean> {
-    if (!(await this.pathExists(path.join(directory, "ds4-server"), true))) return false;
+    const binary = await this.engineBinary(directory);
+    if (!binary) return false;
     const head = await this.fullGitHead(directory);
     if (!head) return false;
     const checkoutClean = await execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
@@ -591,9 +767,19 @@ export class RuntimeManager {
       .catch(() => false);
     if (!checkoutClean) return false;
     try {
-      const stamp = JSON.parse(await readFile(this.buildStampPath(directory), "utf8")) as { directory?: string; head?: string; clean?: boolean; binarySha256?: string };
-      if (stamp.directory !== path.resolve(directory) || stamp.head !== head || stamp.clean !== true || !stamp.binarySha256) return false;
-      return await this.sha256(path.join(directory, "ds4-server")) === stamp.binarySha256;
+      const stamp = JSON.parse(await readFile(this.buildStampPath(directory), "utf8")) as {
+        directory?: string;
+        head?: string;
+        clean?: boolean;
+        binaryPath?: string;
+        binarySha256?: string;
+      };
+      if (stamp.directory !== path.resolve(directory)
+        || stamp.head !== head
+        || stamp.clean !== true
+        || stamp.binaryPath !== path.resolve(binary)
+        || !stamp.binarySha256) return false;
+      return await this.sha256(binary) === stamp.binarySha256;
     } catch {
       return false;
     }
@@ -634,9 +820,9 @@ export class RuntimeManager {
   async refresh(): Promise<RuntimeState> {
     let config = this.store.get();
     const gitDirectory = path.join(config.repository.directory, ".git");
-    const binary = path.join(config.repository.directory, "ds4-server");
     const installed = await this.pathExists(gitDirectory);
-    const built = installed && await this.pathExists(binary, true);
+    const binary = installed ? await this.engineBinary(config.repository.directory) : null;
+    const built = Boolean(binary);
     let modelPresent = false;
     let modelSizeBytes = 0;
     try {
@@ -809,7 +995,8 @@ export class RuntimeManager {
       }
 
       this.setState({ phase: "building", currentTask: "Build Metal" });
-      await this.runTask("make", [`-j${Math.max(2, Math.min(cpus().length, 12))}`, "ds4-server"], directory, "build");
+      const target = await this.engineBuildTarget(directory);
+      await this.runTask("make", [`-j${Math.max(2, Math.min(cpus().length, 12))}`, target], directory, "build");
       await this.recordBuildHead(directory);
       this.log("success", "dsbox", "Metal engine ready.");
       this.setState({ phase: "idle", currentTask: null, lastError: null });
@@ -839,7 +1026,8 @@ export class RuntimeManager {
     this.setState({ phase: "building", currentTask: "Build Metal", lastError: null });
     try {
       await this.ensureAppleMetalToolchain();
-      await this.runTask("make", [`-j${Math.max(2, Math.min(cpus().length, 12))}`, "ds4-server"], config.repository.directory, "build");
+      const target = await this.engineBuildTarget(config.repository.directory);
+      await this.runTask("make", [`-j${Math.max(2, Math.min(cpus().length, 12))}`, target], config.repository.directory, "build");
       await this.recordBuildHead(config.repository.directory);
       this.log("success", "dsbox", "Metal build completed.");
       this.setState({ phase: "idle", currentTask: null });
@@ -1859,18 +2047,40 @@ export class RuntimeManager {
     }
   }
 
-  private async binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean> {
+  private async legacyBinaryHasExpertMajorV2Runtime(binary: string): Promise<boolean> {
     try {
-      const binary = await readFile(path.join(directory, "ds4-server"));
-      return binary.includes(Buffer.from("ds4.expert_major.v2"))
-        && binary.includes(Buffer.from("Qwen inference requires a DS4 ExpertMajor v2 GGUF"))
-        && binary.includes(Buffer.from("Qwen requires ExpertMajor v2 MLX affine4/group-64 payload"))
-        && binary.includes(Buffer.from("DeepSeek inference requires a DS4 ExpertMajor v2 GGUF"))
-        && binary.includes(Buffer.from("GLM inference requires a DS4 ExpertMajor v2 GGUF"))
-        && binary.includes(Buffer.from("embedded expert-major store active"));
+      const contents = await readFile(binary);
+      return contents.includes(Buffer.from("ds4.expert_major.v2"))
+        && contents.includes(Buffer.from("Qwen inference requires a DS4 ExpertMajor v2 GGUF"))
+        && contents.includes(Buffer.from("Qwen requires ExpertMajor v2 MLX affine4/group-64 payload"))
+        && contents.includes(Buffer.from("DeepSeek inference requires a DS4 ExpertMajor v2 GGUF"))
+        && contents.includes(Buffer.from("GLM inference requires a DS4 ExpertMajor v2 GGUF"))
+        && contents.includes(Buffer.from("embedded expert-major store active"));
     } catch {
       return false;
     }
+  }
+
+  private async engineCapabilities(directory: string, binary: string): Promise<EngineCapabilities | null> {
+    return probeEngineCapabilities(binary, directory);
+  }
+
+  private async binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean> {
+    const binary = await this.engineBinary(directory);
+    if (!binary) return false;
+    const capabilities = await this.engineCapabilities(directory, binary);
+    if (capabilities) {
+      const head = await this.fullGitHead(directory);
+      const buildRevision = capabilities.build_git_sha.toLowerCase();
+      if (!head
+        || !/^[a-f0-9]{7,64}$/i.test(buildRevision)
+        || !head.toLowerCase().startsWith(buildRevision)) {
+        throw new Error("The engine capability build revision does not match the selected checkout");
+      }
+      return true;
+    }
+    return await this.checkoutHasExpertMajorV2Source(directory)
+      && await this.legacyBinaryHasExpertMajorV2Runtime(binary);
   }
 
   private async binaryMatchesCheckoutHead(directory: string): Promise<boolean> {
@@ -1882,7 +2092,8 @@ export class RuntimeManager {
     const head = await this.fullGitHead(directory);
     if (!head) return false;
     try {
-      const binary = path.join(directory, "ds4-server");
+      const binary = await this.engineBinary(directory);
+      if (!binary) return false;
       const result = await execFileAsync(binary, ["--build-info"], {
         cwd: directory,
         maxBuffer: 1024 * 1024,
@@ -1930,11 +2141,15 @@ export class RuntimeManager {
         ? "GLM-5.2 ExpertMajor v2"
         : "DeepSeek ExpertMajor v2";
     const sourceIsQualified = async (directory: string) =>
-      await this.checkoutHasExpertMajorV2Source(directory)
-      && await this.runtimeIncludesCommit(directory, EXPERT_MAJOR_RUNTIME_COMMIT);
+      await this.runtimeIncludesCommit(directory, EXPERT_MAJOR_RUNTIME_COMMIT);
 
-    const managedDirectory = path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4");
-    const managedUrl = "https://github.com/andreaborio/ds4.git";
+    const useHebrusIdentity = gitRemoteIdentity(config.repository.url) === "github.com/andreaborio/hebrus";
+    const managedDirectory = path.join(
+      this.store.homeDirectory,
+      "runtime",
+      useHebrusIdentity ? "andreaborio-hebrus" : "andreaborio-ds4"
+    );
+    const managedUrl = useHebrusIdentity ? hebrusManagedRuntimeUrl : legacyManagedRuntimeUrl;
     let selected = config;
     if (selected.repository.url !== managedUrl
       || selected.repository.branch !== EXPERT_MAJOR_RUNTIME_BRANCH
@@ -1949,7 +2164,7 @@ export class RuntimeManager {
     }
 
     let identity = await this.managedCheckoutIdentity(managedDirectory);
-    if (identity.exists && gitRemoteIdentity(identity.remote ?? "") !== gitRemoteIdentity(managedUrl)) {
+    if (identity.exists && !isSupportedEngineRemote(identity.remote ?? "")) {
       throw new Error(`The managed DS4 folder has a different origin remote: ${managedDirectory}`);
     }
     if (identity.exists && !identity.clean) {
@@ -1957,7 +2172,7 @@ export class RuntimeManager {
     }
     const isManagedMain = identity.exists
       && identity.branch === EXPERT_MAJOR_RUNTIME_BRANCH
-      && gitRemoteIdentity(identity.remote ?? "") === gitRemoteIdentity(managedUrl);
+      && isSupportedEngineRemote(identity.remote ?? "");
     if (!isManagedMain || !(await sourceIsQualified(managedDirectory))) {
       this.log(
         "info",
@@ -1971,9 +2186,9 @@ export class RuntimeManager {
 
     if (!identity.exists
       || identity.branch !== EXPERT_MAJOR_RUNTIME_BRANCH
-      || gitRemoteIdentity(identity.remote ?? "") !== gitRemoteIdentity(managedUrl)
+      || !isSupportedEngineRemote(identity.remote ?? "")
       || !identity.clean) {
-      throw new Error(`DSBox requires a clean andreaborio/ds4 ${EXPERT_MAJOR_RUNTIME_BRANCH} checkout at ${managedDirectory}`);
+      throw new Error(`DSBox requires a clean andreaborio/ds4 or andreaborio/hebrus ${EXPERT_MAJOR_RUNTIME_BRANCH} checkout at ${managedDirectory}`);
     }
 
     if (!(await sourceIsQualified(selected.repository.directory))) {
@@ -2025,8 +2240,8 @@ export class RuntimeManager {
       );
     }
     await this.ensureAppleMetalToolchain();
-    const binary = path.join(config.repository.directory, "ds4-server");
-    if (!(await this.pathExists(binary, true))) throw new Error("ds4-server has not been built");
+    const binary = await this.engineBinary(config.repository.directory);
+    if (!binary) throw new Error("hebrus-server or ds4-server has not been built");
     let modelStat;
     try {
       modelStat = await stat(config.model.path);
@@ -2263,8 +2478,10 @@ export class RuntimeManager {
   async commandPreview(): Promise<string[]> {
     const config = this.store.get();
     const selectedModel = await this.inspectLocalModel(config.model.path, config.model.path);
+    const binary = await this.engineBinary(config.repository.directory)
+      ?? path.join(config.repository.directory, await this.engineBuildTarget(config.repository.directory));
     return [
-      path.join(config.repository.directory, "ds4-server"),
+      binary,
       ...buildEngineArguments(config, selectedModel?.architecture)
     ];
   }
@@ -2285,7 +2502,7 @@ export class RuntimeManager {
       try {
         const entries = await readdir(root, { withFileTypes: true });
         for (const entry of entries) {
-          if ((!entry.isDirectory() && !entry.isSymbolicLink()) || !/(^|[-_.])ds4(?:[-_.]|$)/i.test(entry.name)) continue;
+          if ((!entry.isDirectory() && !entry.isSymbolicLink()) || !/(^|[-_.])(?:ds4|hebrus)(?:[-_.]|$)/i.test(entry.name)) continue;
           nearby.push(path.join(root, entry.name));
         }
       } catch {
@@ -2295,8 +2512,11 @@ export class RuntimeManager {
     const candidates = [...new Set([
       configured,
       path.join(this.store.homeDirectory, "runtime", "andreaborio-ds4"),
+      path.join(this.store.homeDirectory, "runtime", "andreaborio-hebrus"),
       path.join(home, "Beep", "ds4"),
+      path.join(home, "Beep", "hebrus"),
       path.join(home, "BEEP", "ds4"),
+      path.join(home, "BEEP", "hebrus"),
       ...nearby.sort()
     ])];
     const found: Array<{ path: string; branch: string | null; head: string | null }> = [];
@@ -2304,7 +2524,7 @@ export class RuntimeManager {
       if (!(await this.pathExists(path.join(candidate, ".git")))) continue;
       try {
         const remote = await execFileAsync("git", ["remote", "get-url", "origin"], { cwd: candidate });
-        if (!remote.stdout.includes("andreaborio/ds4")) continue;
+        if (!isSupportedEngineRemote(remote.stdout)) continue;
       } catch {
         continue;
       }

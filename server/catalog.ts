@@ -29,6 +29,7 @@ const SUPPORTED_EXPERT_MAJOR_MODEL_IDS = new Set([
   "glm-5.2",
   "qwen3.6-35b-a3b"
 ]);
+const SUPPORTED_EXPERT_MAJOR_RUNTIMES = new Set(["andreaborio/ds4", "andreaborio/hebrus"]);
 
 interface CatalogSourceDefinition extends CatalogSource {
   filter?: string;
@@ -144,8 +145,8 @@ function parseArtifactFormat(manifest: DsboxManifest | null): ParsedArtifactForm
   if (declaration.tensor !== ds4ArtifactFormatTensor(format)) {
     return { format: null, error: `The DSBox manifest does not declare the ${format} tensor contract` };
   }
-  if (declaration.requiresRuntime !== "andreaborio/ds4") {
-    return { format: null, error: "DS4 ExpertMajor artifacts must declare andreaborio/ds4 as their required runtime" };
+  if (!SUPPORTED_EXPERT_MAJOR_RUNTIMES.has(declaration.requiresRuntime ?? "")) {
+    return { format: null, error: "DS4 ExpertMajor artifacts must declare andreaborio/ds4 or andreaborio/hebrus as their required runtime" };
   }
   return { format, error: null };
 }

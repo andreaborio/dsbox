@@ -8,20 +8,45 @@ import type { CatalogModel, DsboxConfig, LocalModelCandidate } from "../src/type
 import {
   buildEngineArguments,
   ds4BuildInfoMatchesHead,
+  engineBuildTargetFromMakefile,
+  type EngineCapabilities,
   EXPERT_MAJOR_RUNTIME_BRANCH,
   EXPERT_MAJOR_RUNTIME_COMMIT,
   expertMajorLaunchEnvironment,
   gitRemoteIdentity,
   GLM52_RUNTIME_BRANCH,
   GLM52_RUNTIME_COMMIT,
+  isSupportedEngineRemote,
   orderedLocalModelScanRoots,
+  parseEngineCapabilitiesJson,
   parseEnvironment,
   parseFallbackModelFilename,
   parseVmStatSwapoutPages,
+  probeEngineCapabilities,
   remainingDownloadBytes,
+  resolveEngineBinaryPath,
   RuntimeManager,
   tokenizeArguments
 } from "../server/runtime.js";
+
+function engineCapabilities(engineId: "ds4" | "hebrus" = "ds4"): EngineCapabilities {
+  return {
+    schema_version: 1,
+    engine_id: engineId,
+    build_git_sha: "73a332fef82a",
+    backend: "metal",
+    executable_role: "server",
+    model_families: ["deepseek4", "glm-dsa", "qwen35moe"],
+    expert_major: {
+      version: 2,
+      tensor: "ds4.expert_major.v2",
+      storage_formats: [
+        { id: "ggml", wire_value: 0, group_sizes: [] },
+        { id: "mlx-affine4", wire_value: 1, group_sizes: [64] }
+      ]
+    }
+  };
+}
 
 describe("managed Git remote identity", () => {
   it("treats HTTPS and SSH URLs for the same GitHub repository as equivalent", () => {
@@ -29,6 +54,163 @@ describe("managed Git remote identity", () => {
       .toBe(gitRemoteIdentity("git@github.com:andreaborio/ds4.git"));
     expect(gitRemoteIdentity("ssh://git@github.com/andreaborio/ds4"))
       .toBe("github.com/andreaborio/ds4");
+  });
+
+  it.each([
+    "https://github.com/andreaborio/ds4.git",
+    "git@github.com:andreaborio/ds4.git",
+    "ssh://git@github.com/andreaborio/ds4",
+    "https://github.com/andreaborio/hebrus.git",
+    "git@github.com:andreaborio/hebrus.git",
+    "ssh://git@github.com/andreaborio/hebrus"
+  ])("accepts the bridged engine remote %s", (remote) => {
+    expect(isSupportedEngineRemote(remote)).toBe(true);
+  });
+
+  it("does not accept a lookalike engine remote", () => {
+    expect(isSupportedEngineRemote("https://github.com/example/hebrus.git")).toBe(false);
+  });
+});
+
+describe("engine binary bridge", () => {
+  it("prefers hebrus-server when both executable names exist", async () => {
+    const checked: string[] = [];
+    const binary = await resolveEngineBinaryPath("/runtime", async (candidate) => {
+      checked.push(candidate);
+      return true;
+    });
+
+    expect(binary).toBe("/runtime/hebrus-server");
+    expect(checked).toEqual(["/runtime/hebrus-server"]);
+  });
+
+  it("falls back to ds4-server for existing installations", async () => {
+    const checked: string[] = [];
+    const binary = await resolveEngineBinaryPath("/runtime", async (candidate) => {
+      checked.push(candidate);
+      return candidate.endsWith("/ds4-server");
+    });
+
+    expect(binary).toBe("/runtime/ds4-server");
+    expect(checked).toEqual(["/runtime/hebrus-server", "/runtime/ds4-server"]);
+  });
+
+  it("builds the Hebrus target only when the checkout declares it", () => {
+    expect(engineBuildTargetFromMakefile("ds4-server: server.o\n")).toBe("ds4-server");
+    expect(engineBuildTargetFromMakefile("ds4-server hebrus-server: server.o\n")).toBe("hebrus-server");
+  });
+});
+
+describe("ExpertMajor engine capability bridge", () => {
+  it.each(["ds4", "hebrus"] as const)("accepts the strict server contract for engine_id %s", async (engineId) => {
+    const document = engineCapabilities(engineId);
+    const run = vi.fn(async () => ({ stdout: `${JSON.stringify(document)}\n`, stderr: "" }));
+
+    await expect(probeEngineCapabilities("/runtime/hebrus-server", "/runtime", run))
+      .resolves.toEqual(document);
+    expect(run).toHaveBeenCalledWith(
+      "/runtime/hebrus-server",
+      ["--capabilities=json"],
+      expect.objectContaining({ cwd: "/runtime" })
+    );
+  });
+
+  it("classifies only the legacy unknown-option response as unsupported", async () => {
+    const run = vi.fn(async () => {
+      throw Object.assign(new Error("exit 2"), {
+        stdout: "",
+        stderr: "ds4-server: unknown option: --capabilities=json\n"
+      });
+    });
+
+    await expect(probeEngineCapabilities("/runtime/ds4-server", "/runtime", run)).resolves.toBeNull();
+  });
+
+  it.each([
+    ["malformed JSON", "{not-json", /malformed JSON/],
+    ["an unknown schema", JSON.stringify({ ...engineCapabilities(), schema_version: 2 }), /Unsupported engine capability schema version/],
+    [
+      "a contradictory storage contract",
+      JSON.stringify({
+        ...engineCapabilities(),
+        expert_major: {
+          ...engineCapabilities().expert_major,
+          storage_formats: [
+            { id: "ggml", wire_value: 0, group_sizes: [] },
+            { id: "mlx-affine4", wire_value: 1, group_sizes: [32] }
+          ]
+        }
+      }),
+      /storage wire contract/
+    ]
+  ])("fails closed when a supported capability command returns %s", async (_case, stdout, error) => {
+    const run = vi.fn(async () => ({ stdout: String(stdout), stderr: "" }));
+
+    await expect(probeEngineCapabilities("/runtime/hebrus-server", "/runtime", run)).rejects.toThrow(error as RegExp);
+  });
+
+  it("does not interpret a non-capability process failure as a legacy engine", async () => {
+    const run = vi.fn(async () => {
+      throw Object.assign(new Error("terminated"), { stdout: "", stderr: "fatal runtime error" });
+    });
+
+    await expect(probeEngineCapabilities("/runtime/hebrus-server", "/runtime", run))
+      .rejects.toThrow(/Unable to read engine capability contract/);
+  });
+
+  it("fails closed when a supported command emits diagnostics beside JSON", async () => {
+    const run = vi.fn(async () => ({
+      stdout: JSON.stringify(engineCapabilities()),
+      stderr: "warning: ambiguous build"
+    }));
+
+    await expect(probeEngineCapabilities("/runtime/hebrus-server", "/runtime", run))
+      .rejects.toThrow(/unexpected diagnostic output/);
+  });
+
+  it("uses the source and binary-string probes only for a legacy capability-less engine", async () => {
+    const runtime = new RuntimeManager({} as ConfigStore, new EventBus());
+    const internal = runtime as unknown as {
+      engineBinary(directory: string): Promise<string | null>;
+      engineCapabilities(directory: string, binary: string): Promise<EngineCapabilities | null>;
+      checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
+      legacyBinaryHasExpertMajorV2Runtime(binary: string): Promise<boolean>;
+      binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
+    };
+    vi.spyOn(internal, "engineBinary").mockResolvedValue("/runtime/ds4-server");
+    vi.spyOn(internal, "engineCapabilities").mockResolvedValue(null);
+    const sourceProbe = vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockResolvedValue(true);
+    const binaryProbe = vi.spyOn(internal, "legacyBinaryHasExpertMajorV2Runtime").mockResolvedValue(true);
+
+    await expect(internal.binaryHasExpertMajorV2Runtime("/runtime")).resolves.toBe(true);
+    expect(sourceProbe).toHaveBeenCalledWith("/runtime");
+    expect(binaryProbe).toHaveBeenCalledWith("/runtime/ds4-server");
+  });
+
+  it("does not fall back when the supported capability command fails closed", async () => {
+    const runtime = new RuntimeManager({} as ConfigStore, new EventBus());
+    const internal = runtime as unknown as {
+      engineBinary(directory: string): Promise<string | null>;
+      engineCapabilities(directory: string, binary: string): Promise<EngineCapabilities | null>;
+      checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
+      legacyBinaryHasExpertMajorV2Runtime(binary: string): Promise<boolean>;
+      binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
+    };
+    vi.spyOn(internal, "engineBinary").mockResolvedValue("/runtime/hebrus-server");
+    vi.spyOn(internal, "engineCapabilities").mockRejectedValue(new Error("Engine capability command returned malformed JSON"));
+    const sourceProbe = vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockResolvedValue(true);
+    const binaryProbe = vi.spyOn(internal, "legacyBinaryHasExpertMajorV2Runtime").mockResolvedValue(true);
+
+    await expect(internal.binaryHasExpertMajorV2Runtime("/runtime")).rejects.toThrow(/malformed JSON/);
+    expect(sourceProbe).not.toHaveBeenCalled();
+    expect(binaryProbe).not.toHaveBeenCalled();
+  });
+
+  it("rejects contradictory server identity before runtime admission", () => {
+    expect(() => parseEngineCapabilitiesJson(JSON.stringify({
+      ...engineCapabilities(),
+      executable_role: "cli"
+    }))).toThrow(/server executable/);
   });
 });
 
@@ -643,9 +825,59 @@ describe("ExpertMajor v2 one-click preparation", () => {
     );
 
     expect(selected.repository.directory).toBe(config.repository.directory);
-    expect(sourceCapability).toHaveBeenCalledWith(config.repository.directory);
+    expect(sourceCapability).not.toHaveBeenCalled();
     expect(binaryCapability).toHaveBeenCalledWith(config.repository.directory);
     expect(pinnedAncestry).toHaveBeenCalledWith(config.repository.directory, GLM52_RUNTIME_COMMIT);
+    expect(install).not.toHaveBeenCalled();
+    expect(build).not.toHaveBeenCalled();
+  });
+
+  it("keeps a qualified Hebrus managed checkout without rewriting it to the legacy Git identity", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.repository = {
+      url: "https://github.com/andreaborio/hebrus.git",
+      branch: "main",
+      directory: "/home/alice/.dsbox/runtime/andreaborio-hebrus"
+    };
+    const store = {
+      homeDirectory: "/home/alice/.dsbox",
+      get: vi.fn(() => structuredClone(config)),
+      set: vi.fn()
+    } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const internal = runtime as unknown as {
+      ensureExpertMajorRuntimeCheckout(
+        config: DsboxConfig,
+        format: "ds4-expert-major-v2",
+        allowModelSwitch: boolean,
+        modelIdentity: string
+      ): Promise<DsboxConfig>;
+      binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
+      binaryMatchesCheckoutHead(directory: string): Promise<boolean>;
+      managedCheckoutIdentity(directory: string): Promise<{ exists: boolean; branch: string | null; remote: string | null; clean: boolean }>;
+      runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
+    };
+    vi.spyOn(internal, "managedCheckoutIdentity").mockResolvedValue({
+      exists: true,
+      branch: "main",
+      remote: "git@github.com:andreaborio/hebrus.git",
+      clean: true
+    });
+    vi.spyOn(internal, "runtimeIncludesCommit").mockResolvedValue(true);
+    vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
+    vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
+    const install = vi.spyOn(runtime, "installOrUpdate").mockResolvedValue();
+    const build = vi.spyOn(runtime, "build").mockResolvedValue();
+
+    const selected = await internal.ensureExpertMajorRuntimeCheckout(
+      config,
+      "ds4-expert-major-v2",
+      false,
+      "deepseek4"
+    );
+
+    expect(selected.repository).toEqual(config.repository);
+    expect(store.set).not.toHaveBeenCalled();
     expect(install).not.toHaveBeenCalled();
     expect(build).not.toHaveBeenCalled();
   });

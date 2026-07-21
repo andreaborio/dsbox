@@ -16,7 +16,8 @@ function expertMajorArtifact(
   output: string,
   sizeBytes: number,
   sha256: string,
-  storage?: { storage: string; groupSize: number }
+  storage?: { storage: string; groupSize: number },
+  requiresRuntime = "andreaborio/ds4"
 ) {
   return {
     output,
@@ -26,7 +27,7 @@ function expertMajorArtifact(
       id: "ds4-expert-major",
       version: 2,
       tensor: "ds4.expert_major.v2",
-      requiresRuntime: "andreaborio/ds4",
+      requiresRuntime,
       ...storage
     }
   };
@@ -489,7 +490,8 @@ describe("Hugging Face model catalog", () => {
             modelFile,
             20_808_566_880,
             "c".repeat(64),
-            { storage: "mlx-affine4", groupSize: 64 }
+            { storage: "mlx-affine4", groupSize: 64 },
+            "andreaborio/hebrus"
           )
         });
       }
