@@ -48,13 +48,13 @@ describe("DS4 SSD-streaming hardware advisor", () => {
     expect(assessment.requiresAcknowledgement).toBe(false);
   });
 
-  it("keeps DS4-only ExpertMajor compatibility explicit", () => {
+  it("keeps Hebrus-only ExpertMajor compatibility explicit", () => {
     const assessment = assessModelHardware(model({ artifactFormat: "ds4-expert-major-v2" }), {
       totalMemoryBytes: 64 * GIB,
       diskFreeBytes: 180 * GIB
     });
 
-    expect(assessment.compatibility).toMatchObject({ status: "verified", label: "Verified for DS4" });
+    expect(assessment.compatibility).toMatchObject({ status: "verified", label: "Verified for Hebrus" });
     expect(assessment.compatibility.explanation).toContain("Generic GGUF loaders are not compatible");
   });
 
@@ -135,9 +135,9 @@ describe("DS4 SSD-streaming hardware advisor", () => {
     }, { totalMemoryBytes: 16 * GIB });
 
     expect(assessment.performance.label).toBe("Very slow likely");
-    expect(assessment.compatibility.label).toBe("Verified for DS4");
+    expect(assessment.compatibility.label).toBe("Verified for Hebrus");
     expect(assessment.requiresAcknowledgement).toBe(true);
-    expect(assessment.performance.explanation).toContain("DS4 can stream weights from SSD");
+    expect(assessment.performance.explanation).toContain("Hebrus can stream weights from SSD");
   });
 
   it("classifies Qwen dense and MoE GGUF architecture names without family-specific UI code", () => {

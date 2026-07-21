@@ -24,7 +24,7 @@ for candidate in "${node_candidates[@]}"; do
 done
 
 if [[ -z "$node_bin" ]]; then
-  print -u2 "DSBox needs Node.js 22 or later. Install the current LTS release from https://nodejs.org and open DSBox again."
+  print -u2 "Hebrus Studio needs Node.js 22 or later. Install the current LTS release from https://nodejs.org and open Hebrus Studio again."
   print -u2 "Press Return to close."
   read -r
   exit 1

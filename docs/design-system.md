@@ -1,6 +1,6 @@
-# DSBox design system
+# Hebrus Studio design system
 
-This system gives DSBox one precise visual language for chat, model management, downloads, runtime controls, and settings. It is desktop-first, neutral, quiet, and intentionally free of decorative gradients. Product copy and component labels are English-only.
+This system gives Hebrus Studio one precise visual language for chat, model management, downloads, runtime controls, and settings. It is desktop-first, neutral, quiet, and intentionally free of decorative gradients. Product copy and component labels are English-only.
 
 The package is isolated under `src/design-system` so existing screens can migrate incrementally.
 
@@ -148,7 +148,7 @@ Omit `value` for indeterminate work. Always provide a specific label. The compon
 
 ```tsx
 <InlineNotice tone="advisory" title="May be slow on this Mac">
-  DS4 can stream this 244 GB model from SSD, but generation may be slow with 64 GB of unified memory.
+  Hebrus can stream this 244 GB model from SSD, but generation may be slow with 64 GB of unified memory.
 </InlineNotice>
 ```
 
@@ -161,7 +161,7 @@ Omit `value` for indeterminate work. Always provide a specific label. The compon
 Compatibility and predicted performance are separate facts:
 
 ```text
-Verified for DS4            compatibility
+Verified for Hebrus         compatibility
 May be slow · SSD streaming performance guidance
 ```
 

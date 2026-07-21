@@ -2,7 +2,7 @@
 
 ## Local attack surface
 
-DSBox is designed for a single user on the same Mac:
+Hebrus Studio is designed for a single user on the same Mac:
 
 - control plane: `127.0.0.1:4242`;
 - internal Hebrus/DS4 compatibility server: `127.0.0.1:8000` by default;
@@ -35,7 +35,7 @@ a minimal public issue asking the repository owner for a private channel; do
 not include vulnerability details, reproduction steps, logs, tokens, private
 data, or attachments.
 
-Include the exact DSBox version or commit, macOS version, hardware, installation
+Include the exact Hebrus Studio version or commit, macOS version, hardware, installation
 method, engine build identity, and a minimal reproduction in a private report.
 Do not attach model weights, config files containing gateway keys, raw chat
 history, traces, or KV checkpoints.

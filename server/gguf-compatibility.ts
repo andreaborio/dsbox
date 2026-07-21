@@ -807,7 +807,7 @@ const emptyHeader = {
 /**
  * Inspect the GGUF v3 header, metadata, and tensor directory required by the
  * current DS4 runtime. Tensor payloads are not mapped; Qwen additionally reads
- * the fixed 168-byte ExpertMajor header prefix so DSBox can reject the retired
+ * the fixed 168-byte ExpertMajor header prefix so Hebrus Studio can reject the retired
  * GGML/Q4 store before attempting to launch the affine-only runtime.
  */
 export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibility> {
@@ -831,7 +831,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     if (ggufVersion !== GGUF_VERSION) {
       return result(header, {
         code: "unsupported_gguf_version",
-        message: `DS4 requires GGUF v${GGUF_VERSION}; this file is GGUF v${ggufVersion}.`
+        message: `Hebrus requires GGUF v${GGUF_VERSION}; this file is GGUF v${ggufVersion}.`
       });
     }
 
@@ -881,13 +881,13 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     if (expertMajorV1 && expertMajorV2) {
       return result(header, {
         code: "missing_tensor_signature",
-        message: "This GGUF mixes two incompatible DS4 ExpertMajor store versions."
+        message: "This GGUF mixes two incompatible Hebrus ExpertMajor store versions."
       });
     }
     if (expertMajorV1) {
       return result(header, {
         code: "missing_tensor_signature",
-        message: "DS4 ExpertMajor v1 is no longer runnable. Select or convert the ExpertMajor v2 artifact."
+        message: "Hebrus ExpertMajor v1 is no longer runnable. Select or convert the ExpertMajor v2 artifact."
       });
     }
     header.artifactFormat = expertMajorV2 ? "ds4-expert-major-v2" : null;
@@ -901,19 +901,19 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     if ((header.splitCount ?? 1) > 1) {
       return result(header, {
         code: "multipart_unsupported",
-        message: "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead."
+        message: "Hebrus does not support standard multi-file GGUF sets. Choose a single Hebrus ExpertMajor GGUF instead."
       });
     }
     if (tensorCount === 0) {
       return result(header, {
         code: "empty_tensor_directory",
-        message: "This GGUF contains no model tensors and cannot run in DS4."
+        message: "This GGUF contains no model tensors and cannot run in Hebrus."
       });
     }
     if (!architectureEntry) {
       return result(header, {
         code: "missing_architecture",
-        message: "This GGUF does not declare general.architecture, so DSBox cannot verify it for DS4."
+        message: "This GGUF does not declare general.architecture, so Hebrus Studio cannot verify it for Hebrus."
       });
     }
     if (architectureEntry.type !== GGUF_TYPE.string || header.architecture === null) {
@@ -928,7 +928,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         header.architecture !== "glm-dsa") {
       return result(header, {
         code: "unsupported_architecture",
-        message: `The current DS4 runtime does not support the ${header.architecture} GGUF architecture.`
+        message: `The current Hebrus runtime does not support the ${header.architecture} GGUF architecture.`
       });
     }
 
@@ -938,7 +938,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         header.architecture !== "qwen35moe") {
       return result(header, {
         code: "missing_tensor_signature",
-        message: "DS4 ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek 4, or GLM-5.2 layout."
+        message: "Hebrus ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek 4, or GLM-5.2 layout."
       });
     }
 
@@ -947,7 +947,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     if (header.artifactFormat !== "ds4-expert-major-v2") {
       return result(header, {
         code: "missing_tensor_signature",
-        message: `DSBox qualifies ${isQwen35Moe ? "Qwen3.6 35B A3B" : isGlm52 ? "GLM-5.2" : "DeepSeek 4"} only as a single-file DS4 ExpertMajor v2 artifact.`
+        message: `Hebrus Studio qualifies ${isQwen35Moe ? "Qwen3.6 35B A3B" : isGlm52 ? "GLM-5.2" : "DeepSeek 4"} only as a single-file Hebrus ExpertMajor v2 artifact.`
       });
     }
     const metadataContract = isQwen35Moe
@@ -960,7 +960,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     if (missingMetadata.length > 0) {
       return result(header, {
         code: "missing_metadata",
-        message: `This ${modelName} GGUF is missing metadata required by DS4: ${missingMetadata.join(", ")}.`,
+        message: `This ${modelName} GGUF is missing metadata required by Hebrus: ${missingMetadata.join(", ")}.`,
         missingKeys: missingMetadata
       });
     }
@@ -971,7 +971,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     if (invalidMetadata.length > 0) {
       return result(header, {
         code: "invalid_metadata_type",
-        message: `This ${modelName} GGUF has DS4 metadata with an incompatible type: ${invalidMetadata.join(", ")}.`,
+        message: `This ${modelName} GGUF has legacy DS4 metadata with an incompatible type: ${invalidMetadata.join(", ")}.`,
         invalidKeys: invalidMetadata
       });
     }
@@ -981,7 +981,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       if (invalidValues.length > 0) {
         return result(header, {
           code: "invalid_metadata_type",
-          message: `This Qwen3.6 35B A3B GGUF does not match DS4's pinned metadata contract: ${invalidValues.join(", ")}.`,
+          message: `This Qwen3.6 35B A3B GGUF does not match Hebrus's pinned metadata contract: ${invalidValues.join(", ")}.`,
           invalidKeys: invalidValues
         });
       }
@@ -1056,7 +1056,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       if (tensorCount !== DS4_QWEN35MOE_NATIVE_TENSOR_COUNT) {
         return result(header, {
           code: "missing_tensor_signature",
-          message: `DS4 requires the ${DS4_QWEN35MOE_NATIVE_TENSOR_COUNT}-tensor Qwen3.6 35B A3B ExpertMajor v2 layout; this GGUF contains ${tensorCount} tensors.`
+          message: `Hebrus requires the ${DS4_QWEN35MOE_NATIVE_TENSOR_COUNT}-tensor Qwen3.6 35B A3B ExpertMajor v2 layout; this GGUF contains ${tensorCount} tensors.`
         });
       }
 
@@ -1068,7 +1068,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       if (invalidValues.length > 0) {
         return result(header, {
           code: "invalid_metadata_type",
-          message: `This GLM-5.2 GGUF does not match DS4's pinned metadata contract: ${invalidValues.join(", ")}.`,
+          message: `This GLM-5.2 GGUF does not match Hebrus's pinned metadata contract: ${invalidValues.join(", ")}.`,
           invalidKeys: invalidValues
         });
       }
@@ -1106,7 +1106,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       if (tensorCount !== DS4_GLM52_NATIVE_TENSOR_COUNT) {
         return result(header, {
           code: "missing_tensor_signature",
-          message: `DS4 requires the ${DS4_GLM52_NATIVE_TENSOR_COUNT}-tensor GLM-5.2 ExpertMajor v2 layout; this GGUF contains ${tensorCount} tensors.`
+          message: `Hebrus requires the ${DS4_GLM52_NATIVE_TENSOR_COUNT}-tensor GLM-5.2 ExpertMajor v2 layout; this GGUF contains ${tensorCount} tensors.`
         });
       }
       return result(header, null);
@@ -1117,7 +1117,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     if (missingTensors.length > 0) {
       return result(header, {
         code: "missing_tensor_signature",
-        message: `This GGUF does not contain the DS4-native DeepSeek 4 tensor layout: ${missingTensors.join(", ")}.`,
+        message: `This GGUF does not contain the Hebrus-native DeepSeek 4 tensor layout: ${missingTensors.join(", ")}.`,
         missingKeys: [...missingTensors]
       });
     }
@@ -1126,7 +1126,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
     if (canonicalRoutedTensors.length > 0) {
       return result(header, {
         code: "missing_tensor_signature",
-        message: "This GGUF mixes DS4 ExpertMajor v2 with canonical routed expert tensors.",
+        message: "This GGUF mixes Hebrus ExpertMajor v2 with canonical routed expert tensors.",
         invalidKeys: canonicalRoutedTensors.slice(0, 16)
       });
     }
@@ -1137,7 +1137,7 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
       return result(header, { code: "invalid_gguf", message: `This GGUF is corrupt or incomplete: ${error.message}.` });
     }
     const message = error instanceof Error ? error.message : String(error);
-    return result(header, { code: "io_error", message: `DSBox could not read this GGUF: ${message}` });
+    return result(header, { code: "io_error", message: `Hebrus Studio could not read this GGUF: ${message}` });
   } finally {
     await handle?.close();
   }

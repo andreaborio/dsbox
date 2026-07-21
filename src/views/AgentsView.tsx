@@ -75,7 +75,7 @@ export function resolveAgentConnectionPresentation(
       state,
       capabilityTitle: `${runtimeName} · Starting`,
       capabilityBadge: "Loading",
-      capabilityDescription: "DSBox is preparing the selected model. Agent connections become available when startup completes.",
+      capabilityDescription: "Hebrus Studio is preparing the selected model. Agent connections become available when startup completes.",
       actionLabel: "Starting…"
     };
   }
@@ -84,7 +84,7 @@ export function resolveAgentConnectionPresentation(
     state,
     capabilityTitle: `${runtimeName} · Configured`,
     capabilityBadge: "Offline",
-    capabilityDescription: "The connection details are ready. Turn on DSBox before an agent can use the local model.",
+    capabilityDescription: "The connection details are ready. Turn on Hebrus Studio before an agent can use the local model.",
     actionLabel: "Open server"
   };
 }
@@ -125,7 +125,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     codex: {
       file: "~/.codex/config.toml",
       description: "Codex uses the fork's native Responses endpoint, with streamed text and tool calls.",
-      code: `[model_providers.ds4]\nname = "DS4 local"\nbase_url = "${base}"\nwire_api = "responses"${config.gateway.requireApiKey ? '\nenv_key = "DSBOX_API_KEY"' : ""}\nstream_idle_timeout_ms = 1000000`,
+      code: `[model_providers.ds4]\nname = "Hebrus local"\nbase_url = "${base}"\nwire_api = "responses"${config.gateway.requireApiKey ? '\nenv_key = "DSBOX_API_KEY"' : ""}\nstream_idle_timeout_ms = 1000000`,
       run: `${config.gateway.requireApiKey ? `DSBOX_API_KEY=${config.gateway.apiKey} ` : ""}codex --model ${model} -c model_provider=ds4`
     },
     claude: {
@@ -135,23 +135,23 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     },
     opencode: {
       file: "~/.config/opencode/opencode.json",
-      description: "An OpenAI-compatible provider with a context window matched to the current DSBox profile.",
+      description: "An OpenAI-compatible provider with a context window matched to the current Hebrus Studio profile.",
       code: JSON.stringify({
         $schema: "https://opencode.ai/config.json",
         provider: {
           ds4: {
-            name: "DS4 local",
+            name: "Hebrus local",
             npm: "@ai-sdk/openai-compatible",
             options: { baseURL: base, apiKey: config.gateway.apiKey },
             models: {
               [model]: {
-                name: `${model} · DSBox`,
+                name: `${model} · Hebrus Studio`,
                 limit: { context: config.server.contextTokens, output: config.server.maxOutputTokens }
               }
             }
           }
         },
-        agent: { ds4: { description: "Local model served by DSBox", model: `ds4/${model}` } }
+        agent: { ds4: { description: "Local model served by Hebrus Studio", model: `ds4/${model}` } }
       }, null, 2)
     },
     pi: {
@@ -160,7 +160,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
       code: JSON.stringify({
         providers: {
           ds4: {
-            name: "DS4 local",
+            name: "Hebrus local",
             baseUrl: base,
             api: "openai-completions",
             apiKey: config.gateway.apiKey,
@@ -174,7 +174,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
             },
             models: [{
               id: model,
-              name: `${model} · DSBox`,
+              name: `${model} · Hebrus Studio`,
               reasoning: true,
               contextWindow: config.server.contextTokens,
               maxTokens: config.server.maxOutputTokens,
@@ -236,7 +236,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         <div>
           <span className="eyebrow"><Link2 size={13} /> {isQwen ? "Local API" : "Local connection"}</span>
           <h2>{isQwen ? "Connect through Chat Completions." : "Connect your preferred coding agent."}</h2>
-          <p>{isQwen ? "Use DSBox Chat or connect compatible apps and coding agents through OpenAI Chat Completions with streaming, tools, and multiple tool calls." : "Choose your tool and copy the ready-to-use configuration. DSBox handles the address, model, and security."}</p>
+          <p>{isQwen ? "Use Hebrus Studio Chat or connect compatible apps and coding agents through OpenAI Chat Completions with streaming, tools, and multiple tool calls." : "Choose your tool and copy the ready-to-use configuration. Hebrus Studio handles the address, model, and security."}</p>
         </div>
         <div className="agents-intro__status panel">
           <StatusPill phase={runtime.phase} />
@@ -271,7 +271,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         <div className="connection-error" role="alert">
           <Unplug size={17} />
           <div>
-            <strong>{runtime.phase === "running" ? "Gateway unavailable" : "DSBox is off"}</strong>
+            <strong>{runtime.phase === "running" ? "Gateway unavailable" : "Hebrus Studio is off"}</strong>
             <p>{runtime.phase === "running" ? "Check the server status and try again." : "Turn on the server, then test the connection again."}</p>
           </div>
           <Button variant="secondary" onClick={() => onNavigate("runtime")}>Open server</Button>
@@ -325,7 +325,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
               </button>
             );
           })}
-          <div className="connector-list__note"><ShieldCheck size={15} /><p>{isQwen ? "Protocol limits come from the selected DS4 model runtime." : "The internal server is never exposed to the network."}</p></div>
+          <div className="connector-list__note"><ShieldCheck size={15} /><p>{isQwen ? "Protocol limits come from the selected Hebrus model runtime." : "The internal server is never exposed to the network."}</p></div>
         </aside>
 
         <div className="connector-detail">
@@ -358,15 +358,15 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         </article>
         <article className="panel">
           <span><ShieldCheck size={17} /></span>
-          <div><strong>{isQwen ? "Live context" : "Faster starts"}</strong><p>{isQwen ? "Qwen can reuse the active conversation while DSBox stays on; disk context snapshots are not available yet." : "DSBox can reuse previously processed context instead of starting from scratch every time."}</p></div>
+          <div><strong>{isQwen ? "Live context" : "Faster starts"}</strong><p>{isQwen ? "Qwen can reuse the active conversation while Hebrus Studio stays on; disk context snapshots are not available yet." : "Hebrus Studio can reuse previously processed context instead of starting from scratch every time."}</p></div>
         </article>
         <article className="panel">
           <span><Network size={17} /></span>
-          <div><strong>Queued requests</strong><p>When multiple requests arrive at once, DSBox processes them in sequence to remain stable.</p></div>
+          <div><strong>Queued requests</strong><p>When multiple requests arrive at once, Hebrus Studio processes them in sequence to remain stable.</p></div>
         </article>
       </section>
 
-      <div className="compatibility-note"><CircleAlert size={14} /><p>{isQwen ? "Qwen3.6 supports DSBox Chat and OpenAI-compatible Chat Completions with tools; Codex and Claude Code require protocols this runtime does not expose." : "These configuration snippets automatically use the model selected in DSBox."}</p></div>
+      <div className="compatibility-note"><CircleAlert size={14} /><p>{isQwen ? "Qwen3.6 supports Hebrus Studio Chat and OpenAI-compatible Chat Completions with tools; Codex and Claude Code require protocols this runtime does not expose." : "These configuration snippets automatically use the model selected in Hebrus Studio."}</p></div>
     </div>
   );
 }

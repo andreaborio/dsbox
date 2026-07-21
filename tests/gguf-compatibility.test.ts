@@ -362,7 +362,7 @@ describe("DS4 GGUF compatibility inspection", () => {
     expect(result.compatible).toBe(false);
     expect(result.reason).toEqual({
       code: "multipart_unsupported",
-      message: "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead."
+      message: "Hebrus does not support standard multi-file GGUF sets. Choose a single Hebrus ExpertMajor GGUF instead."
     });
   });
 

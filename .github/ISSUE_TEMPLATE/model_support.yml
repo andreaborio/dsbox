@@ -1,0 +1,51 @@
+name: Model support
+description: Request or report compatibility for a model artifact
+title: "[Model]: "
+labels: ["model-support"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Hebrus Studio accepts only model artifacts with a reproducible compatibility contract. Do not attach model weights, private prompts, tokens, or configuration secrets.
+  - type: input
+    id: repository
+    attributes:
+      label: Model repository and immutable revision
+      placeholder: owner/repository @ full revision SHA
+    validations:
+      required: true
+  - type: input
+    id: artifact
+    attributes:
+      label: Exact artifact
+      description: Filename, byte size, and SHA-256 when available.
+    validations:
+      required: true
+  - type: input
+    id: engine
+    attributes:
+      label: Hebrus build identity
+      description: Commit and output of `hebrus-server --capabilities=json` when available.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Observed result
+      description: Include the exact compatibility message and whether selection, download, or launch failed.
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Mac and macOS
+      placeholder: M-series chip, unified memory, macOS version
+    validations:
+      required: true
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed prompts, tokens, personal paths, traces, and model weights.
+          required: true

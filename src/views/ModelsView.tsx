@@ -83,7 +83,7 @@ function publisherLabel(publisher: CatalogPublisher, sources: CatalogSource[]): 
   const declared = sources.find((source) => source.id.toLowerCase() === publisher.toLowerCase());
   if (declared?.label) return declared.label;
   const normalized = publisher.toLowerCase();
-  if (normalized === "andreaborio") return "DSBox";
+  if (normalized === "andreaborio") return "Hebrus Studio";
   return publisher.replaceAll(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
@@ -153,7 +153,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     try {
       setCatalog(await apiRequest<CatalogResponse>(`/api/models/catalog${force ? "?refresh=1" : ""}`));
     } catch (reason) {
-      setCatalogError(reason instanceof Error ? reason.message : "The DSBox catalog is unavailable");
+      setCatalogError(reason instanceof Error ? reason.message : "The Hebrus Studio catalog is unavailable");
     } finally {
       setCatalogLoading(false);
     }
@@ -267,11 +267,11 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
         return;
       }
       const model = normalizeLocalModelCandidate(result.model);
-      if (!model) throw new Error("DSBox returned an invalid local model");
+      if (!model) throw new Error("Hebrus Studio returned an invalid local model");
       setLocalModels((current) => mergeCandidates(current, [model]));
       setFinderMessage(localModelIsRunnable(model)
         ? `${model.name} was added to your library and is ready to use.`
-        : `${model.name} was added to your library. This DS4 build cannot run it yet.`);
+        : `${model.name} was added to your library. This Hebrus build cannot run it yet.`);
     } catch (reason) {
       setLocalError(reason instanceof Error ? reason.message : "The selected file could not be added");
     } finally {
@@ -287,7 +287,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
         method: "POST",
         body: JSON.stringify({ path: model.path })
       }));
-      if (!selected) throw new Error("DSBox returned an invalid local model");
+      if (!selected) throw new Error("Hebrus Studio returned an invalid local model");
       setLocalModels((current) => mergeCandidates(current.map((candidate) => ({ ...candidate, selected: false })), [selected]));
       await controller.refresh();
     } catch (reason) {
@@ -332,7 +332,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   const catalogHeader = {
     eyebrow: "Hugging Face",
     title: "Discover models",
-    description: "Download verified models directly in DSBox. Unsupported sources remain visible for reference."
+    description: "Download verified models directly in Hebrus Studio. Unsupported sources remain visible for reference."
   };
 
   const renderCatalogModel = (model: CatalogModel, unsupported = false) => {
@@ -345,7 +345,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     const artifactFormatLabel = ds4ArtifactFormatLabel(model.artifactFormat);
 
     if (unsupported) {
-      const reason = model.unavailableReason ?? (!defaultVariant ? "No complete DS4-compatible GGUF version is available." : "This model layout has not been verified for DS4.");
+      const reason = model.unavailableReason ?? (!defaultVariant ? "No complete Hebrus-compatible GGUF version is available." : "This model layout has not been verified for Hebrus.");
       return (
         <article className="catalog-card catalog-card--unsupported" key={model.repository}>
           <div className="catalog-card__head">
@@ -356,7 +356,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
             </div>
           </div>
           <div className="catalog-card__unsupported-copy">
-            <strong>Not supported by DS4</strong>
+            <strong>Not supported by Hebrus</strong>
             <p>{reason}</p>
           </div>
           <a className="catalog-card__source-link" href={model.sourceUrl} target="_blank" rel="noreferrer">View source <ExternalLink size={12} /></a>
@@ -374,13 +374,13 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     const selectable = model.installable && branchCompatible && Boolean(defaultVariant) && !runtimeBusy;
     const unavailable = (!branchCompatible ? `Requires the ${model.runtimeBranch} engine channel` : null)
       ?? (!defaultVariant ? "No complete GGUF version is available" : null)
-      ?? (runtimeBusy ? "Turn off DSBox before changing models" : null);
+      ?? (runtimeBusy ? "Turn off Hebrus Studio before changing models" : null);
 
     return (
       <article className={active ? "catalog-card catalog-card--active" : "catalog-card"} key={model.repository}>
-        <div className="catalog-card__head"><span className={`catalog-card__tile catalog-card__tile--${identity} ${model.experimental ? "catalog-card__tile--experimental" : ""}`}><ModelIdentityIcon identity={identity} fallback={<Box size={22} />} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by DSBox</span>}{publisher.toLowerCase() !== "andreaborio" && <span className="source-chip">{sourceLabel}</span>}{artifactFormatLabel && <span className="source-chip">{artifactFormatLabel}</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
+        <div className="catalog-card__head"><span className={`catalog-card__tile catalog-card__tile--${identity} ${model.experimental ? "catalog-card__tile--experimental" : ""}`}><ModelIdentityIcon identity={identity} fallback={<Box size={22} />} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by Hebrus Studio</span>}{publisher.toLowerCase() !== "andreaborio" && <span className="source-chip">{sourceLabel}</span>}{artifactFormatLabel && <span className="source-chip">{artifactFormatLabel}</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
         <p className="catalog-card__description">{model.description}</p>
-        <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB minimum</span>}<span>{artifactFormatLabel ?? (defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF")}</span>{artifactFormatLabel && <span>DS4 only · not llama.cpp</span>}{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
+        <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB minimum</span>}<span>{artifactFormatLabel ?? (defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF")}</span>{artifactFormatLabel && <span>Hebrus only · not llama.cpp</span>}{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
         <div className={`catalog-card__advisor catalog-card__advisor--${assessment.performance.level}`} title={assessment.performance.explanation}>
           <span className="catalog-card__advisor-icon" aria-hidden="true">{assessment.performance.level === "very-slow" || assessment.performance.level === "may-be-slow" ? <AlertTriangle size={15} /> : <HardDrive size={15} />}</span>
           <div><span>On this {Math.round(memoryGb)} GB Mac</span><strong>{assessment.performance.label}</strong></div>
@@ -428,13 +428,13 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
           </div>
           <span>{filename}</span>
           {unsupported
-            ? <p className="local-result__reason" title={model.compatibility.reason ?? undefined}>{model.compatibility.reason ?? "This model is not supported by the current DS4 build."}</p>
+            ? <p className="local-result__reason" title={model.compatibility.reason ?? undefined}>{model.compatibility.reason ?? "This model is not supported by the current Hebrus build."}</p>
             : <code title={model.path}>{model.path}</code>}
         </div>
         <div className="local-result__meta">
           <strong>{formatBytes(model.sizeBytes, 1)}</strong>
           {assessment
-            ? <><span className={`model-advisor-label model-advisor-label--${assessment.performance.level}`} title={assessment.performance.explanation}>{assessment.performance.label}</span><small>{artifactFormatLabel ? `${artifactFormatLabel} · DS4 only` : "Ready"}</small></>
+            ? <><span className={`model-advisor-label model-advisor-label--${assessment.performance.level}`} title={assessment.performance.explanation}>{assessment.performance.label}</span><small>{artifactFormatLabel ? `${artifactFormatLabel} · Hebrus only` : "Ready"}</small></>
             : <><span>{artifactFormatLabel ?? model.architecture ?? "GGUF"}</span><small>Library only</small></>}
         </div>
         {!unsupported && (
@@ -569,12 +569,12 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
             {finderMessage && <div className="model-inline-note" role="status"><Check size={15} /><p>{finderMessage}</p></div>}
 
             {localLoading ? (
-              <div className="models-empty"><RefreshCw className="spin" size={17} /><div><strong>Reading your library</strong><p>DSBox checks metadata only. Model weights are not loaded.</p></div></div>
+              <div className="models-empty"><RefreshCw className="spin" size={17} /><div><strong>Reading your library</strong><p>Hebrus Studio checks metadata only. Model weights are not loaded.</p></div></div>
             ) : visibleLocalModels.length ? (
               <div className="local-library-groups">
                 <div className="local-library-group">
                   <div className="local-library-group__head">
-                    <div><h3>Ready to run</h3><p>Models compatible with this DS4 build.</p></div>
+                    <div><h3>Ready to run</h3><p>Models compatible with this Hebrus build.</p></div>
                     <span>{readyLocalModels.length}</span>
                   </div>
                   {readyLocalModels.length ? (
@@ -593,7 +593,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
                       aria-expanded={effectiveUnsupportedOpen}
                       disabled={Boolean(normalizedQuery)}
                     >
-                      <div><h3>Unavailable in this DS4 build</h3><p>Saved in your library and rechecked after runtime updates.</p></div>
+                      <div><h3>Unavailable in this Hebrus build</h3><p>Saved in your library and rechecked after runtime updates.</p></div>
                       <span>{unsupportedLocalModels.length}<ChevronDown size={14} /></span>
                     </button>
                     <AnimatePresence initial={false}>
@@ -619,20 +619,20 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
             <div className="catalog-section__head"><div><span className="eyebrow">{catalogHeader.eyebrow}</span><h2 id="catalog-title">{catalogHeader.title}</h2><p>{catalogHeader.description}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
 
             {catalogLoading ? (
-              <div className="models-empty models-empty--panel"><RefreshCw className="spin" size={17} /><div><strong>Loading the DSBox catalog</strong><p>{downloadActive ? "Your current download continues while the catalog refreshes." : "No download has started."}</p></div></div>
+              <div className="models-empty models-empty--panel"><RefreshCw className="spin" size={17} /><div><strong>Loading the Hebrus Studio catalog</strong><p>{downloadActive ? "Your current download continues while the catalog refreshes." : "No download has started."}</p></div></div>
             ) : catalogError ? (
               <div className="models-empty models-empty--panel models-empty--error"><AlertTriangle size={17} /><div><strong>Catalog unavailable</strong><p>{catalogError}</p></div><Button variant="secondary" onClick={() => void refreshCatalog(true)}>Try again</Button></div>
             ) : visibleCatalogModels.length ? (
               <div className="catalog-groups">
                 {readyCatalogModels.length > 0 && (
                   <div className="catalog-group">
-                    <div className="catalog-group__head"><div><h3>Ready to run</h3><p>Verified model layouts that DSBox can download and use.</p></div><span>{readyCatalogModels.length} {readyCatalogModels.length === 1 ? "model" : "models"}</span></div>
+                    <div className="catalog-group__head"><div><h3>Ready to run</h3><p>Verified model layouts that Hebrus Studio can download and use.</p></div><span>{readyCatalogModels.length} {readyCatalogModels.length === 1 ? "model" : "models"}</span></div>
                     <div className="catalog-grid">{readyCatalogModels.map((model) => renderCatalogModel(model))}</div>
                   </div>
                 )}
                 {unsupportedCatalogModels.length > 0 && (
                   <div className={`catalog-group catalog-group--unsupported ${readyCatalogModels.length === 0 ? "catalog-group--standalone" : ""}`}>
-                    <div className="catalog-group__head"><div><h3>Not supported by this DS4 build</h3><p>Kept for provenance. These files cannot be selected or downloaded in DSBox.</p></div><span>{unsupportedCatalogModels.length} {unsupportedCatalogModels.length === 1 ? "source" : "sources"}</span></div>
+                    <div className="catalog-group__head"><div><h3>Not supported by this Hebrus build</h3><p>Kept for provenance. These files cannot be selected or downloaded in Hebrus Studio.</p></div><span>{unsupportedCatalogModels.length} {unsupportedCatalogModels.length === 1 ? "source" : "sources"}</span></div>
                     <div className="catalog-grid catalog-grid--unsupported">{unsupportedCatalogModels.map((model) => renderCatalogModel(model, true))}</div>
                   </div>
                 )}
@@ -640,7 +640,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
             ) : (
               <div className="models-empty models-empty--panel"><Box size={17} /><div><strong>{normalizedQuery ? "No source models match your search" : "No models are available from this source"}</strong><p>You can continue using a GGUF already on this Mac.</p></div></div>
             )}
-            <p className="catalog-provenance">Publisher labels identify where files are hosted. DSBox enables downloads only for model layouts verified against the DS4 engine.</p>
+            <p className="catalog-provenance">Publisher labels identify where files are hosted. Hebrus Studio enables downloads only for model layouts verified against the Hebrus engine.</p>
           </section>
         )}
       </div>

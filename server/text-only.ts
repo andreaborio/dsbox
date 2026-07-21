@@ -36,7 +36,7 @@ export class UnsupportedInputModalityError extends Error {
 
   constructor(details: UnsupportedModalityDetails) {
     const label = details.modality === "file" ? "file input" : `${details.modality} input`;
-    super(`This DSBox runtime accepts text only; ${label} is not supported.`);
+    super(`This Hebrus Studio runtime accepts text only; ${label} is not supported.`);
     this.name = "UnsupportedInputModalityError";
     this.details = details;
   }

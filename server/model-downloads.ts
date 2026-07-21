@@ -140,7 +140,7 @@ function selectedVariant(model: CatalogModel, requestedVariantId?: string): Cata
   const installable = model.variants.filter((variant) => variant.installable);
   if (installable.length === 1) return installable[0];
   if (installable.length > 1) {
-    throw new ModelDownloadError("Choose a quantization in DSBox before starting the download", 409);
+    throw new ModelDownloadError("Choose a quantization in Hebrus Studio before starting the download", 409);
   }
   throw new ModelDownloadError(model.unavailableReason || "No complete installable GGUF bundle was found", 409);
 }
@@ -245,7 +245,7 @@ export class ModelDownloadManager {
         const record = structuredClone(candidate);
         if (["queued", "preflighting", "downloading", "verifying"].includes(record.snapshot.stage)) {
           record.snapshot.stage = "paused";
-          record.snapshot.error = "DSBox closed before the download completed. Resume to continue.";
+          record.snapshot.error = "Hebrus Studio closed before the download completed. Resume to continue.";
           record.snapshot.speedBytesPerSecond = 0;
           record.snapshot.etaSeconds = null;
           record.snapshot.completedAt = null;
@@ -316,7 +316,7 @@ export class ModelDownloadManager {
 
   async start(model: CatalogModel, requestedVariantId?: string): Promise<ModelDownloadSnapshot> {
     if (this.active.size) throw new ModelDownloadError("Another model download is already running", 409);
-    if (!this.canStart()) throw new ModelDownloadError("Turn off DS4 and wait for its current operation before downloading a model", 409);
+    if (!this.canStart()) throw new ModelDownloadError("Turn off Hebrus and wait for its current operation before downloading a model", 409);
     const [owner, repositoryName] = safeRepository(model.repository);
     const revision = safeRevision(model.revision);
     const variant = selectedVariant(model, requestedVariantId);
@@ -384,7 +384,7 @@ export class ModelDownloadManager {
     if (record.snapshot.stage === "ready") return cloneSnapshot(record.snapshot);
     if (this.active.has(id)) return cloneSnapshot(record.snapshot);
     if (this.active.size) throw new ModelDownloadError("Another model download is already running", 409);
-    if (!this.canStart()) throw new ModelDownloadError("Turn off DS4 and wait for its current operation before resuming the download", 409);
+    if (!this.canStart()) throw new ModelDownloadError("Turn off Hebrus and wait for its current operation before resuming the download", 409);
     await this.reconcileProgress(record);
     record.snapshot.stage = "queued";
     record.snapshot.error = null;
@@ -487,7 +487,7 @@ export class ModelDownloadManager {
 
   private requestHeaders(extra?: Record<string, string>): Headers {
     const headers = new Headers({
-      "user-agent": "DSBox/0.1 (+local-model-download)",
+      "user-agent": "Hebrus-Studio/0.3 (+local-model-download)",
       ...extra
     });
     const token = process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN;
@@ -758,7 +758,7 @@ export class ModelDownloadManager {
 
   private httpError(response: Response, filename: string): Error {
     if (response.status === 401 || response.status === 403) {
-      return new Error(`Hugging Face denied access to ${filename}. Add an authorized Hugging Face token in DSBox.`);
+      return new Error(`Hugging Face denied access to ${filename}. Add an authorized Hugging Face token in Hebrus Studio.`);
     }
     if (response.status === 404) return new Error(`${filename} was not found at the pinned Hugging Face revision`);
     return new Error(`Hugging Face returned ${response.status} while downloading ${filename}`);

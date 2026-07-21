@@ -1,12 +1,13 @@
 {
-  "name": "dsbox",
-  "version": "0.3.2",
+  "name": "hebrus-studio",
+  "version": "0.4.0",
   "private": true,
-  "description": "A polished local launcher and agent gateway for andreaborio/ds4 on Apple Silicon.",
-  "author": "DSBox",
+  "description": "The open desktop studio for Hebrus, a Metal-first inference engine with SSD streaming.",
+  "author": "Hebrus Studio contributors",
   "license": "MIT",
   "main": "desktop/main.cjs",
   "keywords": [
+    "hebrus",
     "ds4",
     "metal",
     "apple-silicon",
@@ -27,6 +28,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:theme-colors": "node scripts/check-theme-colors.mjs",
+    "check:brand": "node scripts/check-brand-boundaries.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit"
   },
   "engines": {

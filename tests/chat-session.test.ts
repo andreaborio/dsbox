@@ -43,8 +43,8 @@ describe("persistent chat session", () => {
     state = reduceAgentStreamEvent(state, { type: "reasoning.delta", text: "checking" }, 1_000);
     state = reduceAgentStreamEvent(state, { type: "tool_call.created", callId: "call-1", name: "web_search" }, 1_100);
     state = reduceAgentStreamEvent(state, { type: "tool_call.arguments.delta", callId: "call-1", delta: "{\"query\":" }, 1_110);
-    state = reduceAgentStreamEvent(state, { type: "tool_call.arguments.delta", callId: "call-1", delta: "\"DSBox\"}" }, 1_120);
-    state = reduceAgentStreamEvent(state, { type: "tool_call.arguments.done", callId: "call-1", arguments: { query: "DSBox" } }, 1_130);
+    state = reduceAgentStreamEvent(state, { type: "tool_call.arguments.delta", callId: "call-1", delta: "\"Hebrus Studio\"}" }, 1_120);
+    state = reduceAgentStreamEvent(state, { type: "tool_call.arguments.done", callId: "call-1", arguments: { query: "Hebrus Studio" } }, 1_130);
     state = reduceAgentStreamEvent(state, { type: "tool_call.started", callId: "call-1", name: "web_search" }, 1_200);
     state = reduceAgentStreamEvent(state, { type: "tool_call.result", callId: "call-1", name: "web_search", result: { count: 2 } }, 1_650);
     state = reduceAgentStreamEvent(state, { type: "text.delta", text: "Found it." }, 1_700);
@@ -58,7 +58,7 @@ describe("persistent chat session", () => {
         callId: "call-1",
         name: "web_search",
         state: "succeeded",
-        arguments: { query: "DSBox" },
+        arguments: { query: "Hebrus Studio" },
         result: { count: 2 },
         createdAt: 1_100,
         startedAt: 1_200,
@@ -461,8 +461,8 @@ describe("persistent chat session", () => {
       bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
       const events = bodies.length === 1 ? [
         { type: "tool_call.created", callId: "call-web", name: "web_search" },
-        { type: "tool_call.arguments.done", callId: "call-web", arguments: { query: "DSBox" } },
-        { type: "tool_call.started", callId: "call-web", name: "web_search", arguments: { query: "DSBox" } },
+        { type: "tool_call.arguments.done", callId: "call-web", arguments: { query: "Hebrus Studio" } },
+        { type: "tool_call.started", callId: "call-web", name: "web_search", arguments: { query: "Hebrus Studio" } },
         { type: "tool_call.result", callId: "call-web", name: "web_search", result: webResult },
         { type: "text.delta", text: "I found one source." },
         { type: "run.completed", finishReason: "stop", steps: 1 }
@@ -478,7 +478,7 @@ describe("persistent chat session", () => {
     const storage = new MemoryStorage();
     const store = new ChatSessionStore({ fetcher, storage, createId: ids() });
     await store.refreshCapabilities();
-    await store.send({ content: "Search the web for DSBox", model: "local-model", maxTokens: 64 });
+    await store.send({ content: "Search the web for Hebrus Studio", model: "local-model", maxTokens: 64 });
 
     expect(store.getSnapshot().messages.at(-1)?.sources).toEqual(webResult.results);
     expect(new ChatSessionStore({ fetcher, storage, createId: ids() }).getSnapshot().messages.at(-1)?.sources).toEqual(webResult.results);
@@ -553,7 +553,7 @@ describe("persistent chat session", () => {
   });
 
   it("reports an older backend explicitly when capabilities returns HTML", async () => {
-    const fetcher = vi.fn(async () => new Response("<!doctype html><title>Old DSBox</title>", {
+    const fetcher = vi.fn(async () => new Response("<!doctype html><title>Old Hebrus Studio</title>", {
       status: 200,
       headers: { "content-type": "text/html; charset=utf-8" }
     }));
@@ -564,7 +564,7 @@ describe("persistent chat session", () => {
     expect(capabilities).toMatchObject({
       status: "error",
       chatTools: false,
-      reason: "Tool capabilities returned a non-JSON response. DSBox may be connected to an older backend."
+      reason: "Tool capabilities returned a non-JSON response. Hebrus Studio may be connected to an older backend."
     });
     expect(store.getSnapshot().capabilities).toEqual(capabilities);
   });
@@ -974,7 +974,7 @@ describe("persistent chat session", () => {
     expect(requests).toEqual(["/api/skills/web-search", "/api/chat"]);
     expect(store.getSnapshot().messages.at(-1)).toMatchObject({
       content: "local answer",
-      skillNotice: "Web search was unavailable, so DSBox continued locally."
+      skillNotice: "Web search was unavailable, so Hebrus Studio continued locally."
     });
   });
 });

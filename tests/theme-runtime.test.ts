@@ -68,7 +68,7 @@ function createDocumentElement() {
 }
 
 describe("theme runtime", () => {
-  it("resolves system to the matching DSBox base theme", () => {
+  it("resolves system to the matching Hebrus Studio base theme", () => {
     expect(resolveThemePreference("system", false)).toBe("dsbox-light");
     expect(resolveThemePreference("system", true)).toBe("dsbox-dark");
     expect(resolveThemePreference("nord", false)).toBe("nord");

@@ -197,8 +197,8 @@ describe("Hugging Face model catalog", () => {
       if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
         return jsonResponse({
           schemaVersion: 1,
-          name: "DeepSeek V4 Flash for DSBox",
-          description: "Metal and SSD streaming profile verified by DSBox.",
+          name: "DeepSeek V4 Flash for Hebrus Studio",
+          description: "Metal and SSD streaming profile verified by Hebrus Studio.",
           status: "stable",
           recommended: true,
           minimumMemoryGb: 64,
@@ -219,7 +219,7 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.recommended).toMatchObject({
       repository,
       revision,
-      label: "DeepSeek V4 Flash for DSBox",
+      label: "DeepSeek V4 Flash for Hebrus Studio",
       runtimeBranch: "main",
       runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
       outputFile: modelFile,
@@ -249,12 +249,12 @@ describe("Hugging Face model catalog", () => {
   });
 
   it.each([
-    ["missing size and checksum pins", "main", 64, undefined, undefined, "deepseek-v4-flash", "DS4 ExpertMajor v2 manifests must pin the single output file, byte size, and SHA-256"],
-    ["a non-main runtime branch", "codex/legacy", 64, 4096, "a".repeat(64), "deepseek-v4-flash", "DS4 ExpertMajor v2 artifacts must pin the andreaborio/ds4 or andreaborio/hebrus main runtime"],
-    ["a memory floor below the release minimum", "main", 32, 4096, "a".repeat(64), "deepseek-v4-flash", "DS4 ExpertMajor v2 requires a minimumMemoryGb declaration of at least 64"],
-    ["a mismatched byte size", "main", 64, 4097, "a".repeat(64), "deepseek-v4-flash", "The DSBox manifest size or SHA-256 does not match the pinned Hugging Face artifact"],
-    ["a mismatched checksum", "main", 64, 4096, "b".repeat(64), "deepseek-v4-flash", "The DSBox manifest size or SHA-256 does not match the pinned Hugging Face artifact"],
-    ["an unsupported DeepSeek family", "main", 64, 4096, "a".repeat(64), "deepseek-v4-pro", "DS4 ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek V4 Flash, or GLM-5.2 model contract"]
+    ["missing size and checksum pins", "main", 64, undefined, undefined, "deepseek-v4-flash", "Hebrus ExpertMajor v2 manifests must pin the single output file, byte size, and SHA-256"],
+    ["a non-main runtime branch", "codex/legacy", 64, 4096, "a".repeat(64), "deepseek-v4-flash", "Hebrus ExpertMajor v2 artifacts must pin the andreaborio/ds4 or andreaborio/hebrus main runtime"],
+    ["a memory floor below the release minimum", "main", 32, 4096, "a".repeat(64), "deepseek-v4-flash", "Hebrus ExpertMajor v2 requires a minimumMemoryGb declaration of at least 64"],
+    ["a mismatched byte size", "main", 64, 4097, "a".repeat(64), "deepseek-v4-flash", "The Hebrus Studio manifest size or SHA-256 does not match the pinned Hugging Face artifact"],
+    ["a mismatched checksum", "main", 64, 4096, "b".repeat(64), "deepseek-v4-flash", "The Hebrus Studio manifest size or SHA-256 does not match the pinned Hugging Face artifact"],
+    ["an unsupported DeepSeek family", "main", 64, 4096, "a".repeat(64), "deepseek-v4-pro", "Hebrus ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek V4 Flash, or GLM-5.2 model contract"]
   ])("rejects a single-file ExpertMajor manifest with %s", async (_case, runtimeBranch, minimumMemoryGb, sizeBytes, sha256, modelId, unavailableReason) => {
     const repository = "andreaborio/DeepSeek-V4-Flash-DS4-GGUF";
     const revision = "f".repeat(40);
@@ -434,7 +434,7 @@ describe("Hugging Face model catalog", () => {
     )).toBe(true);
   });
 
-  it("exposes a revision-pinned DeepSeek ExpertMajor v2 artifact as DS4-only", async () => {
+  it("exposes a revision-pinned DeepSeek ExpertMajor v2 artifact as Hebrus-only", async () => {
     const repository = "andreaborio/DeepSeek-V4-Flash-DS4-GGUF";
     const previousRepository = "andreaborio/DeepSeek-V4-Flash-DS4-ExpertMajor-v2-GGUF";
     const revision = "1".repeat(40);
@@ -457,7 +457,7 @@ describe("Hugging Face model catalog", () => {
       if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
         return jsonResponse({
           schemaVersion: 1,
-          name: "DeepSeek V4 Flash DS4 ExpertMajor v2",
+          name: "DeepSeek V4 Flash Hebrus ExpertMajor v2",
           status: "experimental",
           recommended: false,
           modelId: "deepseek-v4-flash",
@@ -517,7 +517,7 @@ describe("Hugging Face model catalog", () => {
       if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
         return jsonResponse({
           schemaVersion: 1,
-          name: "GLM-5.2 DS4 ExpertMajor v2 Q2_K",
+          name: "GLM-5.2 Hebrus ExpertMajor v2 Q2_K",
           status: "experimental",
           recommended: false,
           modelId: "glm-5.2",
@@ -624,7 +624,7 @@ describe("Hugging Face model catalog", () => {
     });
   });
 
-  it("refuses an ExpertMajor-named repository without the explicit DS4-only format contract", async () => {
+  it("refuses an ExpertMajor-named repository without the explicit Hebrus-only format contract", async () => {
     const repository = "andreaborio/DeepSeek-V4-Flash-DS4-Lab-ExpertMajor-v2-GGUF";
     const revision = "3".repeat(40);
     const modelFile = "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf";
@@ -659,7 +659,7 @@ describe("Hugging Face model catalog", () => {
       artifactFormat: null,
       installable: false,
       recommended: false,
-      unavailableReason: "The ds4-expert-major-v2 repository must declare its DS4-only artifact format in dsbox.json"
+      unavailableReason: "The ds4-expert-major-v2 repository must declare its Hebrus-only artifact format in dsbox.json"
     });
   });
 
@@ -697,7 +697,7 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.models.find((model) => model.repository === repository)).toMatchObject({
       installable: false,
       artifactFormat: null,
-      unavailableReason: "DSBox does not support DS4 ExpertMajor v3"
+      unavailableReason: "Hebrus Studio does not support Hebrus ExpertMajor v3"
     });
   });
 
@@ -733,18 +733,18 @@ describe("Hugging Face model catalog", () => {
       installable: false,
       artifactFormat: null,
       variantCount: 2,
-      unavailableReason: "deepseek-v4-flash requires a manifest-pinned DS4 ExpertMajor v2 artifact"
+      unavailableReason: "deepseek-v4-flash requires a manifest-pinned Hebrus ExpertMajor v2 artifact"
     });
     expect(model?.variants).toEqual(expect.arrayContaining([
       expect.objectContaining({
         outputFile: canonicalFile,
         installable: false,
-        unavailableReason: "deepseek-v4-flash requires a manifest-pinned DS4 ExpertMajor v2 artifact"
+        unavailableReason: "deepseek-v4-flash requires a manifest-pinned Hebrus ExpertMajor v2 artifact"
       }),
       expect.objectContaining({
         outputFile: unknownNativeFile,
         installable: false,
-        unavailableReason: "deepseek-v4-flash requires a manifest-pinned DS4 ExpertMajor v2 artifact"
+        unavailableReason: "deepseek-v4-flash requires a manifest-pinned Hebrus ExpertMajor v2 artifact"
       })
     ]));
   });
@@ -791,7 +791,7 @@ describe("Hugging Face model catalog", () => {
     expect(catalog.models.find((model) => model.repository === repository)).toMatchObject({
       installable: false,
       artifactFormat: null,
-      unavailableReason: "The DSBox manifest declares an unknown DS4 artifact format"
+      unavailableReason: "The Hebrus Studio manifest declares an unknown DS4 artifact format"
     });
   });
 
@@ -888,11 +888,11 @@ describe("Hugging Face model catalog", () => {
       installable: false,
       recommended: false,
       sourceUrl: `https://huggingface.co/${repositories[0]}/tree/${revisions[0]}`,
-      unavailableReason: "DS4 does not support standard multi-file GGUF sets"
+      unavailableReason: "Hebrus does not support standard multi-file GGUF sets"
     });
     expect(catalog.models.find((model) => model.repository === repositories[0])?.variants).toMatchObject([
-      { label: "UD IQ1 M", totalBytes: 30, installable: false, unavailableReason: "DS4 does not support standard multi-file GGUF sets", files: [{ sizeBytes: 10 }, { sizeBytes: 20 }] },
-      { label: "UD IQ2 XXS", totalBytes: 32, installable: false, unavailableReason: "DS4 does not support standard multi-file GGUF sets", files: [{ sizeBytes: 11 }, { sizeBytes: 21 }] }
+      { label: "UD IQ1 M", totalBytes: 30, installable: false, unavailableReason: "Hebrus does not support standard multi-file GGUF sets", files: [{ sizeBytes: 10 }, { sizeBytes: 20 }] },
+      { label: "UD IQ2 XXS", totalBytes: 32, installable: false, unavailableReason: "Hebrus does not support standard multi-file GGUF sets", files: [{ sizeBytes: 11 }, { sizeBytes: 21 }] }
     ]);
     expect(catalog.models.find((model) => model.repository === repositories[1])).toMatchObject({
       publisher: "unsloth",
@@ -903,7 +903,7 @@ describe("Hugging Face model catalog", () => {
       recommended: false,
       totalBytes: 70,
       outputFile: "UD-IQ1_S/model-00001-of-00002.gguf",
-      unavailableReason: "DS4 does not support standard multi-file GGUF sets"
+      unavailableReason: "Hebrus does not support standard multi-file GGUF sets"
     });
     expect(catalog.models.find((model) => model.repository === repositories[2])).toMatchObject({
       publisher: "unsloth",
@@ -912,7 +912,7 @@ describe("Hugging Face model catalog", () => {
       installable: false,
       recommended: false,
       architecture: "moe",
-      unavailableReason: "DS4 requires the normalized Qwen3.6 DS4 artifact; these source GGUF files are not directly runnable"
+      unavailableReason: "Hebrus requires the normalized Qwen3.6 DS4 artifact; these source GGUF files are not directly runnable"
     });
     expect(catalog.recommended).toBeNull();
   });

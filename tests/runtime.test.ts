@@ -424,7 +424,7 @@ describe("engine arguments", () => {
     { modelId: "glm-5.2", architecture: "glm-dsa", path: "/models/glm-v2.gguf", supportsDiskKv: true, supportsImatrixSteering: false, supportsPrefillOverride: false }
   ] as const;
 
-  it.each(managedModels)("delegates $modelId ExpertMajor v2 startup to DS4 AUTO", ({ modelId, architecture, path, supportsDiskKv, supportsImatrixSteering, supportsPrefillOverride }) => {
+  it.each(managedModels)("delegates $modelId ExpertMajor v2 startup to Hebrus AUTO", ({ modelId, architecture, path, supportsDiskKv, supportsImatrixSteering, supportsPrefillOverride }) => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     config.model = { id: modelId, path };
     config.server.powerPercent = 48;

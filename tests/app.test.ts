@@ -9,7 +9,7 @@ import { TaskCancelledError } from "../server/runtime.js";
 import type { CatalogModel, CatalogModelVariant, CatalogResponse, ModelDownloadSnapshot, RuntimeState } from "../src/types.js";
 import { createDs4GgufFixture, createDs4QwenGgufFixture } from "./helpers/gguf.js";
 
-describe("DSBox API", () => {
+describe("Hebrus Studio API", () => {
   let home: string;
   let services: AppServices;
 
@@ -40,7 +40,7 @@ describe("DSBox API", () => {
     expect(response.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
   });
 
-  it("does not present an incompatible model saved by an older DSBox version as ready", async () => {
+  it("does not present an incompatible model saved by an older Hebrus Studio version as ready", async () => {
     const incompatiblePath = path.join(home, "legacy-incompatible.gguf");
     await writeFile(incompatiblePath, createDs4GgufFixture({ includeVocabSize: false }));
     const config = services.store.get();
@@ -174,7 +174,7 @@ describe("DSBox API", () => {
       canonicalPath,
       canonicalPath,
       "ds4-expert-major-v2"
-    )).rejects.toThrow(/not compatible with DS4/i);
+    )).rejects.toThrow(/not compatible with Hebrus/i);
     await expect(services.runtime.validateLocalModel(
       nativePath,
       nativePath,
@@ -418,7 +418,7 @@ describe("DSBox API", () => {
       rolledBack: true,
       runtimeRestored: true
     });
-    expect(response.body.error).toMatch(/previous model selection was restored and DS4 was relaunched/i);
+    expect(response.body.error).toMatch(/previous model selection was restored and Hebrus was relaunched/i);
     expect(services.store.get().model).toEqual({ path: previousPath, id: "previous-model" });
     expect(startManaged).toHaveBeenCalledTimes(2);
     expect(internal.engine?.pid).toBe(5678);
@@ -511,7 +511,7 @@ describe("DSBox API", () => {
       compatibility: {
         status: "unsupported",
         code: "missing_ds4_metadata",
-        reason: "This DeepSeek 4 GGUF is missing metadata required by DS4: deepseek4.vocab_size."
+        reason: "This DeepSeek 4 GGUF is missing metadata required by Hebrus: deepseek4.vocab_size."
       },
       architecture: "deepseek4"
     }));
@@ -529,7 +529,7 @@ describe("DSBox API", () => {
       path: modelPath,
       compatibility: expect.objectContaining({
         status: "unsupported",
-        reason: "This DeepSeek 4 GGUF is missing metadata required by DS4: deepseek4.vocab_size."
+        reason: "This DeepSeek 4 GGUF is missing metadata required by Hebrus: deepseek4.vocab_size."
       })
     }));
     expect(services.runtime.getState()).toMatchObject({ modelPresent: false, modelSizeBytes: 0 });
@@ -681,7 +681,7 @@ describe("DSBox API", () => {
       .send({ path: shardPath })
       .expect(400);
     expect(rejected.body.error).toBe(
-      "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead."
+      "Hebrus does not support standard multi-file GGUF sets. Choose a single Hebrus ExpertMajor GGUF instead."
     );
     const local = await request(app).get("/api/models/local").expect(200);
     expect(local.body.models).not.toContainEqual(expect.objectContaining({ path: shardPath }));
@@ -699,7 +699,7 @@ describe("DSBox API", () => {
       .send({ path: firstShard })
       .expect(400);
     expect(rejected.body.error).toBe(
-      "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead."
+      "Hebrus does not support standard multi-file GGUF sets. Choose a single Hebrus ExpertMajor GGUF instead."
     );
     const local = await request(app).get("/api/models/local").expect(200);
     expect(local.body.models.filter((model: { path: string }) => model.path.includes("complete-0000"))).toHaveLength(0);
@@ -718,7 +718,7 @@ describe("DSBox API", () => {
       .expect(400);
 
     expect(rejected.body.error).toBe(
-      "This GGUF is not compatible with DS4. It is missing the DS4 model metadata required to run (deepseek4.vocab_size)."
+      "This GGUF is not compatible with Hebrus. It is missing the legacy DS4 model metadata required to run (deepseek4.vocab_size)."
     );
     expect(services.store.get().model).toEqual(previousModel);
     const local = await request(app).get("/api/models/local").expect(200);
@@ -781,7 +781,7 @@ describe("DSBox API", () => {
     await writeFile(secondPath, createDs4GgufFixture());
     await services.runtime.selectLocalModel(firstPath);
     services.runtime.prepareOneClickStart();
-    await expect(services.runtime.selectLocalModel(secondPath)).rejects.toThrow(/Cancel the download|turn off DSBox/);
+    await expect(services.runtime.selectLocalModel(secondPath)).rejects.toThrow(/Cancel the download|turn off Hebrus Studio/);
     expect(services.store.get().model.path).toBe(firstPath);
   });
 
@@ -814,13 +814,13 @@ describe("DSBox API", () => {
       minimumMemoryGb: null,
       lastModified: null,
       sourceUrl: "https://huggingface.co/unsloth/Test-GGUF",
-      unavailableReason: "Choose a quantization in DSBox",
+      unavailableReason: "Choose a quantization in Hebrus Studio",
       variantCount: 1,
       variants: [variant]
     };
     const catalog: CatalogResponse = {
       author: "andreaborio",
-      label: "DSBox Models",
+      label: "Hebrus Studio Models",
       sources: [],
       models: [model],
       recommended: null,

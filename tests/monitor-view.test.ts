@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { resolveMonitorPresentation } from "../src/views/MonitorView.js";
 
 describe("Activity telemetry truth", () => {
-  it("keeps host telemetry visible without claiming DSBox is active", () => {
+  it("keeps host telemetry visible without claiming Hebrus Studio is active", () => {
     expect(resolveMonitorPresentation({ phase: "idle", readiness: "offline" }, "idle", null)).toEqual({
       state: "offline",
-      title: "System resources. DSBox is off.",
-      description: "Memory, CPU, and disk values describe this Mac. Runtime metrics remain off until DSBox starts.",
+      title: "System resources. Hebrus Studio is off.",
+      description: "Memory, CPU, and disk values describe this Mac. Runtime metrics remain off until Hebrus Studio starts.",
       modelStatus: "Offline",
       responseSpeed: "Off",
       responseFoot: "Runtime inactive"
@@ -37,7 +37,7 @@ describe("Activity telemetry truth", () => {
       state: "ready",
       modelStatus: "Decode",
       responseSpeed: "4.20 t/s",
-      responseFoot: "Measured by DSBox"
+      responseFoot: "Measured by Hebrus Studio"
     });
   });
 });

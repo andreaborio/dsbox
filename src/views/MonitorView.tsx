@@ -55,8 +55,8 @@ export function resolveMonitorPresentation(
   if (!ready && !loading) {
     return {
       state: "offline",
-      title: "System resources. DSBox is off.",
-      description: "Memory, CPU, and disk values describe this Mac. Runtime metrics remain off until DSBox starts.",
+      title: "System resources. Hebrus Studio is off.",
+      description: "Memory, CPU, and disk values describe this Mac. Runtime metrics remain off until Hebrus Studio starts.",
       modelStatus: "Offline",
       responseSpeed: "Off",
       responseFoot: "Runtime inactive"
@@ -66,7 +66,7 @@ export function resolveMonitorPresentation(
   if (loading) {
     return {
       state: "loading",
-      title: "System resources while DSBox starts.",
+      title: "System resources while Hebrus Studio starts.",
       description: "Host telemetry stays live while the selected model is prepared.",
       modelStatus: runtime.phase === "stopping" ? "Stopping" : "Loading",
       responseSpeed: runtime.phase === "stopping" ? "Stopping…" : "Loading…",
@@ -83,7 +83,7 @@ export function resolveMonitorPresentation(
         : "Decode";
   return {
     state: "ready",
-    title: "System resources and DSBox activity.",
+    title: "System resources and Hebrus Studio activity.",
     description: "Host telemetry and measured model activity are shown separately, with no fabricated estimates.",
     modelStatus: stageLabel,
     responseSpeed: activityStage === "idle"
@@ -91,7 +91,7 @@ export function resolveMonitorPresentation(
       : tokensPerSecond === null
         ? "Measuring…"
         : `${tokensPerSecond.toFixed(2)} t/s`,
-    responseFoot: activityStage === "idle" ? "Waiting for a response" : "Measured by DSBox"
+    responseFoot: activityStage === "idle" ? "Waiting for a response" : "Measured by Hebrus Studio"
   };
 }
 
@@ -146,11 +146,11 @@ export function MonitorView({ snapshot }: Props) {
       ? "Not used"
       : runtimeCache
         ? cacheLabel(runtimeCache)
-        : "Adaptive · DS4"
+        : "Adaptive · Hebrus"
     : configuredCacheOverride
       ? cacheLabel(configuredCacheOverride)
       : config.streaming.cacheMode === "auto"
-        ? "Adaptive · DS4"
+        ? "Adaptive · Hebrus"
         : `${config.streaming.cacheSizeGb} GB`;
 
   return (
@@ -235,7 +235,7 @@ export function MonitorView({ snapshot }: Props) {
             <div><span>Volume</span><strong>{latest ? formatBytes(latest.diskTotalBytes, 0) : "—"}</strong></div>
             <div><span>Model cache</span><strong>{modelCacheLabel}</strong></div>
             <div><span>On-disk context</span><strong>{qwenSelected ? "Unavailable" : config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
-            <div><span>Mode</span><strong>{expertMajorManaged ? "DS4 AUTO" : (runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
+            <div><span>Mode</span><strong>{expertMajorManaged ? "Hebrus AUTO" : (runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
           </div>
           <p className="metric-disclaimer"><Info size={13} /> macOS does not reliably expose per-process SSD throughput without internal instrumentation.</p>
         </article>
@@ -248,7 +248,7 @@ export function MonitorView({ snapshot }: Props) {
             <div><Circle size={8} fill="currentColor" /><span>Architecture</span><strong>{snapshot.system.arch}</strong></div>
             <div><Circle size={8} fill="currentColor" /><span>Memory</span><strong>Unified</strong></div>
           </div>
-          <div className="metal-note"><Info size={14} /><p><code>powermetrics</code> requires elevated privileges. DSBox does not request sudo access or display fabricated percentages.</p></div>
+          <div className="metal-note"><Info size={14} /><p><code>powermetrics</code> requires elevated privileges. Hebrus Studio does not request sudo access or display fabricated percentages.</p></div>
         </article>
       </section>
 
@@ -257,7 +257,7 @@ export function MonitorView({ snapshot }: Props) {
           <div><span className="eyebrow"><Terminal size={13} /> Diagnostics</span><h3>Runtime events</h3></div>
           <div className="logs-toolbar__controls">
             <label className="log-search"><Search size={14} /><input aria-label="Search runtime events" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search logs" />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={13} /></button>}</label>
-            <label className="log-filter"><select aria-label="Filter events by source" value={logFilter} onChange={(event) => setLogFilter(event.target.value as LogFilter)}><option value="all">All sources</option><option value="ds4">ds4</option><option value="dsbox">dsbox</option><option value="build">build</option><option value="git">git</option><option value="download">download</option><option value="warnings">Warnings + errors</option></select><ChevronDown size={13} /></label>
+            <label className="log-filter"><select aria-label="Filter events by source" value={logFilter} onChange={(event) => setLogFilter(event.target.value as LogFilter)}><option value="all">All sources</option><option value="ds4">Hebrus engine</option><option value="dsbox">Hebrus Studio</option><option value="build">Build</option><option value="git">Git</option><option value="download">Downloads</option><option value="warnings">Warnings + errors</option></select><ChevronDown size={13} /></label>
           </div>
         </div>
         <div className="terminal-window">

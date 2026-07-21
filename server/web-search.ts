@@ -72,7 +72,7 @@ export async function searchWeb(query: string, fetcher: SearchFetcher = globalTh
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
-      "user-agent": "DSBox/0.1 local web search"
+      "user-agent": "Hebrus-Studio/0.3 local web search"
     },
     body: body.toString(),
     signal: externalSignal ? AbortSignal.any([externalSignal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000)

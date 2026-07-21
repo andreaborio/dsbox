@@ -10,7 +10,7 @@ import { isDs4ArtifactFormat } from "./model-format.js";
 const LEGACY_COMPATIBILITY: LocalModelCompatibility = {
   status: "unverified",
   code: "legacy_unverified",
-  reason: "This model was reported by an older DSBox service and has not passed the current compatibility check."
+  reason: "This model was reported by an older Hebrus Studio service and has not passed the current compatibility check."
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -32,7 +32,7 @@ function normalizeCompatibility(value: unknown): LocalModelCompatibility {
 
 /**
  * The UI can briefly talk to an older control plane when a source checkout or
- * desktop app is updated while DSBox is already running. Normalize that older
+ * desktop app is updated while Hebrus Studio is already running. Normalize that older
  * response at the API boundary instead of letting individual views assume the
  * newest candidate shape.
  */
@@ -65,7 +65,7 @@ export function normalizeLocalModelCandidates(value: unknown): LocalModelCandida
 }
 
 export function normalizeLocalModelScanSnapshot(value: unknown): LocalModelScanSnapshot {
-  if (!isRecord(value)) throw new Error("DSBox returned an invalid local model scan response");
+  if (!isRecord(value)) throw new Error("Hebrus Studio returned an invalid local model scan response");
   return {
     ...(value as unknown as LocalModelScanSnapshot),
     models: normalizeLocalModelCandidates(value.models)

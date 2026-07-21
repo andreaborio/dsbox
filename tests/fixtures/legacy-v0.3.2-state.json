@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "browserStorage": {
+    "dsbox:appearance-theme:v1": "dsbox-dark",
+    "dsbox:onboarding-state:v2": "completed",
+    "dsbox:last-view:v1": "models",
+    "dsbox:models:unavailable-open:v1": "open",
+    "dsbox:chat-threads:v1": "{\"version\":1,\"activeThreadId\":\"legacy-thread\",\"threads\":[{\"id\":\"legacy-thread\",\"title\":\"Existing local chat\",\"createdAt\":1000,\"updatedAt\":2000,\"messages\":[{\"id\":\"legacy-message\",\"role\":\"user\",\"content\":\"Keep this conversation\"}]}],\"preferences\":{\"webSearchEnabled\":false}}"
+  },
+  "stateFiles": {
+    "config": "config.json",
+    "inventory": "local-models.json",
+    "downloads": "downloads/state.json"
+  },
+  "runtimeStates": ["stopped", "running"]
+}

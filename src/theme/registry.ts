@@ -20,7 +20,7 @@ export const SYSTEM_THEME_SWATCHES = ["#fcfcfb", "#f4f4f2", "#292927", "#8377de"
 export const THEME_REGISTRY: readonly ThemeDefinition[] = Object.freeze([
   {
     id: "dsbox-light",
-    label: "DSBox Light",
+    label: "Hebrus Light",
     description: "The original quiet, warm workspace.",
     colorScheme: "light",
     canvasColor: "#fcfcfb",
@@ -28,8 +28,8 @@ export const THEME_REGISTRY: readonly ThemeDefinition[] = Object.freeze([
   },
   {
     id: "dsbox-dark",
-    label: "DSBox Dark",
-    description: "Low-glare charcoal with DSBox violet.",
+    label: "Hebrus Dark",
+    description: "Low-glare charcoal with Hebrus violet.",
     colorScheme: "dark",
     canvasColor: "#171716",
     swatches: ["#171716", "#292927", "#f2f2ef", "#8377de"]

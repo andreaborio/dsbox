@@ -1,10 +1,20 @@
 {
-  "schemaVersion": 1,
-  "productName": "DSBox",
+  "schemaVersion": 2,
+  "productName": "Hebrus Studio",
+  "packageName": "hebrus-studio",
+  "artifactBaseName": "Hebrus-Studio",
   "bundleIdentifier": "com.dsbox.desktop",
-  "executableName": "DSBox",
+  "executableName": "Hebrus Studio",
+  "iconFile": "icon.icns",
   "architecture": "arm64",
   "engineDelivery": "external",
+  "compatibility": {
+    "legacyProductName": "DSBox",
+    "legacyUserDataDirectoryName": "DSBox",
+    "stateRoot": "~/.dsbox",
+    "environmentPrefix": "DSBOX_",
+    "storageKeyPrefix": "dsbox:"
+  },
   "forbiddenEmbeddedEngineExecutables": [
     "hebrus",
     "hebrus-server",

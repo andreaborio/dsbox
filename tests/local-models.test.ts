@@ -28,7 +28,7 @@ describe("local model response normalization", () => {
     expect(model && localModelIsRunnable(model)).toBe(true);
   });
 
-  it("adapts models returned by pre-compatibility DSBox services", () => {
+  it("adapts models returned by pre-compatibility Hebrus Studio services", () => {
     const model = normalizeLocalModelCandidate({
       path: "/models/legacy.gguf",
       name: "legacy",

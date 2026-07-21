@@ -1,4 +1,4 @@
-# Contributing to DSBox
+# Contributing to Hebrus Studio
 
 ## Setup
 
@@ -21,7 +21,7 @@ files must also pass the arm64 package contract on macOS:
 
 ```sh
 npm run pack:mac
-npm run verify:mac -- release/mac-arm64/DSBox.app
+npm run verify:mac -- "release/mac-arm64/Hebrus Studio.app"
 ```
 
 ## Runtime rules
@@ -46,7 +46,7 @@ npm run verify:mac -- release/mac-arm64/DSBox.app
 - Do not display Metal or I/O metrics that cannot be measured reliably.
 - Treat traces and KV caches as potentially sensitive data.
 - Never start a model download implicitly from the power action. Users must select a local GGUF or explicitly confirm a catalog download.
-- Attribute model recommendations exclusively to DSBox, never to the repository or catalog author.
+- Attribute model recommendations exclusively to Hebrus Studio, never to the repository or catalog author.
 
 ## UI
 

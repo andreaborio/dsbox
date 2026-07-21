@@ -5,7 +5,7 @@ state, or packaging boundary it owns.
 
 ## Compatibility
 
-- Which DSBox and Hebrus/DS4 versions were exercised?
+- Which Hebrus Studio and Hebrus/DS4 versions were exercised?
 - Does this change config v2, localStorage, application-data paths, model
   manifests, binary discovery, repository identity, or bundle identity?
 - What is the rollback behavior?

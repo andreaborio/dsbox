@@ -102,7 +102,7 @@ const toolDefinitions = [
   },
   {
     name: "runtime_status",
-    description: "Read the current local DS4 runtime and inference status.",
+    description: "Read the current local Hebrus runtime and inference status.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -416,7 +416,7 @@ export async function resolveAgentCapabilities(
     source: state.readiness === "ready" ? "runtime_models_error" : "runtime_offline",
     detail: state.readiness === "ready"
       ? "The runtime model metadata has not been inspected yet."
-      : "The DS4 runtime is not ready."
+      : "The Hebrus runtime is not ready."
   };
 
   if (state.readiness === "ready") {

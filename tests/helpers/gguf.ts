@@ -215,7 +215,7 @@ export interface Ds4GgufFixtureOptions {
 }
 
 /**
- * Builds a small GGUF v3 header that satisfies DSBox's DS4 preflight. It has
+ * Builds a small GGUF v3 header that satisfies Hebrus Studio's DS4 preflight. It has
  * the required metadata types and tensor-name signature, but no model weights.
  */
 export function createDs4GgufFixture(options: Ds4GgufFixtureOptions = {}): Buffer {

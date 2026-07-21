@@ -91,7 +91,7 @@ export function Onboarding({
           <motion.section className="onboarding__step onboarding__welcome" key="welcome" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}>
             <BrandMark size="hero" />
             <h1 id={titleId}>Your own AI.<br />Entirely on this Mac.</h1>
-            <p id={descriptionId}>Requests sent to DSBox are processed locally. Your selected model and runtime stay under your control.</p>
+            <p id={descriptionId}>Requests sent to Hebrus Studio are processed locally. Your selected model and runtime stay under your control.</p>
             <div className="onboarding-hardware">
               <div className="onboarding-hardware__head"><ShieldCheck size={14} /><span>This Mac</span></div>
               <div className="onboarding-hardware__grid">
@@ -119,13 +119,13 @@ export function Onboarding({
               </button>
               <button onClick={onChooseCatalog}>
                 <span className="onboarding-model-grid__icon onboarding-model-grid__icon--catalog"><Box size={20} /></span>
-                <strong>Browse the DSBox catalog</strong>
+                <strong>Browse the Hebrus Studio catalog</strong>
                 <p>Review models published on Hugging Face and explicitly confirm any download.</p>
-                <span className="onboarding-model-grid__facts"><i>Recommended by DSBox</i><i>Verified revisions</i></span>
+                <span className="onboarding-model-grid__facts"><i>Recommended by Hebrus Studio</i><i>Verified revisions</i></span>
                 <span className="onboarding-model-grid__action"><Box size={14} /> Open catalog</span>
               </button>
             </div>
-            <div className="onboarding__guarantee"><Cpu size={14} /><span>Model acquisition and server power are separate. Choosing a source will not start DSBox.</span></div>
+            <div className="onboarding__guarantee"><Cpu size={14} /><span>Model acquisition and server power are separate. Choosing a source will not start Hebrus Studio.</span></div>
           </motion.section>
         )}
       </AnimatePresence>

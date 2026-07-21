@@ -78,7 +78,7 @@ export function resolveWebSearchControl(options: WebSearchControlOptions): WebSe
     label: options.preference ? "Web on" : "Web off",
     ariaLabel: `Turn web search ${action}`,
     title: options.preference
-      ? `Web search is ${state}. DSBox may use the network when a prompt needs current information.`
+      ? `Web search is ${state}. Hebrus Studio may use the network when a prompt needs current information.`
       : `Web search is ${state}. Click to turn it ${action}.`
   };
 }
@@ -830,7 +830,7 @@ function AgentErrorCard({
       <div className="agent-error-card__head">
         <span><CircleAlert size={15} /></span>
         <div>
-          <strong>DSBox couldn’t finish</strong>
+          <strong>Hebrus Studio couldn’t finish</strong>
           <p>{usedNetwork ? "The web search or model stopped before a complete answer." : "The model stopped before a complete answer."} Your conversation is still here.</p>
         </div>
       </div>
@@ -984,9 +984,9 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   });
   const activeToolSettings = Number(agentActive) + Number(webSearchControl.visible && webSearchEnabled);
   const agentCapabilityMessage = capabilities.status === "error" || capabilities.status === "unknown"
-    ? "Tool capability could not be verified. DSBox will use standard chat."
+    ? "Tool capability could not be verified. Hebrus Studio will use standard chat."
     : capabilities.status === "ready" && !capabilities.chatTools
-      ? "This model does not expose tool calling yet. DSBox will use standard chat."
+      ? "This model does not expose tool calling yet. Hebrus Studio will use standard chat."
       : null;
   const preparing = ["preparing", "installing", "updating", "building", "downloading", "starting"].includes(snapshot.runtime.phase);
   const stopping = snapshot.runtime.phase === "stopping";
@@ -1019,36 +1019,36 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
         description: webSearchEnabled
           ? "The model runs on your Mac. Web search is on; only search queries may leave this Mac."
           : "The model, prompts, cache, and code stay on your Mac.",
-        notice: "DSBox is ready",
+        notice: "Hebrus Studio is ready",
         detail: "you can start typing",
-        placeholder: "Message DSBox…"
+        placeholder: "Message Hebrus Studio…"
       }
     : runtimeError
       ? {
-          description: "DSBox needs your attention. Open Server to see what happened and try again.",
-          notice: "DSBox needs attention",
+          description: "Hebrus Studio needs your attention. Open Server to see what happened and try again.",
+          notice: "Hebrus Studio needs attention",
           detail: "open Server to resolve it",
           placeholder: "Check the server status…"
         }
       : stopping
         ? {
-            description: "DSBox is safely closing the local session.",
-            notice: "Turning off DSBox",
+            description: "Hebrus Studio is safely closing the local session.",
+            notice: "Turning off Hebrus Studio",
             detail: "this will only take a moment",
-            placeholder: "DSBox is shutting down…"
+            placeholder: "Hebrus Studio is shutting down…"
           }
         : preparing
           ? {
               description: "Preparing the model on your Mac. Your prompts, cache, and code will stay local.",
-              notice: "Preparing DSBox",
+              notice: "Preparing Hebrus Studio",
               detail: "follow the progress in Server",
-              placeholder: "DSBox is getting ready…"
+              placeholder: "Hebrus Studio is getting ready…"
             }
           : {
-              description: "When you turn on DSBox, the model, prompts, cache, and code stay on your Mac.",
-              notice: "DSBox is off",
+              description: "When you turn on Hebrus Studio, the model, prompts, cache, and code stay on your Mac.",
+              notice: "Hebrus Studio is off",
               detail: "turn it on to get started",
-              placeholder: "Turn on DSBox to chat…"
+              placeholder: "Turn on Hebrus Studio to chat…"
             };
 
   const sortedThreads = useMemo(() => [...chat.threads].sort((left, right) => right.updatedAt - left.updatedAt), [chat.threads]);
@@ -1137,7 +1137,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
   const liveStatus = latestAssistant
     ? latestAssistant.pending
-      ? `DSBox: ${messageStage(latestAssistant).label}`
+      ? `Hebrus Studio: ${messageStage(latestAssistant).label}`
       : latestAssistant.error
         ? "The response failed."
         : latestAssistant.interrupted
@@ -1214,7 +1214,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                 return <motion.article
                   key={message.id}
                   className={`message message--${message.role} ${message.role === "assistant" && hasReasoningTrace ? "message--has-reasoning" : ""} ${message.error ? "message--error" : ""}`}
-                  aria-label={message.role === "user" ? "You" : "DSBox"}
+                  aria-label={message.role === "user" ? "You" : "Hebrus Studio"}
                   initial={reduceMotion ? false : { opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={reduceMotion ? { duration: 0 } : { duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
@@ -1307,7 +1307,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                           {message.stats.thinkingMs !== null && <div><dt>{toolActivities.length ? "Reasoning + tools" : "Thinking"}</dt><dd>{formatDuration(message.stats.thinkingMs)}{message.stats.reasoningTokens !== null ? ` · ${message.stats.reasoningTokens.toLocaleString("en-US")} tokens` : ""}</dd></div>}
                           {message.stats.decodeMs !== null && <div><dt>Generation</dt><dd>{formatDuration(message.stats.decodeMs)}</dd></div>}
                           {message.stats.webSearchMs !== null && <div><dt>Web search</dt><dd>{formatDuration(message.stats.webSearchMs)}</dd></div>}
-                          <div><dt>Timing</dt><dd>{message.stats.timingSource === "server" ? "Reported by DS4" : "Measured end to end"}</dd></div>
+                          <div><dt>Timing</dt><dd>{message.stats.timingSource === "server" ? "Reported by Hebrus" : "Measured end to end"}</dd></div>
                         </dl>
                       </details>
                     )}
@@ -1355,7 +1355,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                 void send();
               }
             }}
-            placeholder={ready ? "Message DSBox…" : runtimePresentation.placeholder}
+            placeholder={ready ? "Message Hebrus Studio…" : runtimePresentation.placeholder}
             aria-label="Message"
             rows={1}
             disabled={!ready || streaming || modelSwitching}
@@ -1437,7 +1437,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                         })}
                       </div>
                       <div className="model-picker__foot">
-                        <span>Switching restarts DS4 when it is on.</span>
+                        <span>Switching restarts Hebrus when it is on.</span>
                         <button type="button" onClick={() => { setModelMenuOpen(false); onNavigate("models"); }}>Manage models</button>
                       </div>
                     </motion.div>
@@ -1476,7 +1476,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                       transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
                     >
                       <div className="tools-menu__head">
-                        <div><strong>Tools</strong><span>Choose what DSBox can use in this chat.</span></div>
+                        <div><strong>Tools</strong><span>Choose what Hebrus Studio can use in this chat.</span></div>
                         <span>{activeToolSettings} on</span>
                       </div>
                       <div className="tools-menu__list">

@@ -35,24 +35,27 @@ jobs:
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
       - run: npm run typecheck
+      - run: npm run check:brand
       - run: npm test
       - run: npm run dist:mac
-      - name: Verify packaged application
-        run: npm run verify:mac
       - name: Create checksum
         shell: bash
         run: |
           cd release
-          shasum -a 256 "DSBox-${{ steps.version.outputs.version }}-macOS-arm64.dmg" > SHA256SUMS.txt
+          shasum -a 256 "Hebrus-Studio-${{ steps.version.outputs.version }}-macOS-arm64.dmg" > SHA256SUMS.txt
+      - name: Verify packaged application and checksum
+        env:
+          DSBOX_VERIFY_CHECKSUMS: "1"
+        run: npm run verify:mac
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            "release/DSBox-${{ steps.version.outputs.version }}-macOS-arm64.dmg#DSBox for Apple Silicon" \
+            "release/Hebrus-Studio-${{ steps.version.outputs.version }}-macOS-arm64.dmg#Hebrus Studio for Apple Silicon" \
             "release/SHA256SUMS.txt#SHA-256 checksum" \
             "docs/INSTALL-macOS.md#Installation guide" \
             --verify-tag \
-            --title "DSBox ${{ steps.version.outputs.version }}" \
+            --title "Hebrus Studio ${{ steps.version.outputs.version }}" \
             --notes-file docs/RELEASE-NOTES-macOS.md

@@ -76,7 +76,7 @@ async function runtimeFixture(): Promise<{
     "GLM inference requires a DS4 ExpertMajor v2 GGUF"
   ].join("\n"));
   await execFileAsync("git", ["init", "--quiet"], { cwd: repository });
-  await execFileAsync("git", ["config", "user.name", "DSBox Test"], { cwd: repository });
+  await execFileAsync("git", ["config", "user.name", "Hebrus Studio Test"], { cwd: repository });
   await execFileAsync("git", ["config", "user.email", "dsbox-test@example.invalid"], { cwd: repository });
   await execFileAsync("git", ["add", "."], { cwd: repository });
   await execFileAsync("git", ["commit", "--quiet", "-m", "runtime fixture"], { cwd: repository });

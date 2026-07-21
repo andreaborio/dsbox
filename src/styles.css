@@ -239,7 +239,9 @@ pre,
   display: flex;
   flex: 1;
   min-width: 0;
-  align-items: center;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
   line-height: 1;
   white-space: nowrap;
 }
@@ -248,6 +250,14 @@ pre,
   font-size: 14.5px;
   font-weight: 680;
   letter-spacing: -0.025em;
+}
+
+.sidebar__wordmark span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 560;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .sidebar__collapse {
@@ -321,7 +331,7 @@ pre,
   filter: drop-shadow(0 1px 1.5px light-dark(rgba(0, 0, 0, 0.12), color-mix(in srgb, var(--ds-color-shadow) 12%, transparent)));
 }
 
-/* DSBox state core — lightweight SVG motion, no canvas/WebGL. */
+/* Hebrus Studio state core — lightweight SVG motion, no canvas/WebGL. */
 .dsbox-orb {
   --orb-accent: var(--ds-color-text-secondary);
   position: relative;

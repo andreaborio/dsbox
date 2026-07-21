@@ -91,20 +91,20 @@ export function ModelDownloadDialog({
             <span className="model-download-dialog__icon"><Download size={20} /></span>
             <div>
               <strong>{model.label}</strong>
-              <p>DSBox downloads directly from Hugging Face, verifies every file, and selects the model when it is ready.</p>
+              <p>Hebrus Studio downloads directly from Hugging Face, verifies every file, and selects the model when it is ready.</p>
             </div>
           </div>
 
           {artifactFormatLabel && (
-            <InlineNotice tone="neutral" title={`${artifactFormatLabel} · DS4 only`}>
-              This file uses a DS4-native expert layout. It is not runnable in llama.cpp, MLX, or generic GGUF loaders; keep a canonical GGUF for those runtimes.
+            <InlineNotice tone="neutral" title={`${artifactFormatLabel} · Hebrus only`}>
+              This file uses a Hebrus-native expert layout. It is not runnable in llama.cpp, MLX, or generic GGUF loaders; keep a canonical GGUF for those runtimes.
             </InlineNotice>
           )}
 
           {variants.length > 1 && (
             <section className="model-download-dialog__variants" aria-labelledby="model-version-heading">
               <div className="model-download-dialog__section-head">
-                <div><strong id="model-version-heading">Version</strong><span>DSBox selected a balanced default. You can install any complete variant.</span></div>
+                <div><strong id="model-version-heading">Version</strong><span>Hebrus Studio selected a balanced default. You can install any complete variant.</span></div>
                 <Badge tone="neutral">{variants.length} available</Badge>
               </div>
               <Surface className="model-download-dialog__variant-list" bordered radius="md" padding="none" role="radiogroup" aria-label="Model versions">
@@ -173,7 +173,7 @@ export function ModelDownloadDialog({
         </div>
       ) : model ? (
         <InlineNotice tone="danger" title="No complete version available">
-          Hugging Face did not expose a complete GGUF bundle that DSBox can verify and download.
+          Hugging Face did not expose a complete GGUF bundle that Hebrus Studio can verify and download.
         </InlineNotice>
       ) : null}
     </Modal>

@@ -8,8 +8,11 @@ CONTRACT="$ROOT_DIR/scripts/macos-package-contract.json"
 PRODUCT_NAME=$(node -p "require('$CONTRACT').productName")
 BUNDLE_IDENTIFIER=$(node -p "require('$CONTRACT').bundleIdentifier")
 EXPECTED_EXECUTABLE=$(node -p "require('$CONTRACT').executableName")
+EXPECTED_ICON=$(node -p "require('$CONTRACT').iconFile")
 EXPECTED_ARCHITECTURE=$(node -p "require('$CONTRACT').architecture")
-ARTIFACT=${1:-"$ROOT_DIR/release/${PRODUCT_NAME}-${VERSION}-macOS-${EXPECTED_ARCHITECTURE}.dmg"}
+ARTIFACT_BASE_NAME=$(node -p "require('$CONTRACT').artifactBaseName")
+EXPECTED_DMG_NAME="${ARTIFACT_BASE_NAME}-${VERSION}-macOS-${EXPECTED_ARCHITECTURE}.dmg"
+ARTIFACT=${1:-"$ROOT_DIR/release/${ARTIFACT_BASE_NAME}-${VERSION}-macOS-${EXPECTED_ARCHITECTURE}.dmg"}
 MOUNT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dsbox-release.XXXXXX")
 APP_PATH=""
 APP_PROCESS=""
@@ -38,6 +41,18 @@ fi
 
 case "$ARTIFACT" in
   *.dmg)
+    [[ "$(basename "$ARTIFACT")" == "$EXPECTED_DMG_NAME" ]] || {
+      echo "Unexpected disk image filename: $(basename "$ARTIFACT")" >&2
+      exit 1
+    }
+    if [[ "${DSBOX_VERIFY_CHECKSUMS:-0}" == "1" ]]; then
+      CHECKSUM_FILE="$(dirname "$ARTIFACT")/SHA256SUMS.txt"
+      [[ -f "$CHECKSUM_FILE" ]] || {
+        echo "Checksum file is missing: $CHECKSUM_FILE" >&2
+        exit 1
+      }
+      (cd "$(dirname "$ARTIFACT")" && shasum -a 256 -c SHA256SUMS.txt)
+    fi
     echo "Verifying disk image structure..."
     hdiutil verify "$ARTIFACT" >/dev/null
     hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$ARTIFACT" >/dev/null
@@ -70,6 +85,7 @@ BUNDLE_NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$INFO_PLIST")
 BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$INFO_PLIST")
 SHORT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST")
 EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$INFO_PLIST")
+ICON_NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$INFO_PLIST")
 EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 
 [[ "$(basename "$APP_PATH")" == "${PRODUCT_NAME}.app" ]] || {
@@ -90,6 +106,10 @@ EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 }
 [[ "$EXECUTABLE_NAME" == "$EXPECTED_EXECUTABLE" ]] || {
   echo "Unexpected executable name: $EXECUTABLE_NAME" >&2
+  exit 1
+}
+[[ "$ICON_NAME" == "$EXPECTED_ICON" && -f "$APP_PATH/Contents/Resources/$EXPECTED_ICON" ]] || {
+  echo "Unexpected or missing application icon: plist=$ICON_NAME expected=$EXPECTED_ICON" >&2
   exit 1
 }
 [[ -x "$EXECUTABLE" ]] || {
@@ -119,7 +139,7 @@ const [, , archivePath, contractPath, expectedVersion, expectedIntegrity] = proc
 const contract = require(contractPath);
 const packaged = JSON.parse(asar.extractFile(archivePath, "package.json").toString("utf8"));
 
-if (packaged.name !== "dsbox" || packaged.version !== expectedVersion) {
+if (packaged.name !== contract.packageName || packaged.version !== expectedVersion) {
   throw new Error(`Unexpected packaged metadata: ${packaged.name}@${packaged.version}`);
 }
 
@@ -187,5 +207,5 @@ if [[ "${DSBOX_VERIFY_LAUNCH:-0}" == "1" ]]; then
   fi
 fi
 
-echo "Verified ${PRODUCT_NAME} ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ${EXECUTABLE_NAME}, external engine, ad-hoc signed."
+echo "Verified ${PRODUCT_NAME} ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ${EXECUTABLE_NAME}, ${ICON_NAME}, external engine, ad-hoc signed."
 echo "Developer ID signing and notarization are intentionally not asserted."

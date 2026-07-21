@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { REACT_REFRESH_PREAMBLE_URL, reactRefreshPreambleTags, resolveDsboxDevProxyTarget } from "../vite.config.js";
 
-describe("Vite DSBox proxy target", () => {
+describe("Vite Hebrus Studio proxy target", () => {
   it("uses the production-compatible control port by default", () => {
     expect(resolveDsboxDevProxyTarget(undefined)).toBe("http://127.0.0.1:4242");
     expect(resolveDsboxDevProxyTarget("   ")).toBe("http://127.0.0.1:4242");

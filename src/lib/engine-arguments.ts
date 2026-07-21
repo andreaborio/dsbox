@@ -161,7 +161,7 @@ export function buildEngineArguments(config: DsboxConfig, modelArchitecture?: st
   }
 
   // The unified ExpertMajor v2 runtime owns backend and residency selection for
-  // Qwen, DeepSeek, and GLM. DSBox supplies no backend, power, streaming, cache,
+  // Qwen, DeepSeek, and GLM. Hebrus Studio supplies no backend, power, streaming, cache,
   // preload, or cold-start overrides on the normal managed path.
   if (config.streaming.enabled && !managedExpertMajorV2) {
     args.push("--ssd-streaming");

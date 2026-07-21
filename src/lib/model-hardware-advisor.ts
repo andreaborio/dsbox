@@ -7,7 +7,7 @@ export type ModelArchitecture = "moe" | "dense" | "unknown";
 export interface ModelHardwareAssessment {
   compatibility: {
     status: ModelCompatibilityStatus;
-    label: "Verified for DS4" | "Unverified";
+    label: "Verified for Hebrus" | "Unverified";
     explanation: string;
   };
   performance: {
@@ -84,16 +84,16 @@ function compatibility(model: CatalogModel): ModelHardwareAssessment["compatibil
   if (model.installable && model.outputFile && runtimePinned && filesVerified) {
     return {
       status: "verified",
-      label: "Verified for DS4",
+      label: "Verified for Hebrus",
       explanation: model.artifactFormat
-        ? "The DS4-only ExpertMajor layout, engine revision, and published file checksum are pinned by the DSBox catalog. Generic GGUF loaders are not compatible."
-        : "The model, engine revision, and published file checksum are pinned by the DSBox catalog."
+        ? "The Hebrus-only ExpertMajor layout, engine revision, and published file checksum are pinned by the Hebrus Studio catalog. Generic GGUF loaders are not compatible."
+        : "The model, engine revision, and published file checksum are pinned by the Hebrus Studio catalog."
     };
   }
   return {
     status: "unverified",
     label: "Unverified",
-    explanation: "DSBox does not have a complete pinned compatibility declaration for this model. It may still work with DS4."
+    explanation: "Hebrus Studio does not have a complete pinned compatibility declaration for this model. It may still work with Hebrus."
   };
 }
 
@@ -106,7 +106,7 @@ function performance(
     return {
       level: "unknown",
       label: "Performance unknown",
-      explanation: "DSBox needs both the model size and this Mac's unified memory to estimate SSD-streaming pressure.",
+      explanation: "Hebrus Studio needs both the model size and this Mac's unified memory to estimate SSD-streaming pressure.",
       modelToMemoryRatio: null
     };
   }
@@ -139,7 +139,7 @@ function performance(
     return {
       level,
       label: "Best for this Mac",
-      explanation: `DSBox recommends this model for the detected hardware. It is ${ratioText} the size of unified memory and remains eligible for SSD streaming.${uncertainty}`,
+      explanation: `Hebrus Studio recommends this model for the detected hardware. It is ${ratioText} the size of unified memory and remains eligible for SSD streaming.${uncertainty}`,
       modelToMemoryRatio: ratio
     };
   }
@@ -147,7 +147,7 @@ function performance(
     return {
       level,
       label: "Very slow likely",
-      explanation: `The model is ${ratioText} the size of this Mac's unified memory. DS4 can stream weights from SSD, but generation and system responsiveness may be very slow.${guidance}${uncertainty}`,
+      explanation: `The model is ${ratioText} the size of this Mac's unified memory. Hebrus can stream weights from SSD, but generation and system responsiveness may be very slow.${guidance}${uncertainty}`,
       modelToMemoryRatio: ratio
     };
   }
@@ -155,7 +155,7 @@ function performance(
     return {
       level,
       label: "May be slow",
-      explanation: `The model is ${ratioText} the size of this Mac's unified memory. DS4 can use SSD streaming, but performance may vary substantially.${guidance}${uncertainty}`,
+      explanation: `The model is ${ratioText} the size of this Mac's unified memory. Hebrus can use SSD streaming, but performance may vary substantially.${guidance}${uncertainty}`,
       modelToMemoryRatio: ratio
     };
   }
@@ -163,8 +163,8 @@ function performance(
     level: "ssd-streaming",
     label: "SSD streaming",
     explanation: ratio > 1
-      ? `The model is ${ratioText} the size of unified memory. DS4 can run it by streaming weights from SSD instead of requiring the whole model in RAM.${uncertainty}`
-      : `The model is ${ratioText} the size of unified memory. DS4 still uses its SSD-streaming path, with expected performance depending on the workload.${uncertainty}`,
+      ? `The model is ${ratioText} the size of unified memory. Hebrus can run it by streaming weights from SSD instead of requiring the whole model in RAM.${uncertainty}`
+      : `The model is ${ratioText} the size of unified memory. Hebrus still uses its SSD-streaming path, with expected performance depending on the workload.${uncertainty}`,
     modelToMemoryRatio: ratio
   };
 }
@@ -232,8 +232,8 @@ export function assessLocalModelHardware(
   if (model.compatibility?.status === "compatible") {
     assessment.compatibility = {
       status: "verified",
-      label: "Verified for DS4",
-      explanation: "DSBox verified the GGUF v3 architecture metadata and tensor layout before adding this local model."
+      label: "Verified for Hebrus",
+      explanation: "Hebrus Studio verified the GGUF v3 architecture metadata and tensor layout before adding this local model."
     };
     assessment.requiresAcknowledgement = assessment.performance.level === "may-be-slow"
       || assessment.performance.level === "very-slow";

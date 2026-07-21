@@ -42,6 +42,7 @@ export {
   typography,
   type ColorTokens,
   type ControlSize,
+  type HebrusTokens,
   type DSBoxTokens,
   type RadiusToken,
   type SpaceToken

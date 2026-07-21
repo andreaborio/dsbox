@@ -14,7 +14,7 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<Chil
   return await new Promise<ChildExit>((resolve, reject) => {
     const timeout = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error(`DSBox did not exit within ${timeoutMs}ms after a port conflict`));
+      reject(new Error(`Hebrus Studio did not exit within ${timeoutMs}ms after a port conflict`));
     }, timeoutMs);
     timeout.unref();
     child.once("error", (error) => {
@@ -35,7 +35,7 @@ async function closeServer(server: Server): Promise<void> {
   });
 }
 
-describe("DSBox server entrypoint", () => {
+describe("Hebrus Studio server entrypoint", () => {
   it("exits non-zero instead of starting metrics when the control port is occupied", async () => {
     const home = await mkdtemp(path.join(tmpdir(), "dsbox-port-conflict-"));
     const blocker = createServer();
@@ -71,9 +71,9 @@ describe("DSBox server entrypoint", () => {
       const exit = await waitForExit(child, 5_000);
 
       expect(exit).toEqual({ code: 1, signal: null });
-      expect(stderr).toContain(`DSBox could not listen on http://127.0.0.1:${address.port}`);
+      expect(stderr).toContain(`Hebrus Studio could not listen on http://127.0.0.1:${address.port}`);
       expect(stderr).toContain("EADDRINUSE");
-      expect(`${stdout}\n${stderr}`).not.toContain("DSBox is ready");
+      expect(`${stdout}\n${stderr}`).not.toContain("Hebrus Studio is ready");
     } finally {
       if (child && child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
       await closeServer(blocker);

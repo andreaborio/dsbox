@@ -115,7 +115,7 @@ async function relayToDs4(
   }
   if (requireGatewayAuth && !gatewayAuthorized(request, services.store)) {
     response.status(401).json({
-      error: { message: "Invalid DSBox API key", type: "authentication_error" }
+      error: { message: "Invalid Hebrus Studio API key", type: "authentication_error" }
     });
     return;
   }
@@ -146,7 +146,7 @@ async function relayToDs4(
   request.once("aborted", abortForClient);
   response.once("close", abortForClient);
   const upstreamTimeout = setTimeout(
-    () => upstreamController.abort(new Error("Timeout gateway DSBox")),
+    () => upstreamController.abort(new Error("Timeout gateway Hebrus Studio")),
     30 * 60 * 1000
   );
   upstreamTimeout.unref();
@@ -281,7 +281,7 @@ export function createApp(services: AppServices) {
       next();
       return;
     }
-    response.status(403).json({ error: "Missing DSBox control header" });
+    response.status(403).json({ error: "Missing Hebrus Studio control header" });
   });
 
   app.get("/api/health", (_request, response) => {
@@ -435,9 +435,9 @@ export function createApp(services: AppServices) {
     const catalog = await services.catalog.list(services.system.totalMemoryBytes);
     const model = catalog.models.find((candidate) => candidate.repository === repository
       && (!revision || candidate.revision === revision));
-    if (!model) throw new ModelDownloadError("Model not found in the pinned DSBox catalog", 404);
+    if (!model) throw new ModelDownloadError("Model not found in the pinned Hebrus Studio catalog", 404);
     if (!model.installable) {
-      throw new ModelDownloadError(model.unavailableReason ?? "This catalog source is not directly installable in DSBox", 409);
+      throw new ModelDownloadError(model.unavailableReason ?? "This catalog source is not directly installable in Hebrus Studio", 409);
     }
     await services.runtime.prepareCatalogRuntime(model);
     const download = await services.downloads.start(model, variantId);
@@ -486,14 +486,14 @@ export function createApp(services: AppServices) {
   }));
 
   app.post("/api/runtime/start", asyncRoute(async (_request, response) => {
-    if (services.downloads.hasActive()) throw new ModelDownloadError("Wait for the model download to finish or pause it before starting DS4", 409);
+    if (services.downloads.hasActive()) throw new ModelDownloadError("Wait for the model download to finish or pause it before starting Hebrus", 409);
     await services.runtime.start();
     response.status(202).json({ accepted: true });
   }));
 
   app.post("/api/runtime/power", (_request, response) => {
     if (services.downloads.hasActive()) {
-      response.status(409).json({ error: "Wait for the model download to finish or pause it before starting DS4" });
+      response.status(409).json({ error: "Wait for the model download to finish or pause it before starting Hebrus" });
       return;
     }
     if (services.runtime.isSwitchingModel()) {
@@ -512,7 +512,7 @@ export function createApp(services: AppServices) {
     }
     if (!services.runtime.getState().modelPresent) {
       response.status(409).json({
-        error: "No model is ready. Choose a GGUF file on this Mac or explicitly download one from the DSBox catalog."
+        error: "No model is ready. Choose a GGUF file on this Mac or explicitly download one from the Hebrus Studio catalog."
       });
       return;
     }
@@ -539,7 +539,7 @@ export function createApp(services: AppServices) {
   }));
 
   app.post("/api/runtime/restart", asyncRoute(async (_request, response) => {
-    if (services.downloads.hasActive()) throw new ModelDownloadError("Wait for the model download to finish or pause it before restarting DS4", 409);
+    if (services.downloads.hasActive()) throw new ModelDownloadError("Wait for the model download to finish or pause it before restarting Hebrus", 409);
     await services.runtime.restart();
     response.status(202).json({ accepted: true });
   }));
@@ -593,7 +593,7 @@ export function createApp(services: AppServices) {
         : 500;
     const message = error instanceof ZodError
       ? error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")
-      : error instanceof Error ? error.message : "Internal DSBox error";
+      : error instanceof Error ? error.message : "Internal Hebrus Studio error";
     if (status >= 500) services.runtime.log("error", "dsbox", message);
     if (error instanceof UnsupportedInputModalityError) {
       response.status(status).json({

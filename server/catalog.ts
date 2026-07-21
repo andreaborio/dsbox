@@ -39,7 +39,7 @@ interface CatalogSourceDefinition extends CatalogSource {
 const SOURCE_DEFINITIONS: CatalogSourceDefinition[] = [
   {
     id: "andreaborio",
-    label: "DSBox",
+    label: "Hebrus Studio",
     url: "https://huggingface.co/andreaborio/models",
     filter: "ds4"
   },
@@ -140,13 +140,13 @@ function parseArtifactFormat(manifest: DsboxManifest | null): ParsedArtifactForm
     ? artifactFormatFromVersion(version)
     : null;
   if (declaration.id !== "ds4-expert-major" || !format) {
-    return { format: null, error: "The DSBox manifest declares an unknown DS4 artifact format" };
+    return { format: null, error: "The Hebrus Studio manifest declares an unknown DS4 artifact format" };
   }
   if (declaration.tensor !== ds4ArtifactFormatTensor(format)) {
-    return { format: null, error: `The DSBox manifest does not declare the ${format} tensor contract` };
+    return { format: null, error: `The Hebrus Studio manifest does not declare the ${format} tensor contract` };
   }
   if (!SUPPORTED_EXPERT_MAJOR_RUNTIMES.has(declaration.requiresRuntime ?? "")) {
-    return { format: null, error: "DS4 ExpertMajor artifacts must declare andreaborio/ds4 or andreaborio/hebrus as their required runtime" };
+    return { format: null, error: "Hebrus ExpertMajor artifacts must declare andreaborio/ds4 or andreaborio/hebrus as their required runtime" };
   }
   return { format, error: null };
 }
@@ -293,9 +293,9 @@ function assemblyVariant(
     totalBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0),
     installable: !missingPart && sizesKnown,
     unavailableReason: missingPart
-      ? "The DSBox manifest references a missing model part"
+      ? "The Hebrus Studio manifest references a missing model part"
       : !sizesKnown
-        ? "The DSBox manifest does not declare every part size"
+        ? "The Hebrus Studio manifest does not declare every part size"
         : null,
     assembly: { type: "concatenate", outputFile }
   };
@@ -335,7 +335,7 @@ function inferredMultipartVariants(files: Array<HubSibling & { rfilename: string
 
 async function fetchJson<T>(url: string, timeout = 6000): Promise<T> {
   const response = await fetch(url, {
-    headers: { "user-agent": "DSBox/0.1 (+local-model-catalog)" },
+    headers: { "user-agent": "Hebrus-Studio/0.3 (+local-model-catalog)" },
     signal: AbortSignal.timeout(timeout)
   });
   if (!response.ok) throw new Error(`Hugging Face responded with ${response.status}`);
@@ -415,17 +415,17 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   let artifactPolicyError = parsedFormat.error;
   if (!artifactPolicyError && expertMajorIdentity.present && !expectedFormat) {
     artifactPolicyError = expertMajorIdentity.version
-      ? `DSBox does not support DS4 ExpertMajor v${expertMajorIdentity.version}`
-      : "DS4 ExpertMajor repositories must include a supported format version";
+      ? `Hebrus Studio does not support Hebrus ExpertMajor v${expertMajorIdentity.version}`
+      : "Hebrus ExpertMajor repositories must include a supported format version";
   }
   if (!artifactPolicyError && expectedFormat && !artifactFormat) {
-    artifactPolicyError = `The ${expectedFormat} repository must declare its DS4-only artifact format in dsbox.json`;
+    artifactPolicyError = `The ${expectedFormat} repository must declare its Hebrus-only artifact format in dsbox.json`;
   }
   if (!artifactPolicyError && expectedFormat && artifactFormat !== expectedFormat) {
     artifactPolicyError = `The repository name and manifest disagree about ${expectedFormat}`;
   }
   if (!artifactPolicyError && artifactFormat && !SUPPORTED_EXPERT_MAJOR_MODEL_IDS.has(modelId)) {
-    artifactPolicyError = "DS4 ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek V4 Flash, or GLM-5.2 model contract";
+    artifactPolicyError = "Hebrus ExpertMajor v2 requires a pinned Qwen3.6, DeepSeek V4 Flash, or GLM-5.2 model contract";
   }
   const requiresExpertMajorV2 = modelId === "qwen3.6-35b-a3b"
     || modelId.startsWith("deepseek")
@@ -434,7 +434,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     ? QWEN35_EXPERT_MAJOR_MINIMUM_MEMORY_GB
     : EXPERT_MAJOR_MINIMUM_MEMORY_GB;
   if (!artifactPolicyError && publisher !== "unsloth" && requiresExpertMajorV2 && artifactFormat !== "ds4-expert-major-v2") {
-    artifactPolicyError = `${modelId} requires a manifest-pinned DS4 ExpertMajor v2 artifact`;
+    artifactPolicyError = `${modelId} requires a manifest-pinned Hebrus ExpertMajor v2 artifact`;
   }
   if (!artifactPolicyError && modelId === "qwen3.6-35b-a3b" && artifactFormat === "ds4-expert-major-v2" && (
     manifest?.artifact?.format?.storage !== "mlx-affine4"
@@ -445,21 +445,21 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   if (!artifactPolicyError && artifactFormat && (
     minimumMemoryGb === null || minimumMemoryGb < expertMajorMinimumMemoryGb
   )) {
-    artifactPolicyError = `DS4 ExpertMajor v2 requires a minimumMemoryGb declaration of at least ${expertMajorMinimumMemoryGb}`;
+    artifactPolicyError = `Hebrus ExpertMajor v2 requires a minimumMemoryGb declaration of at least ${expertMajorMinimumMemoryGb}`;
   }
   if (!artifactPolicyError && artifactFormat && manifest?.artifact?.assembly) {
-    artifactPolicyError = "DS4 ExpertMajor v2 releases must publish one complete GGUF; multipart assembly is not supported";
+    artifactPolicyError = "Hebrus ExpertMajor v2 releases must publish one complete GGUF; multipart assembly is not supported";
   }
   if (!artifactPolicyError && artifactFormat && !requestedFile) {
-    artifactPolicyError = "DS4 ExpertMajor manifests must pin one output file";
+    artifactPolicyError = "Hebrus ExpertMajor manifests must pin one output file";
   }
   if (!artifactPolicyError && artifactFormat && runtimeBranch !== "main") {
-    artifactPolicyError = "DS4 ExpertMajor v2 artifacts must pin the andreaborio/ds4 or andreaborio/hebrus main runtime";
+    artifactPolicyError = "Hebrus ExpertMajor v2 artifacts must pin the andreaborio/ds4 or andreaborio/hebrus main runtime";
   }
   if (!artifactPolicyError && artifactFormat && (
     !runtimeBranch || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeCommit ?? "")
   )) {
-    artifactPolicyError = "DS4 ExpertMajor artifacts require a revision-pinned DS4 runtime";
+    artifactPolicyError = "Hebrus ExpertMajor artifacts require a revision-pinned Hebrus runtime";
   }
   const declaredFiles = declaredSelectedVariant?.files ?? [];
   const declaredArtifactSize = manifest?.artifact?.sizeBytes;
@@ -469,14 +469,14 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     && Number(declaredArtifactSize) > 0
     && /^[a-f0-9]{64}$/.test(declaredArtifactSha256 ?? "");
   if (!artifactPolicyError && artifactFormat && !manifestFileMissing && !singleFileContractDeclared) {
-    artifactPolicyError = "DS4 ExpertMajor v2 manifests must pin the single output file, byte size, and SHA-256";
+    artifactPolicyError = "Hebrus ExpertMajor v2 manifests must pin the single output file, byte size, and SHA-256";
   }
   if (!artifactPolicyError && artifactFormat && !manifestFileMissing && (
     declaredFiles.length !== 1
     || declaredFiles[0].sizeBytes !== declaredArtifactSize
     || declaredFiles[0].sha256?.toLowerCase() !== declaredArtifactSha256
   )) {
-    artifactPolicyError = "The DSBox manifest size or SHA-256 does not match the pinned Hugging Face artifact";
+    artifactPolicyError = "The Hebrus Studio manifest size or SHA-256 does not match the pinned Hugging Face artifact";
   }
 
   const unsupportedUnverifiedGguf = publisher === "unsloth" && !manifest;
@@ -486,10 +486,10 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
         ...variant,
         installable: false,
         unavailableReason: rawQwenSource
-          ? "DS4 requires the normalized Qwen3.6 DS4 artifact; these source GGUF files are not directly runnable"
+          ? "Hebrus requires the normalized Qwen3.6 DS4 artifact; these source GGUF files are not directly runnable"
           : variant.files.length > 1
-          ? "DS4 does not support standard multi-file GGUF sets"
-          : "This repository does not declare a DS4-compatible model layout"
+          ? "Hebrus does not support standard multi-file GGUF sets"
+          : "This repository does not declare a Hebrus-compatible model layout"
       }))
     : discoveredVariants;
   variants = variants.map((variant) => {
@@ -501,11 +501,11 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
         : null);
     if (!unavailableReason && variantIdentity.present && !variantIdentity.format) {
       unavailableReason = variantIdentity.version
-        ? `DSBox does not support DS4 ExpertMajor v${variantIdentity.version}`
-        : "DS4 ExpertMajor artifacts must include a supported format version";
+        ? `Hebrus Studio does not support Hebrus ExpertMajor v${variantIdentity.version}`
+        : "Hebrus ExpertMajor artifacts must include a supported format version";
     }
     if (!unavailableReason && variantIdentity.format && !artifactFormat) {
-      unavailableReason = `The ${variantIdentity.format} artifact must declare its DS4-only format in dsbox.json`;
+      unavailableReason = `The ${variantIdentity.format} artifact must declare its Hebrus-only format in dsbox.json`;
     }
     if (
       !unavailableReason
@@ -516,7 +516,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
       unavailableReason = `The artifact filename and manifest disagree about ${variantIdentity.format}`;
     }
     if (!unavailableReason && artifactFormat && !selected) {
-      unavailableReason = "Only the manifest-pinned DS4 ExpertMajor artifact is installable from this repository";
+      unavailableReason = "Only the manifest-pinned Hebrus ExpertMajor artifact is installable from this repository";
     }
     return unavailableReason
       ? { ...variant, installable: false, unavailableReason }
@@ -533,7 +533,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeCommit ?? "");
   const checksumAvailable = Boolean(files.length) && files.every((file) => /^[a-f0-9]{64}$/i.test(file.sha256 ?? ""));
   if (!artifactPolicyError && artifactFormat && !checksumAvailable) {
-    artifactPolicyError = "DS4 ExpertMajor artifacts require a SHA-256 checksum for every published file";
+    artifactPolicyError = "Hebrus ExpertMajor artifacts require a SHA-256 checksum for every published file";
     variants = variants.map((variant) => variant.id === selectedVariant?.id
       ? { ...variant, installable: false, unavailableReason: artifactPolicyError }
       : variant);
@@ -549,13 +549,13 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     : variants.length || quantizationVariantCount(directGgufs);
   const recommended = manifest?.recommended === true && stable && Boolean(selectedVariant?.installable) && !experimental && memoryFits && compatibilityDeclared && checksumAvailable;
   const unavailableReason = unsupportedUnverifiedGguf
-    ? variants[0]?.unavailableReason ?? "This repository does not declare a DS4-compatible model layout"
+    ? variants[0]?.unavailableReason ?? "This repository does not declare a Hebrus-compatible model layout"
     : artifactPolicyError
       ?? (manifestFileMissing
       ? `The manifest references a missing file: ${requestedFile}`
       : selectedVariant?.unavailableReason
         ?? (installable && !selectedVariant && variantCount > 1
-          ? "Choose a quantization in DSBox"
+          ? "Choose a quantization in Hebrus Studio"
           : installable
             ? null
             : "No complete installable GGUF bundle detected"));
@@ -567,11 +567,11 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     description: manifest?.description?.trim()
       || (publisher === "unsloth"
         ? rawQwenSource
-          ? "Upstream Qwen3.6 GGUF source. DSBox keeps it visible for provenance; DS4 runs only the normalized DS4 artifact."
-          : "Unsloth GGUF repository. Standard multipart builds are visible for reference but cannot run in DS4."
+          ? "Upstream Qwen3.6 GGUF source. Hebrus Studio keeps it visible for provenance; Hebrus runs only the normalized DS4 artifact."
+          : "Unsloth GGUF repository. Standard multipart builds are visible for reference but cannot run in Hebrus."
         : experimental
           ? "Experimental version available for advanced testing."
-          : "DS4 model published on Hugging Face."),
+          : "Hebrus model published on Hugging Face."),
     modelId,
     runtimeBranch,
     runtimeCommit,
@@ -621,7 +621,7 @@ export class ModelCatalog {
 
       const response: CatalogResponse = {
         author: AUTHOR,
-        label: "DSBox Models",
+        label: "Hebrus Studio Models",
         sources: CATALOG_SOURCES,
         models,
         recommended: models.find((model) => model.recommended) ?? null,
@@ -635,7 +635,7 @@ export class ModelCatalog {
       if (this.cache) return { ...structuredClone(this.cache), stale: true };
       return {
         author: AUTHOR,
-        label: "DSBox Models",
+        label: "Hebrus Studio Models",
         sources: CATALOG_SOURCES,
         models: [],
         recommended: null,

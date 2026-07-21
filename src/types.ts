@@ -245,7 +245,7 @@ export interface ModelDownloadSnapshot {
 
 export interface CatalogResponse {
   author: "andreaborio";
-  label: "DSBox Models";
+  label: "Hebrus Studio Models";
   sources: CatalogSource[];
   models: CatalogModel[];
   recommended: CatalogModel | null;

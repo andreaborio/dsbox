@@ -136,7 +136,7 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
   const commandPreview = useMemo(() => {
     try {
       return [
-        expertMajorManaged ? "<Unified ExpertMajor v2 DS4 checkout>/ds4-server" : `${draft.repository.directory}/ds4-server`,
+        expertMajorManaged ? "<Hebrus ExpertMajor v2 checkout>/hebrus-server" : `${draft.repository.directory}/ds4-server`,
         ...buildEngineArguments(draft)
       ].map(shellDisplayArgument).join(" ");
     } catch (error) {
@@ -190,16 +190,16 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
               <p>{expertMajorManaged ? "ExpertMajor v2 uses its validated AUTO path; the generic quality mode is not available." : "Prefer precision even when an answer takes a little longer."}</p>
             </div>
             {expertMajorManaged
-              ? <span className="managed-setting-badge" aria-label="Best quality is managed by DSBox and off">Managed · off</span>
+              ? <span className="managed-setting-badge" aria-label="Best quality is managed by Hebrus Studio and off">Managed · off</span>
               : <Toggle checked={draft.server.quality} onChange={(quality) => update("server", { ...draft.server, quality })} label="Best quality" />}
           </div>
         </section>
 
         <section className="settings-simple-card panel" aria-labelledby="privacy-settings-title">
-          <div className="settings-simple-card__head"><div><h2 id="privacy-settings-title">Privacy & data</h2><p>Everything below stays in your user folder. Nothing is uploaded by DSBox.</p></div><ShieldCheck size={17} /></div>
+          <div className="settings-simple-card__head"><div><h2 id="privacy-settings-title">Privacy & data</h2><p>Everything below stays in your user folder. Nothing is uploaded by Hebrus Studio.</p></div><ShieldCheck size={17} /></div>
           <div className={`setting-row ${qwenSelected ? "setting-row--managed" : ""}`}>
             <span className="setting-row__icon setting-row__icon--green"><Database size={18} /></span>
-            <div><strong>Reuse context between sessions</strong><p>{qwenSelected ? "Disk context snapshots are not available on the current Qwen runtime. The active conversation can still reuse its live context while DSBox stays on." : "Keeps part of long conversations on disk so agents restart faster. It may contain prompt text."}</p></div>
+            <div><strong>Reuse context between sessions</strong><p>{qwenSelected ? "Disk context snapshots are not available on the current Qwen runtime. The active conversation can still reuse its live context while Hebrus Studio stays on." : "Keeps part of long conversations on disk so agents restart faster. It may contain prompt text."}</p></div>
             {qwenSelected
               ? <span className="managed-setting-badge" aria-label="Disk context reuse is unavailable and off">Unavailable · off</span>
               : <Toggle checked={draft.kvCache.enabled} onChange={(enabled) => update("kvCache", { ...draft.kvCache, enabled })} label="Reuse context between sessions" />}
@@ -224,14 +224,14 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
             {advancedOpen && (
               <motion.div id="advanced-settings-content" className="settings-advanced__content" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}>
                 <div className="advanced-group">
-                  <div className="advanced-group__head"><div><h3>Performance</h3><p>{expertMajorManaged ? "DS4 owns backend and memory planning for this ExpertMajor v2 model." : "DSBox defaults are tuned for SSD streaming on this Mac."}</p></div><Zap size={16} /></div>
+                  <div className="advanced-group__head"><div><h3>Performance</h3><p>{expertMajorManaged ? "Hebrus owns backend and memory planning for this ExpertMajor v2 model." : "Hebrus Studio defaults are tuned for SSD streaming on this Mac."}</p></div><Zap size={16} /></div>
                   {expertMajorManaged ? (
                     <>
                       <div className="managed-profile-row">
-                        <div><strong>DS4 AUTO plan</strong><p>Selects the validated backend and resident or SSD path from the model and this Mac's live memory state.</p></div>
+                        <div><strong>Hebrus AUTO plan</strong><p>Selects the validated backend and resident or SSD path from the model and this Mac's live memory state.</p></div>
                         <span className="managed-setting-badge">Managed</span>
                       </div>
-                      <div className="privacy-note"><ShieldCheck size={15} /><p>DSBox also watches memory pressure and new swapout once per second while the runtime is active.</p></div>
+                      <div className="privacy-note"><ShieldCheck size={15} /><p>Hebrus Studio also watches memory pressure and new swapout once per second while the runtime is active.</p></div>
                     </>
                   ) : (
                     <>
@@ -239,8 +239,8 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
                       {draft.streaming.enabled && (
                         <div className="nested-settings">
                           <div className="segmented-control"><button className={draft.streaming.cacheMode === "auto" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "auto"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "auto" })}>Adaptive</button><button className={draft.streaming.cacheMode === "manual" ? "active" : ""} aria-pressed={draft.streaming.cacheMode === "manual"} onClick={() => update("streaming", { ...draft.streaming, cacheMode: "manual" })}>Custom</button></div>
-                          {draft.streaming.cacheMode === "auto" && !advancedCacheOverride && <div className="privacy-note"><ShieldCheck size={15} /><p>DS4 sizes the expert cache from this Mac's live memory budget; DSBox stops it if pressure or new swapout crosses the safety limit.</p></div>}
-                          {draft.streaming.cacheMode === "manual" && <Field label="Expert cache budget" hint="DS4 applies a safe cap"><div className="range-field"><input aria-label="Expert cache budget" type="range" min={8} max={manualCacheMaxGb} step={4} value={Math.min(draft.streaming.cacheSizeGb, manualCacheMaxGb)} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Expert cache budget in GB" type="number" min={1} max={manualCacheMaxGb} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}
+                          {draft.streaming.cacheMode === "auto" && !advancedCacheOverride && <div className="privacy-note"><ShieldCheck size={15} /><p>Hebrus sizes the expert cache from this Mac's live memory budget; Hebrus Studio stops it if pressure or new swapout crosses the safety limit.</p></div>}
+                          {draft.streaming.cacheMode === "manual" && <Field label="Expert cache budget" hint="Hebrus applies a safe cap"><div className="range-field"><input aria-label="Expert cache budget" type="range" min={8} max={manualCacheMaxGb} step={4} value={Math.min(draft.streaming.cacheSizeGb, manualCacheMaxGb)} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><input aria-label="Expert cache budget in GB" type="number" min={1} max={manualCacheMaxGb} value={draft.streaming.cacheSizeGb} onChange={(event) => update("streaming", { ...draft.streaming, cacheSizeGb: Number(event.target.value) })} /><span>GB</span></div></Field>}
                         </div>
                       )}
                     </>
@@ -248,11 +248,11 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
                 </div>
 
                 <div className="advanced-group">
-                  <div className="advanced-group__head"><div><h3>DS4 engine</h3><p>The andreaborio/ds4 fork and its local checkout.</p></div><FolderGit2 size={16} /></div>
+                  <div className="advanced-group__head"><div><h3>Hebrus engine</h3><p>The Hebrus fork and its local checkout. Legacy andreaborio/ds4 checkouts remain supported.</p></div><FolderGit2 size={16} /></div>
                   {expertMajorManaged ? (
                     <>
                       <div className="managed-profile-row">
-                        <div><strong>Unified ExpertMajor v2 checkout</strong><p>DSBox selects and verifies the compatible DS4 main checkout automatically when the model starts.</p></div>
+                        <div><strong>Unified ExpertMajor v2 checkout</strong><p>Hebrus Studio selects and verifies a compatible Hebrus or legacy DS4 checkout automatically when the model starts.</p></div>
                         <span className="managed-setting-badge">Managed</span>
                       </div>
                       <Field label="Private port"><input type="number" min={1024} max={65535} value={draft.server.internalPort} onChange={(event) => update("server", { ...draft.server, internalPort: Number(event.target.value) })} /></Field>
@@ -285,14 +285,14 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
                   </div>
                   {expertMajorManaged ? (
                     <div className="managed-profile-row">
-                      <div><strong>Backend and power</strong><p>DS4 AUTO selects both; DSBox does not inject a backend or power override.</p></div>
+                      <div><strong>Backend and power</strong><p>Hebrus AUTO selects both; Hebrus Studio does not inject a backend or power override.</p></div>
                       <span className="managed-setting-badge">Managed · AUTO</span>
                     </div>
                   ) : (
                     <Field label="Metal power"><div className="range-field range-field--power"><input aria-label="Metal power percentage" type="range" min={1} max={100} value={draft.server.powerPercent} onChange={(event) => update("server", { ...draft.server, powerPercent: Number(event.target.value) })} /><span>{draft.server.powerPercent}%</span></div></Field>
                   )}
-                  <div className="inline-toggles"><div><span>Prepare model at startup</span>{expertMajorManaged ? <span className="managed-setting-badge" aria-label="Model preparation is managed by DS4 AUTO and off">Managed · off</span> : <Toggle checked={draft.server.warmWeights} onChange={(warmWeights) => update("server", { ...draft.server, warmWeights })} label="Prepare model at startup" />}</div>{expertMajorManaged ? <div><span>Residency</span><span className="managed-setting-badge" aria-label="Residency is managed automatically">Managed · AUTO</span></div> : <div><span>Cold start</span><Toggle checked={draft.streaming.coldStart} onChange={(coldStart) => update("streaming", { ...draft.streaming, coldStart })} label="Cold start" /></div>}</div>
-                  {expertMajorManaged && <div className="expert-major-settings-note"><ShieldCheck size={15} /><p>The validated ExpertMajor v2 profile delegates backend, power, residency, cache, preload, and cold-start decisions to DS4 AUTO.</p></div>}
+                  <div className="inline-toggles"><div><span>Prepare model at startup</span>{expertMajorManaged ? <span className="managed-setting-badge" aria-label="Model preparation is managed by Hebrus AUTO and off">Managed · off</span> : <Toggle checked={draft.server.warmWeights} onChange={(warmWeights) => update("server", { ...draft.server, warmWeights })} label="Prepare model at startup" />}</div>{expertMajorManaged ? <div><span>Residency</span><span className="managed-setting-badge" aria-label="Residency is managed automatically">Managed · AUTO</span></div> : <div><span>Cold start</span><Toggle checked={draft.streaming.coldStart} onChange={(coldStart) => update("streaming", { ...draft.streaming, coldStart })} label="Cold start" /></div>}</div>
+                  {expertMajorManaged && <div className="expert-major-settings-note"><ShieldCheck size={15} /><p>The validated ExpertMajor v2 profile delegates backend, power, residency, cache, preload, and cold-start decisions to Hebrus AUTO.</p></div>}
                 </div>
 
                 <div className="advanced-group">
@@ -311,14 +311,14 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
                 </div>
 
                 <div className="advanced-group">
-                  <div className="advanced-group__head"><div><h3>Additional DS4 flags</h3><p>{expertMajorManaged ? "Supported options are passed directly; DSBox removes retired flags that conflict with the ExpertMajor v2 AUTO profile." : "Passed directly to the engine without invoking a shell."}</p></div><Terminal size={16} /></div>
+                  <div className="advanced-group__head"><div><h3>Additional engine flags</h3><p>{expertMajorManaged ? "Supported options are passed directly; Hebrus Studio removes retired flags that conflict with the ExpertMajor v2 AUTO profile." : "Passed directly to the engine without invoking a shell."}</p></div><Terminal size={16} /></div>
                   <Field label="Additional arguments" hint="e.g. --cors"><textarea rows={3} value={draft.advanced.extraArgs} onChange={(event) => update("advanced", { ...draft.advanced, extraArgs: event.target.value })} placeholder="--flag value" /></Field>
                   <Field label="Environment variables" hint="one KEY=value per line"><textarea rows={5} value={draft.advanced.environment} onChange={(event) => update("advanced", { ...draft.advanced, environment: event.target.value })} placeholder={"DS4_METAL_MEMORY_REPORT=1\n# other diagnostic variables"} /></Field>
                   <div className="labs-note"><AlertTriangle size={15} /><p>{managedFlagsNote}</p></div>
                 </div>
 
                 <div className="advanced-group command-preview-card">
-                  <div className="advanced-group__head"><div><h3>{expertMajorManaged ? "Launch profile" : "Launch command"}</h3><p>{expertMajorManaged ? "DSBox resolves the unified ExpertMajor v2 main checkout at startup; the flags below are the effective AUTO profile." : "The exact command DSBox will run."}</p></div><CopyButton value={commandPreview} /></div>
+                  <div className="advanced-group__head"><div><h3>{expertMajorManaged ? "Launch profile" : "Launch command"}</h3><p>{expertMajorManaged ? "Hebrus Studio resolves the unified ExpertMajor v2 main checkout at startup; the flags below are the effective Hebrus AUTO profile." : "The exact command Hebrus Studio will run."}</p></div><CopyButton value={commandPreview} /></div>
                   <pre><code>{commandPreview}</code></pre>
                 </div>
               </motion.div>
@@ -326,7 +326,7 @@ export function SettingsView({ snapshot, controller, onNavigate, onNavigationGua
           </AnimatePresence>
         </section>
 
-        <p className="settings-default-note">Defaults are tuned for this Mac. If you never open Advanced, DSBox keeps the engine balanced automatically.</p>
+        <p className="settings-default-note">Defaults are tuned for this Mac. If you never open Advanced, Hebrus Studio keeps the engine balanced automatically.</p>
       </div>
 
       <div className="settings-savebar">

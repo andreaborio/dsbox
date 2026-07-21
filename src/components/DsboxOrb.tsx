@@ -1,9 +1,9 @@
 export type DsboxOrbState = "prefill" | "thinking" | "decode";
 
 const labels: Record<DsboxOrbState, string> = {
-  prefill: "DSBox is processing context",
-  thinking: "DSBox is thinking",
-  decode: "DSBox is generating a response"
+  prefill: "Hebrus Studio is processing context",
+  thinking: "Hebrus Studio is thinking",
+  decode: "Hebrus Studio is generating a response"
 };
 
 export function DsboxOrb({

@@ -1,41 +1,43 @@
-# DSBox agentic chat: benchmark competitivo e roadmap
+# Hebrus Studio Agentic Chat: Competitive Review And Roadmap
 
-Stato della ricerca: 15 luglio 2026. Obiettivo: portare la chat integrata allo
-stato dell'arte senza legarla al formato interno di un singolo modello. Il
-target primario e' la coppia Qwen3.6 35B-A3B e DeepSeek V4 Flash eseguita da
-DS4 su Apple Silicon.
+Research snapshot: July 15, 2026. This document was refreshed for the Hebrus
+Studio and Hebrus public names; exact legacy identifiers and historical links
+remain unchanged where compatibility or provenance requires them. The goal is
+to bring the integrated chat experience to the state of the art without tying
+it to one model's internal format. The primary target is Qwen3.6 35B-A3B and
+DeepSeek V4 Flash running through Hebrus on Apple Silicon.
 
-## Sintesi decisionale
+## Decision Summary
 
-La direzione corretta non e' aggiungere integrazioni ad hoc alla UI. DSBox deve
-avere un solo runtime agentico canonico, un registry di tool governato da
-policy e adapter di modello confinati in DS4. Qwen e DeepSeek possono usare
-dialetti diversi durante la generazione, ma la UI e il loop devono vedere lo
-stesso contratto OpenAI-style: `assistant.tool_calls`, messaggi `role: tool` ed
-eventi SSE DSBox neutrali rispetto al modello.
+The right direction is not to add ad hoc integrations to the UI. Hebrus Studio
+should have one canonical agent runtime, a policy-governed tool registry, and
+model adapters confined to Hebrus. Qwen and DeepSeek may use different dialects
+during generation, but the UI and loop should see the same OpenAI-style
+contract: `assistant.tool_calls`, `role: tool` messages, and model-neutral
+Hebrus Studio SSE events.
 
-La prima verticale, gia' implementata nei branch di lavoro, include capability
-discovery reale, loop multi-step, chiamate parallele limitate, tre tool di sola
-lettura, consenso esplicito per la rete, UI delle attivita' e supporto nativo
-Qwen in DS4. Il prossimo investimento deve essere policy/approval + MCP
-read-only. File write, shell e browser operativo devono restare fuori finche'
-non esistono sandbox, audit e ripresa sicura del run.
+The first vertical, already implemented on the development branches, includes
+real capability discovery, a multi-step loop, bounded parallel calls, three
+read-only tools, explicit network consent, an activity UI, and native Qwen
+support in the engine. The next investment should be policy and approval plus
+read-only MCP. File writes, shell access, and an operative browser must remain
+out of scope until sandboxing, audit, and safe run resumption exist.
 
-## Cosa fanno i prodotti di riferimento
+## What Reference Products Do
 
-| Prodotto o protocollo | Pattern utile | Limite o lezione per DSBox |
+| Product or protocol | Useful pattern | Constraint or lesson for Hebrus Studio |
 | --- | --- | --- |
-| OpenAI Function Calling | Il modello propone chiamate strutturate, l'applicazione le esegue e reinvia i risultati; supporta strict schema, chiamate parallele e restrizione dinamica dei tool ammessi. | Separare sempre proposta ed esecuzione; il modello non possiede l'autorita' del tool. |
-| Anthropic tool use | Distingue tool client-side e server-side, usa blocchi `tool_use`/`tool_result`, strict validation e parallel tool use. | Il lifecycle deve essere visibile e il risultato deve conservare l'identita' della chiamata. |
-| Gemini function calling | Supporta chiamate parallele e sequenziali/compositive; l'applicazione resta responsabile dell'esecuzione dei custom tool e delle conferme. | Il loop non puo' fermarsi al primo tool round; servono limiti e conferme fuori dal modello. |
-| MCP | Standardizza discovery e invocazione, ma richiede validazione input, access control, timeout, sanitizzazione output, indicatori e conferma umana per operazioni sensibili. | MCP e' un trasporto/contratto, non una sandbox ne' una policy di sicurezza. |
-| LM Studio | Offre un runtime locale con API native stateful, compatibilita' OpenAI/Anthropic e integrazione MCP. | DSBox deve offrire la stessa semplicita' locale, mantenendo esplicito lo stato reale di DS4. |
-| LibreChat | Combina agenti, MCP, tool differiti, limiti di step e sub-agent. | La discovery progressiva evita di riempire il context con tutti gli schema disponibili. |
-| Open WebUI | Espone function calling agentico e piu' forme di tool server in una UI locale. | La UX deve mostrare cosa sta girando e non ridurre i tool a testo nascosto nella risposta. |
-| Vercel AI SDK | Tratta tool call e tool result come parti persistenti del messaggio e usa loop multi-step con stop condition esplicite. | La history canonica completa e' necessaria per follow-up corretti e replay. |
-| LangGraph | Interrompe e persiste un run prima di un'azione, poi consente approve, edit o reject. | Le approvazioni serie richiedono un run resumable; un semplice modal non basta. |
+| OpenAI Function Calling | The model proposes structured calls, the application executes them and sends back results; it supports strict schemas, parallel calls, and dynamic restriction of allowed tools. | Always separate proposal from execution; the model does not own tool authority. |
+| Anthropic tool use | Separates client-side and server-side tools and uses `tool_use`/`tool_result` blocks, strict validation, and parallel tool use. | The lifecycle must be visible, and every result must preserve the call identity. |
+| Gemini function calling | Supports parallel and sequential or compositional calls; the application remains responsible for custom-tool execution and confirmation. | The loop cannot stop after the first tool round; limits and confirmations must live outside the model. |
+| MCP | Standardizes discovery and invocation but still requires input validation, access control, timeouts, output sanitization, indicators, and human confirmation for sensitive operations. | MCP is a transport and contract, not a sandbox or security policy. |
+| LM Studio | Provides a local runtime with stateful native APIs, OpenAI/Anthropic compatibility, and MCP integration. | Hebrus Studio should offer the same local simplicity while exposing the real state of Hebrus. |
+| LibreChat | Combines agents, MCP, deferred tools, step limits, and sub-agents. | Progressive discovery avoids filling the context with every available schema. |
+| Open WebUI | Exposes agentic function calling and several forms of server-side tools in a local UI. | The UX must show what is running instead of reducing tools to hidden response text. |
+| Vercel AI SDK | Treats tool calls and tool results as persistent message parts and uses multi-step loops with explicit stop conditions. | Complete canonical history is necessary for correct follow-ups and replay. |
+| LangGraph | Interrupts and persists a run before an action, then supports approve, edit, or reject. | Serious approvals require a resumable run; a modal alone is insufficient. |
 
-Fonti primarie e documentazione prodotto:
+Primary sources and product documentation:
 
 - [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)
 - [Anthropic tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview)
@@ -49,57 +51,59 @@ Fonti primarie e documentazione prodotto:
 - [Vercel AI SDK tools](https://ai-sdk.dev/docs/ai-sdk-core/tools-and-tool-calling)
 - [LangGraph human in the loop](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)
 
-## Architettura target
+## Target Architecture
 
 ```mermaid
 flowchart LR
-    UI["Chat UI e activity rail"] --> IR["DSBox Agent IR / SSE v1"]
-    IR --> LOOP["Agent loop con budget e stop policy"]
-    LOOP --> POLICY["Policy e approval engine"]
+    UI["Chat UI and activity rail"] --> IR["Hebrus Studio Agent IR / SSE v1"]
+    IR --> LOOP["Agent loop with budgets and stop policy"]
+    LOOP --> POLICY["Policy and approval engine"]
     POLICY --> REG["Tool registry"]
-    REG --> LOCAL["Tool locali read-only"]
+    REG --> LOCAL["Local read-only tools"]
     REG --> MCP["MCP client manager"]
-    REG --> SAFE["Sandbox file, shell e browser"]
+    REG --> SAFE["Sandboxed file, shell, and browser tools"]
     LOOP --> OAI["OpenAI Chat contract"]
-    OAI --> DS4["DS4 runtime"]
-    DS4 --> QWEN["Qwen native tool dialect"]
-    DS4 --> DEEP["DeepSeek DSML dialect"]
-    LOOP --> RUNS["Run store, audit e tracing"]
+    OAI --> HEBRUS["Hebrus runtime"]
+    HEBRUS --> QWEN["Qwen native tool dialect"]
+    HEBRUS --> DEEP["DeepSeek DSML dialect"]
+    LOOP --> RUNS["Run store, audit, and tracing"]
 ```
 
-Principi non negoziabili:
+Non-negotiable principles:
 
-1. Capability da metadata/probe reali, mai dal nome del modello.
-2. Un IR persistibile tra UI e backend; nessun tag Qwen/DSML nel frontend.
-3. Schema validation sia prima dell'esecuzione sia sul risultato.
-4. Tool registry separato dal model prompt e filtrato per ogni singolo run.
-5. Rete, write, shell e azioni esterne negate per default.
-6. Budget distinti per step, numero chiamate, concorrenza, tempo e byte.
-7. Stream incompleto o output protocollo malformato devono fallire chiusi.
-8. `call_id`, reasoning del tool round e risultati devono sopravvivere a
-   continuation, persistenza e reload.
+1. Derive capabilities from real metadata or probes, never from the model name.
+2. Keep one persistable IR between the UI and backend; no Qwen or DSML tags in
+   the frontend.
+3. Validate schemas before execution and validate the resulting value.
+4. Keep the tool registry separate from the model prompt and filter it for each
+   individual run.
+5. Deny network, write, shell, and external actions by default.
+6. Use separate budgets for steps, call count, concurrency, time, and bytes.
+7. Fail closed on incomplete streams or malformed protocol output.
+8. Preserve `call_id`, tool-round reasoning, and results across continuation,
+   persistence, and reload.
 
-## Contratti implementati
+## Implemented Contracts
 
-### Capability contract
+### Capability Contract
 
-`GET /api/capabilities` interroga `/v1/models` e, quando i metadata non sono
-conclusivi, effettua un probe innocuo con `tool_choice: none`. Il risultato
-distingue `supported`, `unsupported` e `unknown`; quest'ultimo viene ritentato
-dopo la scadenza della cache breve. L'Agent mode si abilita solo nello stato
-`ready + supported`.
+`GET /api/capabilities` queries `/v1/models` and, when the metadata is
+inconclusive, performs a harmless probe with `tool_choice: none`. The result
+distinguishes `supported`, `unsupported`, and `unknown`; the last state is
+retried after the short cache expires. Agent mode is enabled only in the
+`ready + supported` state.
 
-### Agent request e history
+### Agent Request And History
 
-`POST /api/agent/chat` riceve history OpenAI-style. Una continuation corretta
-contiene un solo messaggio assistant con tutte le tool call parallele del model
-step, seguito da un messaggio `role: tool` per ciascun `call_id`. Il reasoning
-del round viene conservato internamente per non perdere il contesto causale e
-la possibilita' di riuso del prefix.
+`POST /api/agent/chat` receives OpenAI-style history. A correct continuation
+contains one assistant message with every parallel tool call from the model
+step, followed by one `role: tool` message for each `call_id`. The round's
+reasoning is retained internally so causal context and prefix reuse are not
+lost.
 
 ### Agent SSE v1
 
-Gli eventi principali sono:
+The main events are:
 
 - `run.created`, `run.completed`, `run.error`;
 - `reasoning.delta`, `text.delta`;
@@ -107,155 +111,161 @@ Gli eventi principali sono:
   `tool_call.arguments.done`;
 - `tool_call.started`, `tool_call.result`, `tool_call.failed`.
 
-Ogni evento include `runId`, sequenza e `step`; gli eventi tool includono
-`callId`. Il client richiede sia `run.completed` sia il terminale `[DONE]`.
+Every event includes `runId`, sequence, and `step`; tool events also include
+`callId`. The client requires both `run.completed` and the terminal `[DONE]`.
 
-### Guardrail correnti
+### Current Guardrails
 
-- massimo 8 tool call per model turn;
-- massimo 24 tool call per run;
-- massimo 8 tool round;
-- massimo 3 tool eseguiti in parallelo;
-- timeout e limiti di output per runtime e tool;
-- `web_search` attivo di default in Agent mode, con opt-out persistente visibile;
-- opt-out applicato nell'executor prima della rete; gli schemi web gia' citati
-  nella history restano solo per rendere il transcript parsabile;
-- risultati web marcati come dati non fidati anche nei turn successivi;
-- nessun `open_url`: prima servono difese SSRF, redirect e DNS rebinding;
-- stop/reload convertono tool pending in `canceled`.
+- at most 8 tool calls per model turn;
+- at most 24 tool calls per run;
+- at most 8 tool rounds;
+- at most 3 tools executing in parallel;
+- timeouts and output limits for both runtime and tools;
+- `web_search` enabled by default in Agent mode, with a visible persistent
+  opt-out;
+- opt-out enforced by the executor before network access; web schemas already
+  cited in history remain only so the transcript stays parseable;
+- web results marked as untrusted data in subsequent turns as well;
+- no `open_url`: SSRF, redirect, and DNS-rebinding defenses must exist first;
+- stop or reload converts pending tools to `canceled`.
 
-## Matrice Qwen / DeepSeek
+## Qwen And DeepSeek Matrix
 
-| Capacita' | Qwen3.6 35B-A3B | DeepSeek V4 Flash | Contratto DSBox |
+| Capability | Qwen3.6 35B-A3B | DeepSeek V4 Flash | Hebrus Studio contract |
 | --- | --- | --- | --- |
-| Dialetto generato | Tag nativi Qwen `tool_call/function/parameter` | DSML nativo DS4 | Mai esposto fuori da DS4 |
-| API usata dal loop | OpenAI Chat Completions | OpenAI Chat Completions | Identica |
-| Tool history | OpenAI history convertita dal renderer Qwen | OpenAI history convertita dal renderer DeepSeek | `assistant.tool_calls` + `role: tool` |
-| Chiamate multiple | Si', validate e ordinate | Si' | Un assistant step, N risultati |
-| Tipi JSON | Ricostruiti dallo schema, incluso nullable | Inclusi nel DSML | Arguments JSON canonici |
-| Reasoning | Preservato nel tool continuation; omissibile nei normali user follow-up | Preservato nel tool continuation | `reasoning_content` interno |
-| Streaming | Testo/reasoning live; markup trattenuto e normalizzato a EOS | Delta reasoning e tool arguments | Eventi SSE DSBox |
-| Output malformato | Fail-closed, nessun falso successo vuoto | Recovery DSML esistente o errore | `run.error`, mai tool execution |
-| Responses / Anthropic tool use | Non dichiarato in questa tranche | Supporto DS4 esistente, fuori dal loop UI | Possibile fase successiva |
+| Generated dialect | Native Qwen `tool_call/function/parameter` tags | Native Hebrus DSML | Never exposed outside Hebrus |
+| API used by the loop | OpenAI Chat Completions | OpenAI Chat Completions | Identical |
+| Tool history | OpenAI history converted by the Qwen renderer | OpenAI history converted by the DeepSeek renderer | `assistant.tool_calls` + `role: tool` |
+| Multiple calls | Yes, validated and ordered | Yes | One assistant step, N results |
+| JSON types | Reconstructed from the schema, including nullable types | Included in DSML | Canonical JSON arguments |
+| Reasoning | Preserved in tool continuation; optional in ordinary user follow-ups | Preserved in tool continuation | Internal `reasoning_content` |
+| Streaming | Live text and reasoning; markup buffered and normalized at EOS | Reasoning and tool-argument deltas | Hebrus Studio SSE events |
+| Malformed output | Fail closed, never report false empty success | Existing DSML recovery or error | `run.error`, never tool execution |
+| Responses / Anthropic tool use | Not declared in this tranche | Existing legacy DS4 support, outside the UI loop | Possible later phase |
 
-## Roadmap eseguibile
+## Executable Roadmap
 
-### P0 - Fondazione read-only (implementata nel branch)
+### P0 - Read-Only Foundation (Implemented On The Development Branch)
 
-Deliverable:
+Deliverables:
 
-- capability probe e fallback standard chat;
-- Agent IR SSE e history persistibile;
-- loop multi-step comune Qwen/DeepSeek;
-- `runtime_status`, `model_info`, `web_search` automatico con opt-out;
-- UI activity card, stato, durata, input/result e cancel;
-- parser Qwen schema-aware in DS4 e regressione reale DeepSeek;
-- limiti di fan-out, concorrenza, timeout e dimensione;
-- test di stream troncato/malformato, chiamate parallele e follow-up.
+- capability probe and standard-chat fallback;
+- Agent IR SSE and persistable history;
+- one multi-step Qwen/DeepSeek loop;
+- automatic `runtime_status`, `model_info`, and `web_search` with opt-out;
+- activity-card UI with state, duration, input/result, and cancel;
+- schema-aware Qwen parser in Hebrus and a real DeepSeek regression;
+- fan-out, concurrency, timeout, and size limits;
+- tests for truncated or malformed streams, parallel calls, and follow-ups.
 
-Exit gate: test unitari completi, typecheck/build, sanitizer DS4, round-trip reale
-tool -> result -> risposta finale su entrambi i modelli. La patch DS4 e' stata
-pubblicata nel [draft PR #2](https://github.com/andreaborio/ds4/pull/2). Il
-runtime di rilascio e' ora il canale unificato `main`, con ExpertMajor v2 e pin
-minimo `57acfd408a3154851a0c59be432904300abb3b6c`.
+Exit gate: complete unit tests, typecheck/build, engine sanitizer, and a real
+tool -> result -> final-answer round trip on both models. The original engine
+patch was published in [draft PR #2](https://github.com/andreaborio/ds4/pull/2)
+under the historical repository name. The release runtime is now the unified
+`main` channel, with ExpertMajor v2 and minimum pin
+`57acfd408a3154851a0c59be432904300abb3b6c`.
 
-### P1 - Policy, approval e audit
+### P1 - Policy, Approval, And Audit
 
-Deliverable:
+Deliverables:
 
-- manifest per tool con `risk`, `network`, `write`, `secrets`, timeout e limiti;
-- decisione deterministica `allow`, `ask`, `deny` fuori dal modello;
-- run persistibile con stato `waiting_for_approval`;
-- UX approve/edit/reject che mostra nome, argomenti e impatto;
-- audit append-only di proposta, decisione, esecuzione e risultato redatto;
-- idempotency key per impedire una doppia esecuzione dopo retry/reload;
-- kill propagation dal tasto Stop fino al processo/tool sottostante.
+- a tool manifest with `risk`, `network`, `write`, `secrets`, timeout, and
+  limits;
+- deterministic `allow`, `ask`, or `deny` decisions outside the model;
+- a persistable run with `waiting_for_approval` state;
+- approve/edit/reject UX showing the name, arguments, and impact;
+- an append-only audit of redacted proposal, decision, execution, and result;
+- an idempotency key preventing duplicate execution after retry or reload;
+- kill propagation from the Stop control to the underlying process or tool.
 
-Exit gate: nessun side effect senza decisione esplicita, resume dopo reload,
-reject non esegue il tool, retry non duplica l'azione, segreti assenti da log e
-prompt.
+Exit gate: no side effect without an explicit decision, resume works after
+reload, reject never executes the tool, retry does not duplicate the action,
+and secrets are absent from logs and prompts.
 
-### P2 - MCP read-only e discovery progressiva
+### P2 - Read-Only MCP And Progressive Discovery
 
-Deliverable:
+Deliverables:
 
-- MCP client manager per server locali esplicitamente configurati;
-- allowlist di server e tool, schema normalization e health state;
-- discovery differita: il modello vede un catalogo compatto e carica solo gli
-  schema necessari;
-- namespace stabile per evitare collisioni tra server;
-- resource/file read-only con root consentite e limiti byte;
-- provenance e citazioni collegate al singolo tool result;
-- fetch URL sicuro con HTTP(S) only, IP privati negati, DNS pinning, redirect
-  limitati e content-type/size limit.
+- an MCP client manager for explicitly configured local servers;
+- server and tool allowlists, schema normalization, and health state;
+- deferred discovery: the model sees a compact catalog and loads only the
+  required schemas;
+- stable namespaces preventing collisions between servers;
+- read-only resources and files with allowed roots and byte limits;
+- provenance and citations attached to each tool result;
+- safe URL fetch with HTTP(S) only, private IPs denied, DNS pinning, bounded
+  redirects, and content-type and size limits.
 
-Exit gate: un server MCP compromesso non puo' ottenere file, rete o tool fuori
-dallo scope; prompt injection nei risultati resta untrusted data; 100 tool
-installati non gonfiano il prompt iniziale.
+Exit gate: a compromised MCP server cannot access files, network, or tools
+outside its scope; prompt injection in results remains untrusted data; 100
+installed tools do not inflate the initial prompt.
 
-### P3 - Workspace, write e code execution in sandbox
+### P3 - Sandboxed Workspace, Writes, And Code Execution
 
-Deliverable:
+Deliverables:
 
-- file read con root workspace esplicita e symlink-safe path resolution;
-- write tramite patch/diff preview, approval e rollback;
-- shell in sandbox con cwd, env allowlist, wall/CPU/output limits e network off;
-- checkpoint Git o snapshot prima delle mutazioni;
-- artifact channel separato dai normali messaggi chat;
-- profili `chat`, `research`, `coding` che cambiano i tool ammessi, non il
-  comportamento nascosto del modello.
+- file reads with an explicit workspace root and symlink-safe path resolution;
+- writes through patch or diff preview, approval, and rollback;
+- a sandboxed shell with cwd, environment allowlist, wall-time, CPU, and output
+  limits, with network disabled;
+- a Git checkpoint or snapshot before mutations;
+- an artifact channel separate from ordinary chat messages;
+- `chat`, `research`, and `coding` profiles that change allowed tools, not
+  hidden model behavior.
 
-Exit gate: escape suite negativa, nessuna lettura fuori root, nessuna rete non
-autorizzata, diff sempre mostrato prima di write, rollback verificato.
+Exit gate: the negative escape suite passes, nothing reads outside the root,
+there is no unauthorized network access, every write shows its diff first, and
+rollback is verified.
 
-### P4 - Run durevoli e orchestrazione
+### P4 - Durable Runs And Orchestration
 
-Deliverable:
+Deliverables:
 
-- run store con event log e ricostruzione deterministica;
-- background task con pause/resume/cancel e scadenza;
-- retry per classe di errore con backoff e budget globale;
-- sub-agent limitati a scope, tool e token budget propri;
-- merge dei risultati con provenance, senza condividere segreti impliciti;
-- notifica e inbox dei run terminati.
+- a run store with an event log and deterministic reconstruction;
+- background tasks with pause/resume/cancel and expiration;
+- error-class retry with backoff and a global budget;
+- sub-agents limited to their own scope, tools, and token budget;
+- provenance-aware result merging without implicit secret sharing;
+- notifications and an inbox for completed runs.
 
-Exit gate: riavvio dell'app durante tool/approval non perde stato, cancel e'
-definitivo, un sub-agent non puo' ampliare i privilegi del parent.
+Exit gate: restarting the app during tool execution or approval does not lose
+state, cancel is final, and a sub-agent cannot expand its parent's privileges.
 
-### P5 - Eval e osservabilita' come release gate
+### P5 - Evaluation And Observability As A Release Gate
 
-Questa fase va iniziata in parallelo a P1, ma diventa bloccante prima di P3.
+This phase should start alongside P1 but becomes blocking before P3.
 
-Deliverable:
+Deliverables:
 
-- corpus identico Qwen/DeepSeek per scelta tool, argomenti, no-tool, parallel,
-  repair e injection;
-- metriche: tool selection accuracy, argument validity, execution success,
-  unnecessary-call rate, steps/run, latency e byte di context;
-- tracing locale redatto con replay di soli eventi non sensibili;
-- test avversariali su result injection, schema bomb, call-id collision,
-  stream truncation e approval replay;
-- dashboard per tempo modello, coda, tool e overhead del loop.
+- one Qwen/DeepSeek corpus for tool selection, arguments, no-tool cases,
+  parallel calls, repair, and injection;
+- metrics for tool-selection accuracy, argument validity, execution success,
+  unnecessary-call rate, steps per run, latency, and context bytes;
+- redacted local tracing with replay limited to non-sensitive events;
+- adversarial tests for result injection, schema bombs, `call_id` collisions,
+  stream truncation, and approval replay;
+- a dashboard separating model time, queue time, tool time, and loop overhead.
 
-Release gate iniziale:
+Initial release gate:
 
-- 100% continuita' dei `call_id` nei test;
-- zero tool malformati eseguiti;
-- zero chiamate web senza consenso;
-- zero falsi `run.completed` su stream troncato o `finish_reason: error`;
-- parita' funzionale Qwen/DeepSeek sul set read-only;
-- nessuna regressione della normale chat senza Agent mode.
+- 100% `call_id` continuity in tests;
+- zero malformed tools executed;
+- zero web calls contrary to the active network policy;
+- zero false `run.completed` events on a truncated stream or
+  `finish_reason: error`;
+- functional Qwen/DeepSeek parity on the read-only set;
+- no regression in ordinary chat with Agent mode disabled.
 
-## Ordine consigliato delle prossime integrazioni
+## Recommended Integration Order
 
-1. Unire il supporto Qwen DS4, riportare il canale runtime DSBox a `main` e
-   sostituire il pin con lo SHA effettivo risultante su `main`.
-2. Aggiungere run store + policy/approval + audit prima di qualunque write.
-3. Integrare MCP read-only con discovery differita.
-4. Aggiungere file read e citazioni/provenance.
-5. Solo dopo i gate di sicurezza: patch write e shell sandboxed.
-6. Infine background run e sub-agent, quando tracing e budget sono maturi.
+1. Merge Qwen support into Hebrus, return the Hebrus Studio runtime channel to
+   `main`, and replace the pin with the resulting effective SHA on `main`.
+2. Add the run store, policy/approval, and audit before any write capability.
+3. Integrate read-only MCP with deferred discovery.
+4. Add file reads and citations or provenance.
+5. Add patch writes and a sandboxed shell only after the security gates pass.
+6. Add background runs and sub-agents only when tracing and budgets are mature.
 
-Questa sequenza mantiene Qwen e DeepSeek sullo stesso prodotto: le differenze
-di sintassi restano un dettaglio del runtime, mentre sicurezza, UX, history,
-tool policy ed eval evolvono una volta sola in DSBox.
+This sequence keeps Qwen and DeepSeek in the same product. Syntax differences
+remain a runtime detail, while security, UX, history, tool policy, and
+evaluation evolve once in Hebrus Studio.

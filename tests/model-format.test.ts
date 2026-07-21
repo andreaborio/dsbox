@@ -6,9 +6,9 @@ import {
   isDs4ArtifactFormat
 } from "../src/lib/model-format.js";
 
-describe("DS4 artifact formats", () => {
+describe("Hebrus artifact formats", () => {
   it("maps the only supported ExpertMajor contract to its physical tensor marker", () => {
-    expect(ds4ArtifactFormatLabel("ds4-expert-major-v2")).toBe("DS4 ExpertMajor v2");
+    expect(ds4ArtifactFormatLabel("ds4-expert-major-v2")).toBe("Hebrus ExpertMajor v2");
     expect(ds4ArtifactFormatTensor("ds4-expert-major-v2")).toBe("ds4.expert_major.v2");
     expect(isDs4ArtifactFormat("ds4-expert-major-v1")).toBe(false);
     expect(isDs4ArtifactFormat("gguf")).toBe(false);

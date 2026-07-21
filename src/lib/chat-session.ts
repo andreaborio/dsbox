@@ -261,7 +261,7 @@ function toolError(event: StreamRecord): string | undefined {
 }
 
 /**
- * Reduces DSBox's model-neutral agent events into persistable message blocks.
+ * Reduces Hebrus Studio's model-neutral agent events into persistable message blocks.
  * The parser accepts both camelCase and wire-level snake_case fields so the UI
  * remains independent from the Qwen and DeepSeek tool dialects behind DS4.
  */
@@ -595,7 +595,7 @@ function restoreMessageStats(message: ChatMessage, restoredAt: number): ChatMess
       stats: finalizeStats(stats, restoredAt)
     };
   }
-  // Recalculate end-to-end estimates saved by older DSBox builds, which used
+  // Recalculate end-to-end estimates saved by older Hebrus Studio builds, which used
   // the answer-only interval even though completionTokens included reasoning.
   if (message.reasoning && stats.timingSource === "end-to-end" && stats.completedAt !== null) {
     return {
@@ -835,7 +835,7 @@ export class ChatSessionStore {
       });
       const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
       if (!contentType.includes("application/json")) {
-        throw new Error("Tool capabilities returned a non-JSON response. DSBox may be connected to an older backend.");
+        throw new Error("Tool capabilities returned a non-JSON response. Hebrus Studio may be connected to an older backend.");
       }
       let payload: unknown;
       try {
@@ -990,7 +990,7 @@ export class ChatSessionStore {
         } catch (reason) {
           if (isAbortError(reason, abort.signal)) throw reason;
           stats = { ...stats, webSearchMs: Math.max(0, this.now() - searchStartedAt) };
-          updateAssistant({ skillNotice: "Web search was unavailable, so DSBox continued locally.", stats });
+          updateAssistant({ skillNotice: "Web search was unavailable, so Hebrus Studio continued locally.", stats });
         } finally {
           this.commit({ ...this.snapshot, skillStage: "idle" });
         }

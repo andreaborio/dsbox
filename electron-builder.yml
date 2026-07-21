@@ -1,6 +1,6 @@
 appId: com.dsbox.desktop
-productName: DSBox
-artifactName: DSBox-${version}-macOS-${arch}.${ext}
+productName: Hebrus Studio
+artifactName: Hebrus-Studio-${version}-macOS-${arch}.${ext}
 asar: true
 directories:
   output: release
@@ -24,7 +24,7 @@ mac:
   minimumSystemVersion: "13.0"
   darkModeSupport: true
 dmg:
-  title: DSBox ${version}
+  title: Hebrus Studio ${version}
   backgroundColor: "#f7f7f5"
   window:
     width: 600

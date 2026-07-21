@@ -259,15 +259,15 @@ interface LocalModelInspection {
 
 function localCompatibilityMessage(inspection: Ds4GgufCompatibility): string {
   const reason = inspection.reason;
-  if (!reason) return "This GGUF is compatible with DS4.";
+  if (!reason) return "This GGUF is compatible with Hebrus.";
   if (reason.code === "multipart_unsupported") return reason.message;
   if (reason.code === "unsupported_architecture") return reason.message;
   if (reason.code === "missing_metadata") {
     const firstMissing = reason.missingKeys?.[0];
-    return `This GGUF is not compatible with DS4. It is missing the DS4 model metadata required to run${firstMissing ? ` (${firstMissing})` : ""}.`;
+    return `This GGUF is not compatible with Hebrus. It is missing the legacy DS4 model metadata required to run${firstMissing ? ` (${firstMissing})` : ""}.`;
   }
   if (["missing_architecture", "invalid_metadata_type", "missing_tensor_signature", "empty_tensor_directory"].includes(reason.code)) {
-    return "This GGUF is not compatible with DS4. It uses a different model metadata or tensor layout.";
+    return "This GGUF is not compatible with Hebrus. It uses different model metadata or a different tensor layout.";
   }
   if (reason.code === "unsupported_gguf_version") return reason.message;
   return "This file is not a readable GGUF model. Choose a complete .gguf file.";
@@ -652,7 +652,7 @@ export class RuntimeManager {
   }
 
   prepareOneClickStart(): void {
-    if (this.engine || this.task || this.startPending || this.modelSelectionPending || this.modelSwitchPending || this.state.phase === "preparing") throw new Error("DSBox is already working");
+    if (this.engine || this.task || this.startPending || this.modelSelectionPending || this.modelSwitchPending || this.state.phase === "preparing") throw new Error("Hebrus Studio is already working");
     this.setState({
       phase: "preparing",
       readiness: "offline",
@@ -822,7 +822,7 @@ export class RuntimeManager {
 
   private async ensureAppleMetalToolchain(): Promise<void> {
     if (process.platform !== "darwin" || process.arch !== "arm64") {
-      throw new Error("This version of DSBox requires macOS on Apple Silicon (arm64)");
+      throw new Error("This version of Hebrus Studio requires macOS on Apple Silicon (arm64)");
     }
     try {
       await execFileAsync("xcrun", ["--find", "clang"], { timeout: 5000 });
@@ -931,7 +931,7 @@ export class RuntimeManager {
     cwd: string,
     source: LogEntry["source"]
   ): Promise<void> {
-    if (this.task || this.engine) throw new Error("Another DS4 operation is already in progress");
+    if (this.task || this.engine) throw new Error("Another Hebrus operation is already in progress");
     this.log("info", source, `$ ${[command, ...args].map(shellDisplayArgument).join(" ")}`);
     await new Promise<void>((resolve, reject) => {
       const child = spawn(command, args, {
@@ -1142,11 +1142,11 @@ export class RuntimeManager {
 
   private async ensureCatalogRuntime(model: CatalogModel): Promise<void> {
     if (!model.runtimeCommit) {
-      if (model.recommended) throw new Error("The model manifest does not declare a verifiable DS4 engine version");
+      if (model.recommended) throw new Error("The model manifest does not declare a verifiable Hebrus engine version");
       return;
     }
     if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(model.runtimeCommit)) {
-      throw new Error("The DS4 commit required by this model is invalid");
+      throw new Error("The Hebrus commit required by this model is invalid");
     }
 
     let config = this.store.get();
@@ -1163,27 +1163,27 @@ export class RuntimeManager {
       .then((result) => Boolean(result.stdout.trim()))
       .catch(() => true);
     if (dirty) {
-      throw new Error("The DS4 checkout has local changes and cannot be verified or rebuilt automatically for this model");
+      throw new Error("The Hebrus checkout has local changes and cannot be verified or rebuilt automatically for this model");
     }
 
     if (sourceCompatible) {
-      this.log("info", "build", "Rebuilding DS4 to match the model's verified commit.");
+      this.log("info", "build", "Rebuilding Hebrus to match the model's verified commit.");
       await this.build();
       if (!(await this.buildMatchesHead(config.repository.directory))) {
-        throw new Error("The DS4 binary does not match the commit verified for this model");
+        throw new Error("The Hebrus binary does not match the commit verified for this model");
       }
       return;
     }
 
-    this.log("info", "git", `Updating DS4 to the model requirement (${model.runtimeCommit.slice(0, 9)}).`);
+    this.log("info", "git", `Updating Hebrus to the model requirement (${model.runtimeCommit.slice(0, 9)}).`);
     await this.installOrUpdate();
     if (!(await this.runtimeIncludesCommit(config.repository.directory, model.runtimeCommit))) {
-      throw new Error(`The ${model.runtimeBranch ?? config.repository.branch} channel does not contain the DS4 commit required by this model`);
+      throw new Error(`The ${model.runtimeBranch ?? config.repository.branch} channel does not contain the Hebrus commit required by this model`);
     }
     if (!(await this.buildMatchesHead(config.repository.directory))) {
       throw new Error("The updated engine did not produce a binary associated with the current Git commit");
     }
-    this.log("success", "git", "DS4 engine updated and rebuilt for the selected model.");
+    this.log("success", "git", "Hebrus engine updated and rebuilt for the selected model.");
   }
 
   async prepareCatalogRuntime(model: CatalogModel): Promise<void> {
@@ -1341,7 +1341,7 @@ export class RuntimeManager {
         return { candidate: unsupportedCandidate("invalid_gguf", message), message };
       }
       if (/^.*-\d{5}-of-\d{5}\.gguf$/i.test(filename)) {
-        const message = "DS4 does not support standard multi-file GGUF sets. Choose a single DS4-native GGUF instead.";
+        const message = "Hebrus does not support standard multi-file GGUF sets. Choose a single Hebrus ExpertMajor GGUF instead.";
         return { candidate: unsupportedCandidate("standard_multipart", message), message };
       }
       const compatibility = await inspectDs4Gguf(absolutePath);
@@ -1372,7 +1372,7 @@ export class RuntimeManager {
         message: null
       };
     } catch {
-      return { candidate: null, message: "This file does not exist or DSBox cannot read it." };
+      return { candidate: null, message: "This file does not exist or Hebrus Studio cannot read it." };
     }
   }
 
@@ -1385,10 +1385,10 @@ export class RuntimeManager {
     selectedPath = filePath,
     expectedArtifactFormat?: Ds4ArtifactFormat | null
   ): Promise<LocalModelCandidate> {
-    if (!path.isAbsolute(filePath)) throw new ModelSelectionError("DSBox did not receive a valid model location");
+    if (!path.isAbsolute(filePath)) throw new ModelSelectionError("Hebrus Studio did not receive a valid model location");
     const inspection = await this.inspectLocalModelWithReason(filePath, selectedPath);
     if (!inspection.candidate || inspection.candidate.compatibility.status !== "compatible") {
-      throw new ModelSelectionError(inspection.message ?? "This file is not compatible with DS4");
+      throw new ModelSelectionError(inspection.message ?? "This file is not compatible with Hebrus");
     }
     if (
       expectedArtifactFormat !== undefined
@@ -1729,7 +1729,7 @@ export class RuntimeManager {
         try {
           await this.reconcileLocalModelInventory(models);
         } catch {
-          warning = "The scan stopped, but DSBox could not save the models found before cancellation.";
+          warning = "The scan stopped, but Hebrus Studio could not save the models found before cancellation.";
         }
         this.updateLocalModelScan(scanId, {
           status: "cancelled",
@@ -1809,14 +1809,14 @@ export class RuntimeManager {
 
   async selectLocalModel(filePath: string, modelId?: string): Promise<LocalModelCandidate> {
     if (this.modelChangeBlocked() || this.modelSelectionPending) {
-      throw new ModelSelectionError("Cancel the download or turn off DSBox before changing models", 409);
+      throw new ModelSelectionError("Cancel the download or turn off Hebrus Studio before changing models", 409);
     }
-    if (!path.isAbsolute(filePath)) throw new ModelSelectionError("DSBox did not receive a valid model location");
+    if (!path.isAbsolute(filePath)) throw new ModelSelectionError("Hebrus Studio did not receive a valid model location");
     this.modelSelectionPending = true;
     try {
       const candidate = await this.validateLocalModel(filePath);
       if (this.modelChangeBlocked()) {
-        throw new ModelSelectionError("DSBox started another operation; try again after it is turned off", 409);
+        throw new ModelSelectionError("Hebrus Studio started another operation; try again after it is turned off", 409);
       }
       const saved = await this.persistLocalModel(candidate, this.localModelId(candidate, modelId));
       this.log("success", "dsbox", `${candidate.name} selected from this Mac. No download required.`);
@@ -1865,9 +1865,9 @@ export class RuntimeManager {
       || this.state.phase === "preparing"
       || engineInTransition
     ) {
-      throw new ModelSelectionError("Wait for the current DSBox operation to finish before switching models", 409);
+      throw new ModelSelectionError("Wait for the current Hebrus Studio operation to finish before switching models", 409);
     }
-    if (!path.isAbsolute(filePath)) throw new ModelSelectionError("DSBox did not receive a valid model location");
+    if (!path.isAbsolute(filePath)) throw new ModelSelectionError("Hebrus Studio did not receive a valid model location");
 
     this.modelSwitchPending = true;
     const previous = this.store.get();
@@ -1885,7 +1885,7 @@ export class RuntimeManager {
       try {
         if (running) {
           await this.stopEngine();
-          if (this.engine) throw new Error("The previous DS4 process did not finish shutting down");
+          if (this.engine) throw new Error("The previous Hebrus process did not finish shutting down");
         }
 
         const saved = await this.persistLocalModel(candidate, nextModelId);
@@ -1901,8 +1901,8 @@ export class RuntimeManager {
           "success",
           "dsbox",
           running
-            ? `${candidate.name} selected. DS4 is restarting with the new model.`
-            : `${candidate.name} selected. It will be used the next time DS4 starts.`
+            ? `${candidate.name} selected. Hebrus is restarting with the new model.`
+            : `${candidate.name} selected. It will be used the next time Hebrus starts.`
         );
         return {
           model: { ...candidate, modelId: saved.model.id, selected: true },
@@ -1943,7 +1943,7 @@ export class RuntimeManager {
         const recovery = rollbackFailures.length
           ? ` Recovery was incomplete (${rollbackFailures.join("; ")}).`
           : running
-            ? " The previous model selection was restored and DS4 was relaunched."
+            ? " The previous model selection was restored and Hebrus was relaunched."
             : " The previous model selection was restored.";
         const message = `Could not switch to ${candidate.name}: ${reason}.${recovery}`;
         this.log("error", "dsbox", message);
@@ -2030,7 +2030,7 @@ export class RuntimeManager {
 
   private async startManaged(modelSwitch = false): Promise<void> {
     if (this.engine || this.task || this.startPending || this.modelSelectionPending || (this.modelSwitchPending && !modelSwitch)) {
-      throw new Error("A DS4 process or operation is already active");
+      throw new Error("A Hebrus process or operation is already active");
     }
     this.startPending = true;
     try {
@@ -2148,7 +2148,7 @@ export class RuntimeManager {
         clean: !status.stdout.trim()
       };
     } catch {
-      throw new Error(`DSBox cannot verify the managed DS4 checkout at ${directory}`);
+      throw new Error(`Hebrus Studio cannot verify the managed Hebrus checkout at ${directory}`);
     }
   }
 
@@ -2159,7 +2159,7 @@ export class RuntimeManager {
     modelIdentity: string | null = null
   ): Promise<ReturnType<ConfigStore["get"]>> {
     if (format !== "ds4-expert-major-v2") {
-      throw new Error("DSBox supports only DS4 ExpertMajor v2 runtimes");
+      throw new Error("Hebrus Studio supports only Hebrus ExpertMajor v2 runtimes");
     }
     const label = modelIdentity === "qwen35moe" || modelIdentity === QWEN35_MODEL_ID
       ? "Qwen3.6 ExpertMajor v2"
@@ -2191,10 +2191,10 @@ export class RuntimeManager {
 
     let identity = await this.managedCheckoutIdentity(managedDirectory);
     if (identity.exists && !isSupportedEngineRemote(identity.remote ?? "")) {
-      throw new Error(`The managed DS4 folder has a different origin remote: ${managedDirectory}`);
+      throw new Error(`The managed Hebrus folder has a different origin remote: ${managedDirectory}`);
     }
     if (identity.exists && !identity.clean) {
-      throw new Error(`The managed DS4 checkout has local changes; clean ${managedDirectory} before starting a model`);
+      throw new Error(`The managed Hebrus checkout has local changes; clean ${managedDirectory} before starting a model`);
     }
     const isManagedMain = identity.exists
       && identity.branch === EXPERT_MAJOR_RUNTIME_BRANCH
@@ -2203,7 +2203,7 @@ export class RuntimeManager {
       this.log(
         "info",
         "git",
-        `Preparing the unified DS4 main runtime for ${label} at ${EXPERT_MAJOR_RUNTIME_COMMIT.slice(0, 9)} or newer.`
+        `Preparing the unified Hebrus main runtime for ${label} at ${EXPERT_MAJOR_RUNTIME_COMMIT.slice(0, 9)} or newer.`
       );
       await this.installOrUpdate(allowModelSwitch);
       selected = this.store.get();
@@ -2214,11 +2214,11 @@ export class RuntimeManager {
       || identity.branch !== EXPERT_MAJOR_RUNTIME_BRANCH
       || !isSupportedEngineRemote(identity.remote ?? "")
       || !identity.clean) {
-      throw new Error(`DSBox requires a clean andreaborio/ds4 or andreaborio/hebrus ${EXPERT_MAJOR_RUNTIME_BRANCH} checkout at ${managedDirectory}`);
+      throw new Error(`Hebrus Studio requires a clean andreaborio/ds4 or andreaborio/hebrus ${EXPERT_MAJOR_RUNTIME_BRANCH} checkout at ${managedDirectory}`);
     }
 
     if (!(await sourceIsQualified(selected.repository.directory))) {
-      throw new Error(`DS4 main does not include the unified ExpertMajor v2 runtime ${EXPERT_MAJOR_RUNTIME_COMMIT.slice(0, 9)} required by ${label}`);
+      throw new Error(`Hebrus main does not include the unified ExpertMajor v2 runtime ${EXPERT_MAJOR_RUNTIME_COMMIT.slice(0, 9)} required by ${label}`);
     }
     const binaryIsQualified = async () => await this.binaryMatchesCheckoutHead(selected.repository.directory)
       && await this.binaryHasExpertMajorV2Runtime(selected.repository.directory);
@@ -2228,7 +2228,7 @@ export class RuntimeManager {
       selected = this.store.get();
     }
     if (!(await binaryIsQualified())) {
-      throw new Error(`The selected DS4 binary does not match the qualified ${label} checkout`);
+      throw new Error(`The selected Hebrus binary does not match the qualified ${label} checkout`);
     }
     return selected;
   }
@@ -2239,7 +2239,7 @@ export class RuntimeManager {
       ? QWEN35_EXPERT_MAJOR_MINIMUM_MEMORY_GB
       : EXPERT_MAJOR_MINIMUM_MEMORY_GB;
     if (this.totalMemoryBytes < configuredMinimumMemoryGb * 1024 ** 3) {
-      throw new Error(`DS4 ExpertMajor v2 requires at least ${configuredMinimumMemoryGb} GiB of unified memory`);
+      throw new Error(`Hebrus ExpertMajor v2 requires at least ${configuredMinimumMemoryGb} GiB of unified memory`);
     }
     const selectedModel = await this.validateLocalModel(config.model.path, config.model.path);
     const modelId = this.localModelId(selectedModel, config.model.id);
@@ -2254,7 +2254,7 @@ export class RuntimeManager {
       ? QWEN35_EXPERT_MAJOR_MINIMUM_MEMORY_GB
       : EXPERT_MAJOR_MINIMUM_MEMORY_GB;
     if (this.totalMemoryBytes < inspectedMinimumMemoryGb * 1024 ** 3) {
-      throw new Error(`DS4 ExpertMajor v2 requires at least ${inspectedMinimumMemoryGb} GiB of unified memory`);
+      throw new Error(`Hebrus ExpertMajor v2 requires at least ${inspectedMinimumMemoryGb} GiB of unified memory`);
     }
     const expertMajorManaged = isManagedExpertMajorV2Model(config, selectedModel.architecture);
     if (selectedModel.artifactFormat) {
@@ -2319,8 +2319,8 @@ export class RuntimeManager {
         "info",
         "dsbox",
         expertMajorManaged
-          ? "DS4 ExpertMajor v2 AUTO plan enabled; DSBox pressure/swap watchdog armed at 1 Hz."
-          : "DS4 adaptive cache planner enabled; DSBox pressure/swap watchdog armed at 1 Hz."
+          ? "Hebrus ExpertMajor v2 AUTO plan enabled; Hebrus Studio pressure/swap watchdog armed at 1 Hz."
+          : "Hebrus adaptive cache planner enabled; Hebrus Studio pressure/swap watchdog armed at 1 Hz."
       );
     }
 
@@ -2446,11 +2446,11 @@ export class RuntimeManager {
   }
 
   async oneClickStart(recommendedModel: CatalogModel | null = null): Promise<void> {
-    if (this.engine || this.task) throw new Error("DS4 is already busy with another operation");
+    if (this.engine || this.task) throw new Error("Hebrus is already busy with another operation");
     try {
       let state = await this.refresh();
       if (!state.modelPresent) {
-        throw new Error("No model is ready. Choose a GGUF file already on this Mac or explicitly start a download from the DSBox catalog.");
+        throw new Error("No model is ready. Choose a GGUF file already on this Mac or explicitly start a download from the Hebrus Studio catalog.");
       }
       const configured = this.store.get();
       const selectedModel = await this.validateLocalModel(configured.model.path, configured.model.path);

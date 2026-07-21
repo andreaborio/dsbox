@@ -46,27 +46,27 @@ const busyPhases: EnginePhase[] = ["preparing", "installing", "updating", "build
 
 const copyByPhase: Record<EnginePhase, { title: string; description: string; action: string }> = {
   uninstalled: {
-    title: "DSBox is off",
+    title: "Hebrus Studio is off",
     description: "Turn it on and I'll automatically prepare everything this Mac needs.",
-    action: "Turn on DSBox"
+    action: "Turn on Hebrus Studio"
   },
   idle: {
-    title: "DSBox is off",
+    title: "Hebrus Studio is off",
     description: "Your model and settings stay ready. Turn it on whenever you want to use it.",
-    action: "Turn on DSBox"
+    action: "Turn on Hebrus Studio"
   },
   preparing: {
-    title: "Preparing DSBox",
+    title: "Preparing Hebrus Studio",
     description: "Choosing the right model and settings for this Mac.",
     action: "Preparing"
   },
   installing: {
-    title: "Preparing DSBox",
+    title: "Preparing Hebrus Studio",
     description: "Setting up the engine for this Mac. This is only required the first time.",
     action: "Preparing"
   },
   updating: {
-    title: "Updating DSBox",
+    title: "Updating Hebrus Studio",
     description: "Applying updates without touching your local changes.",
     action: "Updating"
   },
@@ -86,17 +86,17 @@ const copyByPhase: Record<EnginePhase, { title: string; description: string; act
     action: "Starting"
   },
   running: {
-    title: "DSBox is on",
+    title: "Hebrus Studio is on",
     description: "The model is ready for chat and your coding agents.",
     action: "Turn off"
   },
   stopping: {
-    title: "Turning off DSBox",
+    title: "Turning off Hebrus Studio",
     description: "Waiting for the context to be saved before shutting down.",
     action: "Shutting down"
   },
   error: {
-    title: "DSBox couldn't start",
+    title: "Hebrus Studio couldn't start",
     description: "You can try again. Technical details are available below.",
     action: "Try again"
   }
@@ -135,7 +135,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
     : modelMissing
     ? {
         title: "Choose a model",
-        description: "Use a GGUF file already on your Mac, or choose exactly what to download from the DSBox catalog.",
+        description: "Use a GGUF file already on your Mac, or choose exactly what to download from the Hebrus Studio catalog.",
         action: "Choose model"
       }
     : phaseCopy;
@@ -183,7 +183,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
       onNavigate("models");
       return;
     }
-    void controller.action(runtime.phase === "running" ? "Turning off DSBox" : "Turning on DSBox", "/api/runtime/power").catch(() => undefined);
+    void controller.action(runtime.phase === "running" ? "Turning off Hebrus Studio" : "Turning on Hebrus Studio", "/api/runtime/power").catch(() => undefined);
   };
 
   const useCheckout = async (checkout: DiscoveredCheckout) => {
@@ -199,7 +199,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
   const recentLogs = snapshot.logs.slice(-8);
   const displayedCommand = useMemo(() => {
     if (!expertMajorManaged || ["starting", "running", "stopping"].includes(runtime.phase) || command.length < 2) return command;
-    return command.map((value, index) => index === 0 ? "<Unified ExpertMajor v2 DS4 checkout>/ds4-server" : value);
+    return command.map((value, index) => index === 0 ? "<Hebrus ExpertMajor v2 checkout>/hebrus-server" : value);
   }, [command, expertMajorManaged, runtime.phase]);
   const progress = activeDownload
     ? activeDownloadPercent!
@@ -270,8 +270,8 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
       <section className="automatic-card panel">
         <div className="automatic-card__head">
           <span className="automatic-icon"><ShieldCheck size={18} /></span>
-          <div><h3>Automatic setup</h3><p>DSBox has already selected the right settings for this Mac.</p></div>
-          <span className={dsboxChoiceActive ? "dsbox-recommended" : "chosen-by-user"}>{dsboxChoiceActive ? <><Check size={12} /> Recommended by DSBox</> : "Chosen by you"}</span>
+          <div><h3>Automatic setup</h3><p>Hebrus Studio has already selected the right settings for this Mac.</p></div>
+          <span className={dsboxChoiceActive ? "dsbox-recommended" : "chosen-by-user"}>{dsboxChoiceActive ? <><Check size={12} /> Recommended by Hebrus Studio</> : "Chosen by you"}</span>
         </div>
         <div className="automatic-facts">
           <div><span><Cpu size={15} /> This Mac</span><strong>{system.cpuModel.replace(/^Apple\s*/i, "")} · {formatBytes(system.totalMemoryBytes, 0)}</strong></div>
@@ -293,7 +293,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
 
       <section className="simple-metrics">
         <article className="panel"><span><MemoryStick size={16} /> Memory pressure</span><strong>{latest?.memoryPressurePercent === null || latest?.memoryPressurePercent === undefined ? "N/A" : `${Math.round(latest.memoryPressurePercent)}%`}</strong><small>{latest ? `${latest.memoryPressureLevel === "critical" ? "Critical" : latest.memoryPressureLevel === "warning" ? "Warning" : "Normal"} · ${formatBytes(latest.memoryUsedBytes)} committed` : "macOS cache tracked separately"}</small></article>
-        <article className="panel"><span><Gauge size={16} /> Speed</span><strong>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(2)} t/s` : "—"}</strong><small>{runtime.phase === "running" ? "waiting for a response" : "DSBox is off"}</small></article>
+        <article className="panel"><span><Gauge size={16} /> Speed</span><strong>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(2)} t/s` : "—"}</strong><small>{runtime.phase === "running" ? "waiting for a response" : "Hebrus Studio is off"}</small></article>
         <article className="panel"><span><HardDrive size={16} /> Free space</span><strong>{latest ? formatBytes(latest.diskFreeBytes) : "—"}</strong><small>on the model drive</small></article>
         <article className="panel"><span><Clock3 size={16} /> Uptime</span><strong>{formatDuration(runtime.startedAt)}</strong><small>{runtime.phase === "running" ? "current session" : "—"}</small></article>
       </section>
@@ -304,20 +304,20 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
           <div className="technical-overview">
             <div><span>Channel</span><strong>{runtime.gitBranch ?? config.repository.branch}</strong></div>
             <div><span>Version</span><strong>{runtime.gitHead ?? "not installed"}</strong></div>
-            <div><span>Mode</span><strong>{expertMajorManaged ? "DS4 AUTO" : config.streaming.enabled ? "Metal + SSD streaming" : "Metal resident"}</strong></div>
+            <div><span>Mode</span><strong>{expertMajorManaged ? "Hebrus AUTO" : config.streaming.enabled ? "Metal + SSD streaming" : "Metal resident"}</strong></div>
             <div><span>Context</span><strong>{config.server.contextTokens.toLocaleString("en-US")} tokens</strong></div>
           </div>
 
           {!expertMajorManaged && checkouts.length > 0 && (
             <div className="technical-block">
-              <h4><FolderGit2 size={14} /> DS4 installations found</h4>
-              {!checkoutChangeAllowed && <p className="technical-empty">Turn off DSBox before changing the engine checkout.</p>}
+              <h4><FolderGit2 size={14} /> Hebrus engine installations found</h4>
+              {!checkoutChangeAllowed && <p className="technical-empty">Turn off Hebrus Studio before changing the engine checkout.</p>}
               {checkouts.map((checkout) => (
                 <div className="technical-checkout" key={checkout.path}>
                   <div><code>{checkout.path}</code><small>{checkout.branch} · {checkout.head}</small></div>
                   {checkout.path === config.repository.directory
                     ? <span><Check size={12} /> {checkoutChangeAllowed ? "Selected" : "In use"}</span>
-                    : <button disabled={!checkoutChangeAllowed} title={checkoutChangeAllowed ? "Use this checkout" : "Turn off DSBox before changing checkout"} onClick={() => void useCheckout(checkout).catch(() => undefined)}>Use</button>}
+                    : <button disabled={!checkoutChangeAllowed} title={checkoutChangeAllowed ? "Use this checkout" : "Turn off Hebrus Studio before changing checkout"} onClick={() => void useCheckout(checkout).catch(() => undefined)}>Use</button>}
                 </div>
               ))}
             </div>

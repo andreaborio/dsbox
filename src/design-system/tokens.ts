@@ -1,5 +1,5 @@
 /**
- * Typed references to the DSBox design tokens defined in `tokens.css`.
+ * Typed references to the Hebrus Studio design tokens defined in `tokens.css`.
  *
  * Components should consume semantic tokens from this file. Raw palette values
  * deliberately remain in CSS so themes can change without a JavaScript rebuild.
@@ -185,7 +185,9 @@ export const tokens = {
   layout
 } as const;
 
-export type DSBoxTokens = typeof tokens;
+export type HebrusTokens = typeof tokens;
+/** @deprecated Compatibility alias; use HebrusTokens in new code. */
+export type DSBoxTokens = HebrusTokens;
 export type ColorTokens = typeof color;
 export type SpaceToken = keyof typeof space;
 export type RadiusToken = keyof typeof radius;

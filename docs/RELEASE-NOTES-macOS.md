@@ -1,6 +1,44 @@
-## DSBox 0.3.2
+# Hebrus Studio 0.4.0
 
-This closeout release pins DSBox to DwarfStar v0.2.0 at
+This is the first public **Hebrus Studio** bridge release. It renames the DSBox
+desktop experience and presents the inference engine as **Hebrus**, while
+deliberately preserving every persistent and wire-level identifier needed by
+existing installations.
+
+## Identity and upgrade safety
+
+- Publishes `Hebrus Studio.app` and
+  `Hebrus-Studio-0.4.0-macOS-arm64.dmg`.
+- Retains `com.dsbox.desktop`, `~/.dsbox`,
+  `~/Library/Application Support/DSBox`, `DSBOX_*`, `dsbox:*` local-storage
+  keys, control headers, SSE identifiers, and the `ds4-server` fallback.
+- Accepts both Hebrus and legacy DS4 runtime identities and fails closed on
+  malformed capability documents.
+- Documents the non-replacing Finder upgrade: quit DSBox, install and verify
+  Hebrus Studio, never run both bundles together, then remove the old app or
+  keep it offline only for rollback.
+
+## Runtime and model contract
+
+- Prefers `hebrus-server` and falls back to `ds4-server` during the bridge.
+- Preserves published model filenames, `dsbox.json`, `DS4EXPV2`,
+  `ds4.expert_major.v2`, and `DS4_*` variables; no weight is renamed or
+  republished for the product rename.
+- Pins the Qwen3.6 35B A3B MLX affine4/group-64 ExpertMajor v2 artifact by
+  revision, filename, byte size, SHA-256, and minimum runtime commit.
+- Keeps the app text-only and the control plane loopback-only.
+
+## Packaging status
+
+The community build is arm64, ad-hoc signed, and not notarized. Developer ID
+signing, notarization, stapling, and clean-machine Gatekeeper verification are
+separate launch gates and are not claimed by this release candidate.
+
+## Historical release notes
+
+### DSBox 0.3.2
+
+This closeout release pins Hebrus Studio to DwarfStar v0.2.0 at
 `57acfd408a3154851a0c59be432904300abb3b6c` and tightens the public model
 contract without adding startup flags.
 
@@ -26,7 +64,7 @@ contract without adding startup flags.
 - TypeScript, production build, theme guard, and the complete automated suite
   rerun after the final runtime and manifest pins.
 
-## DSBox 0.3.1
+### DSBox 0.3.1
 
 This release completes the ExpertMajor v2-only startup contract for Qwen3.6,
 DeepSeek V4 Flash, and GLM-5.2. All three families now use one DS4 `main`
@@ -49,7 +87,7 @@ validated model and live Mac memory state.
 - Shows DS4 AUTO consistently in Runtime, Settings, and Monitor instead of
   inferring a false in-memory mode from the intentionally minimal command.
 - Pins the current DeepSeek ExpertMajor v2 filename, size, and SHA-256 in the
-  example DSBox manifest.
+  example Hebrus Studio manifest.
 
 ### Release safety
 
@@ -89,5 +127,5 @@ the attached `SHA256SUMS.txt` file.
 
 1. Download the DMG, `SHA256SUMS.txt`, and `INSTALL-macOS.md`.
 2. Verify the checksum.
-3. Drag DSBox to Applications.
-4. Control-click DSBox and choose Open, or use Privacy & Security → Open Anyway.
+3. Drag Hebrus Studio to Applications.
+4. Control-click Hebrus Studio and choose Open, or use Privacy & Security → Open Anyway.

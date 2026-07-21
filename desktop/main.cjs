@@ -1,10 +1,14 @@
 const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const { mkdirSync } = require("node:fs");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
 const CONTROL_HOST = "127.0.0.1";
 const CONTROL_PORT = Number(process.env.DSBOX_PORT || 4242);
 const CONTROL_ORIGIN = `http://${CONTROL_HOST}:${CONTROL_PORT}`;
+const PRODUCT_NAME = "Hebrus Studio";
+const LEGACY_USER_DATA_PATH = path.join(app.getPath("appData"), "DSBox");
+const HAS_USER_DATA_OVERRIDE = process.argv.some((argument) => argument.startsWith("--user-data-dir="));
 
 let mainWindow = null;
 let httpServer = null;
@@ -13,7 +17,13 @@ let ownsControlPlane = false;
 let quitAfterShutdown = false;
 let shutdownPromise = null;
 
-app.setName("DSBox");
+// Keep Electron session/cache state at the pre-rename location so an in-place
+// upgrade from DSBox does not silently create a second user profile.
+if (!HAS_USER_DATA_OVERRIDE) {
+  mkdirSync(LEGACY_USER_DATA_PATH, { recursive: true });
+  app.setPath("userData", LEGACY_USER_DATA_PATH);
+}
+app.setName(PRODUCT_NAME);
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
@@ -52,14 +62,14 @@ async function startEmbeddedControlPlane() {
     server.once("error", reject);
   });
   ownsControlPlane = true;
-  services.runtime.log("success", "dsbox", `DSBox desktop is ready at ${CONTROL_ORIGIN}`);
+  services.runtime.log("success", "dsbox", `${PRODUCT_NAME} desktop is ready at ${CONTROL_ORIGIN}`);
   services.metrics.start();
 }
 
 function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
-      label: "DSBox",
+      label: PRODUCT_NAME,
       submenu: [
         { role: "about" },
         { type: "separator" },
@@ -84,7 +94,7 @@ function createMainWindow() {
     minHeight: 720,
     show: false,
     backgroundColor: "#f7f7f5",
-    title: "DSBox",
+    title: PRODUCT_NAME,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 15, y: 17 },
     webPreferences: {
@@ -135,12 +145,12 @@ if (hasSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     installApplicationMenu();
-    app.setAboutPanelOptions({ applicationName: "DSBox", applicationVersion: app.getVersion(), copyright: "Local AI on Apple Silicon" });
+    app.setAboutPanelOptions({ applicationName: PRODUCT_NAME, applicationVersion: app.getVersion(), copyright: "Local AI on Apple Silicon" });
     try {
       await startEmbeddedControlPlane();
       createMainWindow();
     } catch (error) {
-      dialog.showErrorBox("DSBox could not start", error instanceof Error ? error.message : String(error));
+      dialog.showErrorBox(`${PRODUCT_NAME} could not start`, error instanceof Error ? error.message : String(error));
       app.quit();
     }
   });

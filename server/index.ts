@@ -5,7 +5,7 @@ const port = Number(process.env.DSBOX_PORT || 4242);
 const host = process.env.DSBOX_HOST || "127.0.0.1";
 
 if (host !== "127.0.0.1" && host !== "localhost") {
-  throw new Error("DSBox refuses non-loopback binding. Use an SSH tunnel instead of exposing the control plane.");
+  throw new Error("Hebrus Studio refuses non-loopback binding. Use an SSH tunnel instead of exposing the control plane.");
 }
 
 const services = await createServices(port);
@@ -14,13 +14,13 @@ const server = app.listen(port, host, (error?: Error) => {
   if (error) {
     const code = (error as NodeJS.ErrnoException).code;
     process.stderr.write(
-      `DSBox could not listen on http://${host}:${port}${code ? ` (${code})` : ""}: ${error.message}\n`
+      `Hebrus Studio could not listen on http://${host}:${port}${code ? ` (${code})` : ""}: ${error.message}\n`
     );
     process.exitCode = 1;
     setImmediate(() => process.exit(1));
     return;
   }
-  services.runtime.log("success", "dsbox", `DSBox is ready at http://${host}:${port}`);
+  services.runtime.log("success", "dsbox", `Hebrus Studio is ready at http://${host}:${port}`);
   services.metrics.start();
   if (process.env.DSBOX_OPEN_BROWSER === "1" && process.platform === "darwin") {
     execFile("open", [`http://${host}:${port}`], () => undefined);

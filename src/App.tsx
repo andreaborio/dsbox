@@ -167,7 +167,7 @@ export default function App() {
 
   useEffect(() => {
     const title = view === "chat" ? chatTitle : viewLabels[view];
-    document.title = `${title} · DSBox`;
+    document.title = `${title} · Hebrus Studio`;
   }, [chatTitle, view]);
 
   useEffect(() => {
@@ -206,9 +206,9 @@ export default function App() {
     return (
       <div className="boot-screen">
         <BrandMark />
-        <div className="boot-screen__wordmark">DSBox</div>
+        <div className="boot-screen__wordmark">Hebrus Studio</div>
         <div className="boot-screen__line"><span /></div>
-        <p>Opening DSBox…</p>
+        <p>Opening Hebrus Studio…</p>
         {controller.error && <div className="boot-screen__error">{controller.error}</div>}
       </div>
     );
@@ -232,7 +232,8 @@ export default function App() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -6 }}
               >
-                <strong>DSBox</strong>
+                <strong>Hebrus Studio</strong>
+                <span>Powered by Hebrus</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -299,7 +300,7 @@ export default function App() {
             </span>
             <div>
               <strong>{snapshot.runtime.modelPresent ? formatModelName(snapshot.config.model.id) : "Choose a model"}</strong>
-              <span>{activeDownload ? downloadStageLabel(activeDownload.stage) : interruptedDownload ? downloadStageLabel(interruptedDownload.stage) : snapshot.runtime.phase === "running" ? "Ready" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "DSBox is off" : "Choose a local file or catalog model")}</span>
+              <span>{activeDownload ? downloadStageLabel(activeDownload.stage) : interruptedDownload ? downloadStageLabel(interruptedDownload.stage) : snapshot.runtime.phase === "running" ? "Ready" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "Hebrus Studio is off" : "Choose a local file or catalog model")}</span>
             </div>
           </div>
           <ChevronRight size={15} />
@@ -368,7 +369,7 @@ export default function App() {
       >
         <p className="navigation-guard-copy">
           {settingsGuardRef.current?.requiresRestart
-            ? "Save and restart DSBox before leaving, or discard the changes you made."
+            ? "Save and restart Hebrus Studio before leaving, or discard the changes you made."
             : "Save your changes before leaving, or discard them and continue."}
         </p>
       </Modal>
