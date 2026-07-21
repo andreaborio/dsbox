@@ -20,6 +20,10 @@ existing installations.
 - Documents the non-replacing Finder upgrade: quit DSBox, install and verify
   Hebrus Studio, never run both bundles together, then remove the old app or
   keep it offline only for rollback.
+- Adds a real packaged-app gate for DSBox -> Hebrus Studio -> DSBox rollback,
+  using disposable state and profiles and no model inference. It verifies that
+  legacy settings, model/download inventory, theme, onboarding, view, model
+  disclosure, and conversation state remain readable in both directions.
 
 ## Runtime and model contract
 

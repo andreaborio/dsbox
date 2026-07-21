@@ -40,6 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
@@ -49,3 +50,5 @@ jobs:
       - run: npm run pack:mac
       - name: Verify packaged application contract
         run: npm run verify:mac -- "release/mac-arm64/Hebrus Studio.app"
+      - name: Verify packaged legacy upgrade and rollback
+        run: npm run verify:upgrade-rollback:e2e

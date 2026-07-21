@@ -25,6 +25,7 @@
     "pack:mac": "npm run build:icon && npm run build && electron-builder --mac dir --arm64",
     "dist:mac": "npm run build:icon && npm run build && electron-builder --mac dmg --arm64 --publish never",
     "verify:mac": "bash scripts/verify-macos-release.sh",
+    "verify:upgrade-rollback:e2e": "bash scripts/run-upgrade-rollback-e2e.sh",
     "start": "node dist-server/server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -47,6 +48,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
