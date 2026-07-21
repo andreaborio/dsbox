@@ -1,22 +1,1050 @@
 {
-  "schemaVersion": 1,
-  "publicProductName": "Hebrus Studio",
-  "publicEngineName": "Hebrus",
-  "legacyLiteral": "DSBox",
-  "allowlist": {
-    "LICENSE": { "maxOccurrences": 1, "reason": "preserved historical copyright" },
-    "README.md": { "maxOccurrences": 4, "reason": "upgrade and rollback guidance" },
-    "desktop/main.cjs": { "maxOccurrences": 2, "reason": "legacy Electron user-data path" },
-    "docs/INSTALL-macOS.md": { "maxOccurrences": 5, "reason": "upgrade and rollback guidance" },
-    "docs/PACKAGING-macOS.md": { "maxOccurrences": 8, "reason": "packaging and packaged rollback compatibility contract" },
-    "docs/RELEASE-NOTES-macOS.md": { "maxOccurrences": 7, "reason": "migration, rollback verification, and historical release names" },
-    "scripts/run-upgrade-rollback-e2e.sh": { "maxOccurrences": 5, "reason": "frozen old-package build and rollback labels" },
-    "scripts/verify-upgrade-rollback-e2e.mjs": { "maxOccurrences": 12, "reason": "packaged old-product compatibility assertions" },
-    "scripts/macos-package-contract.json": { "maxOccurrences": 2, "reason": "machine-readable compatibility contract" },
-    "src/design-system/index.ts": { "maxOccurrences": 1, "reason": "deprecated source compatibility alias" },
-    "src/design-system/tokens.ts": { "maxOccurrences": 1, "reason": "deprecated source compatibility alias" },
-    "tests/fixtures/hebrus-runtime-compatibility.ts": { "maxOccurrences": 4, "reason": "immutable pre-rename path fixture" },
-    "tests/hebrus-studio-brand.test.ts": { "maxOccurrences": 4, "reason": "compatibility assertions" },
-    "tests/macos-package-contract.test.ts": { "maxOccurrences": 4, "reason": "package migration assertions" }
-  }
+  "schemaVersion": 2,
+  "identityContract": {
+    "publicProductName": "Hebrus Studio",
+    "publicEngineName": "Hebrus"
+  },
+  "scope": {
+    "tokens": [
+      "DSBox",
+      "dsbox",
+      "DS4",
+      "ds4",
+      "DwarfStar"
+    ],
+    "excludedDirectories": [
+      ".git",
+      "coverage",
+      "dist",
+      "dist-server",
+      "node_modules",
+      "release"
+    ],
+    "excludedPaths": [
+      ".git",
+      "scripts/brand-boundary.json",
+      "scripts/check-brand-boundaries.mjs"
+    ]
+  },
+  "classificationDefinitions": {
+    "serialized/permanent": "Stable identifiers persisted in files, artifacts, preferences, or wire formats; change only with an explicit migration.",
+    "compatibility": "Legacy names accepted or documented so existing packages, paths, commands, integrations, and runtimes continue to work.",
+    "historical-attribution": "Names retained to preserve copyright, provenance, release history, and the origin of the fork.",
+    "migration-pending": "Internal names with no intended compatibility promise; reduce them through atomic, tested renames."
+  },
+  "refreshPolicy": {
+    "reductions": "node scripts/check-brand-boundaries.mjs --refresh",
+    "existingIncrease": "node scripts/check-brand-boundaries.mjs --refresh --accept-increase PATH:TOKEN",
+    "newGroup": "node scripts/check-brand-boundaries.mjs --refresh --classify 'PATH:TOKEN=CLASSIFICATION|REASON'"
+  },
+  "entries": [
+    {
+      "path": ".github/pull_request_template.md",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Contribution routing preserves the upstream engine name while the fork transition is active.",
+      "maximum": 1
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "token": "dsbox",
+      "classification": "migration-pending",
+      "reason": "Internal CI concurrency namespace remains to be renamed mechanically.",
+      "maximum": 1
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Contributor commands and upstream references retain discoverable legacy engine aliases.",
+      "maximum": 2
+    },
+    {
+      "path": "LICENSE",
+      "token": "DSBox",
+      "classification": "historical-attribution",
+      "reason": "Historical copyright attribution preserves the pre-Hebrus product name.",
+      "maximum": 1
+    },
+    {
+      "path": "README.md",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
+      "maximum": 4
+    },
+    {
+      "path": "README.md",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
+      "maximum": 12
+    },
+    {
+      "path": "README.md",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
+      "maximum": 3
+    },
+    {
+      "path": "README.md",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
+      "maximum": 13
+    },
+    {
+      "path": "SECURITY.md",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Security guidance names supported legacy installations, paths, and engine identities.",
+      "maximum": 2
+    },
+    {
+      "path": "SECURITY.md",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Security guidance names supported legacy installations, paths, and engine identities.",
+      "maximum": 1
+    },
+    {
+      "path": "SECURITY.md",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Security guidance names supported legacy installations, paths, and engine identities.",
+      "maximum": 1
+    },
+    {
+      "path": "desktop/main.cjs",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Electron keeps legacy user-data paths readable across packaged upgrades and rollbacks.",
+      "maximum": 2
+    },
+    {
+      "path": "desktop/main.cjs",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Electron keeps legacy user-data paths readable across packaged upgrades and rollbacks.",
+      "maximum": 1
+    },
+    {
+      "path": "docs/INSTALL-macOS.md",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Install, upgrade, and rollback guidance documents legacy package and path compatibility.",
+      "maximum": 5
+    },
+    {
+      "path": "docs/INSTALL-macOS.md",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Install, upgrade, and rollback guidance documents legacy package and path compatibility.",
+      "maximum": 1
+    },
+    {
+      "path": "docs/PACKAGING-macOS.md",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Packaging guidance documents stable legacy identifiers required by upgrades and rollbacks.",
+      "maximum": 8
+    },
+    {
+      "path": "docs/PACKAGING-macOS.md",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Packaging guidance documents stable legacy identifiers required by upgrades and rollbacks.",
+      "maximum": 4
+    },
+    {
+      "path": "docs/PACKAGING-macOS.md",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Packaging guidance documents stable legacy identifiers required by upgrades and rollbacks.",
+      "maximum": 2
+    },
+    {
+      "path": "docs/RELEASE-NOTES-macOS.md",
+      "token": "DSBox",
+      "classification": "historical-attribution",
+      "reason": "Release history preserves shipped product, engine, and predecessor names.",
+      "maximum": 7
+    },
+    {
+      "path": "docs/RELEASE-NOTES-macOS.md",
+      "token": "dsbox",
+      "classification": "historical-attribution",
+      "reason": "Release history preserves shipped product, engine, and predecessor names.",
+      "maximum": 5
+    },
+    {
+      "path": "docs/RELEASE-NOTES-macOS.md",
+      "token": "DS4",
+      "classification": "historical-attribution",
+      "reason": "Release history preserves shipped product, engine, and predecessor names.",
+      "maximum": 10
+    },
+    {
+      "path": "docs/RELEASE-NOTES-macOS.md",
+      "token": "ds4",
+      "classification": "historical-attribution",
+      "reason": "Release history preserves shipped product, engine, and predecessor names.",
+      "maximum": 4
+    },
+    {
+      "path": "docs/RELEASE-NOTES-macOS.md",
+      "token": "DwarfStar",
+      "classification": "historical-attribution",
+      "reason": "Release history preserves shipped product, engine, and predecessor names.",
+      "maximum": 1
+    },
+    {
+      "path": "docs/agentic-chat-roadmap.md",
+      "token": "DS4",
+      "classification": "historical-attribution",
+      "reason": "Historical design record preserves predecessor-engine terminology.",
+      "maximum": 1
+    },
+    {
+      "path": "docs/agentic-chat-roadmap.md",
+      "token": "ds4",
+      "classification": "historical-attribution",
+      "reason": "Historical design record preserves predecessor-engine terminology.",
+      "maximum": 1
+    },
+    {
+      "path": "docs/design-system.md",
+      "token": "dsbox",
+      "classification": "migration-pending",
+      "reason": "Design-system documentation tracks the legacy internal CSS namespace pending cleanup.",
+      "maximum": 3
+    },
+    {
+      "path": "docs/dsbox-manifest-v1.json",
+      "token": "DS4",
+      "classification": "serialized/permanent",
+      "reason": "Published v1 model-manifest identifiers are an immutable serialized contract.",
+      "maximum": 5
+    },
+    {
+      "path": "docs/dsbox-manifest-v1.json",
+      "token": "ds4",
+      "classification": "serialized/permanent",
+      "reason": "Published v1 model-manifest identifiers are an immutable serialized contract.",
+      "maximum": 3
+    },
+    {
+      "path": "electron-builder.yml",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Stable application identifier preserves in-place upgrades for existing installations.",
+      "maximum": 1
+    },
+    {
+      "path": "package.json",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Legacy engine keyword preserves package and repository discoverability.",
+      "maximum": 1
+    },
+    {
+      "path": "scripts/macos-package-contract.json",
+      "token": "DSBox",
+      "classification": "serialized/permanent",
+      "reason": "Machine-readable package migration identifiers are a frozen release contract.",
+      "maximum": 2
+    },
+    {
+      "path": "scripts/macos-package-contract.json",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Machine-readable package migration identifiers are a frozen release contract.",
+      "maximum": 3
+    },
+    {
+      "path": "scripts/macos-package-contract.json",
+      "token": "ds4",
+      "classification": "serialized/permanent",
+      "reason": "Machine-readable package migration identifiers are a frozen release contract.",
+      "maximum": 5
+    },
+    {
+      "path": "scripts/run-upgrade-rollback-e2e.sh",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Upgrade harness retains legacy package labels needed to exercise old installers.",
+      "maximum": 5
+    },
+    {
+      "path": "scripts/verify-macos-release.sh",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Release verifier recognizes legacy package, runtime, and artifact identifiers.",
+      "maximum": 2
+    },
+    {
+      "path": "scripts/verify-macos-release.sh",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Release verifier recognizes legacy package, runtime, and artifact identifiers.",
+      "maximum": 5
+    },
+    {
+      "path": "scripts/verify-upgrade-rollback-e2e.mjs",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Upgrade assertions retain legacy application paths, labels, and runtime identifiers.",
+      "maximum": 12
+    },
+    {
+      "path": "scripts/verify-upgrade-rollback-e2e.mjs",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Upgrade assertions retain legacy application paths, labels, and runtime identifiers.",
+      "maximum": 10
+    },
+    {
+      "path": "scripts/verify-upgrade-rollback-e2e.mjs",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Upgrade assertions retain legacy application paths, labels, and runtime identifiers.",
+      "maximum": 3
+    },
+    {
+      "path": "server/agent.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Agent bridge accepts the historical capability-tool and engine terminology.",
+      "maximum": 1
+    },
+    {
+      "path": "server/agent.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Agent bridge accepts the historical capability-tool and engine terminology.",
+      "maximum": 1
+    },
+    {
+      "path": "server/app.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "HTTP headers, event names, error codes, and log-source values remain wire-compatible.",
+      "maximum": 9
+    },
+    {
+      "path": "server/catalog.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Published repository names, manifest filenames, and ExpertMajor artifact identifiers are serialized contracts.",
+      "maximum": 3
+    },
+    {
+      "path": "server/catalog.ts",
+      "token": "DS4",
+      "classification": "serialized/permanent",
+      "reason": "Published repository names, manifest filenames, and ExpertMajor artifact identifiers are serialized contracts.",
+      "maximum": 8
+    },
+    {
+      "path": "server/catalog.ts",
+      "token": "ds4",
+      "classification": "serialized/permanent",
+      "reason": "Published repository names, manifest filenames, and ExpertMajor artifact identifiers are serialized contracts.",
+      "maximum": 11
+    },
+    {
+      "path": "server/config.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Environment variables, paths, repository URLs, filenames, and generated keys remain backward-compatible.",
+      "maximum": 3
+    },
+    {
+      "path": "server/config.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Environment variables, paths, repository URLs, filenames, and generated keys remain backward-compatible.",
+      "maximum": 4
+    },
+    {
+      "path": "server/gguf-compatibility.ts",
+      "token": "DS4",
+      "classification": "serialized/permanent",
+      "reason": "GGUF magic, tensor names, metadata values, and diagnostic codes are serialized artifact contracts.",
+      "maximum": 22
+    },
+    {
+      "path": "server/gguf-compatibility.ts",
+      "token": "ds4",
+      "classification": "serialized/permanent",
+      "reason": "GGUF magic, tensor names, metadata values, and diagnostic codes are serialized artifact contracts.",
+      "maximum": 7
+    },
+    {
+      "path": "server/index.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Existing log-source value remains compatible with monitor event consumers.",
+      "maximum": 1
+    },
+    {
+      "path": "server/runtime.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Runtime discovery accepts legacy binaries, repositories, environment variables, capabilities, and paths.",
+      "maximum": 30
+    },
+    {
+      "path": "server/runtime.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Runtime discovery accepts legacy binaries, repositories, environment variables, capabilities, and paths.",
+      "maximum": 22
+    },
+    {
+      "path": "server/runtime.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Runtime discovery accepts legacy binaries, repositories, environment variables, capabilities, and paths.",
+      "maximum": 31
+    },
+    {
+      "path": "server/text-only.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Runtime bridge documentation retains the legacy engine term for protocol context.",
+      "maximum": 1
+    },
+    {
+      "path": "src/components/DsboxOrb.tsx",
+      "token": "dsbox",
+      "classification": "migration-pending",
+      "reason": "Internal component CSS selectors remain to be renamed as one atomic UI change.",
+      "maximum": 10
+    },
+    {
+      "path": "src/components/ModelDownloadDialog.tsx",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Model paths and ExpertMajor helpers retain compatibility with legacy storage and artifact identifiers.",
+      "maximum": 1
+    },
+    {
+      "path": "src/components/ModelDownloadDialog.tsx",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Model paths and ExpertMajor helpers retain compatibility with legacy storage and artifact identifiers.",
+      "maximum": 2
+    },
+    {
+      "path": "src/components/Onboarding.tsx",
+      "token": "ds4",
+      "classification": "migration-pending",
+      "reason": "Legacy engine wording remains on a public onboarding surface pending copy migration.",
+      "maximum": 1
+    },
+    {
+      "path": "src/design-system/index.ts",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Deprecated type export keeps source consumers compatible during migration.",
+      "maximum": 1
+    },
+    {
+      "path": "src/design-system/primitives.css",
+      "token": "dsbox",
+      "classification": "migration-pending",
+      "reason": "Internal cascade-layer names remain to be renamed as one atomic CSS change.",
+      "maximum": 4
+    },
+    {
+      "path": "src/design-system/themes.css",
+      "token": "dsbox",
+      "classification": "migration-pending",
+      "reason": "Internal cascade-layer names remain to be renamed as one atomic CSS change.",
+      "maximum": 1
+    },
+    {
+      "path": "src/design-system/tokens.css",
+      "token": "dsbox",
+      "classification": "migration-pending",
+      "reason": "Internal cascade-layer names remain to be renamed as one atomic CSS change.",
+      "maximum": 1
+    },
+    {
+      "path": "src/design-system/tokens.ts",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Deprecated type alias keeps source consumers compatible during migration.",
+      "maximum": 1
+    },
+    {
+      "path": "src/hooks/useDsbox.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "SSE client continues listening for the established legacy event name.",
+      "maximum": 1
+    },
+    {
+      "path": "src/lib/api.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Control requests retain the established compatibility header.",
+      "maximum": 1
+    },
+    {
+      "path": "src/lib/chat-session.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Persisted chat keys and established control headers retain their serialized legacy namespace.",
+      "maximum": 5
+    },
+    {
+      "path": "src/lib/chat-session.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Persisted chat keys, control headers, and legacy engine semantics remain compatible.",
+      "maximum": 2
+    },
+    {
+      "path": "src/lib/local-models.ts",
+      "token": "ds4",
+      "classification": "serialized/permanent",
+      "reason": "Persisted local-model compatibility codes retain their legacy serialized values.",
+      "maximum": 1
+    },
+    {
+      "path": "src/lib/model-format.ts",
+      "token": "ds4",
+      "classification": "serialized/permanent",
+      "reason": "ExpertMajor artifact format and tensor identifiers are serialized model contracts.",
+      "maximum": 6
+    },
+    {
+      "path": "src/lib/models-disclosure-preference.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Existing preference key is retained so user state survives the rename.",
+      "maximum": 1
+    },
+    {
+      "path": "src/lib/onboarding-preference.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Existing preference key is retained so user state survives the rename.",
+      "maximum": 1
+    },
+    {
+      "path": "src/lib/view-preference.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Existing preference key is retained so user state survives the rename.",
+      "maximum": 1
+    },
+    {
+      "path": "src/styles.css",
+      "token": "dsbox",
+      "classification": "migration-pending",
+      "reason": "Internal selectors and comments remain to be renamed with their component consumers.",
+      "maximum": 33
+    },
+    {
+      "path": "src/styles.css",
+      "token": "DS4",
+      "classification": "migration-pending",
+      "reason": "Internal selectors and comments remain to be renamed with their component consumers.",
+      "maximum": 1
+    },
+    {
+      "path": "src/theme/registry.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Persisted theme identifiers retain their legacy values for user-state compatibility.",
+      "maximum": 5
+    },
+    {
+      "path": "src/theme/runtime.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Persisted theme key and identifiers retain their legacy serialized values.",
+      "maximum": 2
+    },
+    {
+      "path": "src/types.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Shared wire values retain legacy log-source, artifact-format, and compatibility-code identifiers.",
+      "maximum": 1
+    },
+    {
+      "path": "src/types.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Shared wire types retain legacy log sources, artifact identifiers, and compatibility codes.",
+      "maximum": 2
+    },
+    {
+      "path": "src/types.ts",
+      "token": "ds4",
+      "classification": "serialized/permanent",
+      "reason": "Shared wire values retain legacy log-source, artifact-format, and compatibility-code identifiers.",
+      "maximum": 4
+    },
+    {
+      "path": "src/views/AgentsView.tsx",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Copyable agent configuration retains established provider aliases and runtime integration names.",
+      "maximum": 7
+    },
+    {
+      "path": "src/views/ChatView.tsx",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Internal cross-view event name remains compatible with existing emitters.",
+      "maximum": 1
+    },
+    {
+      "path": "src/views/ModelsView.tsx",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Model UI consumes stable ExpertMajor artifact identifiers and legacy CSS selectors.",
+      "maximum": 1
+    },
+    {
+      "path": "src/views/ModelsView.tsx",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Model UI consumes stable ExpertMajor artifact identifiers and legacy CSS selectors.",
+      "maximum": 3
+    },
+    {
+      "path": "src/views/MonitorView.tsx",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Monitor filters and trace guidance consume established runtime source and engine values.",
+      "maximum": 1
+    },
+    {
+      "path": "src/views/MonitorView.tsx",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Monitor filters and trace guidance consume established runtime source and engine values.",
+      "maximum": 2
+    },
+    {
+      "path": "src/views/RuntimeView.tsx",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Runtime UI recognizes the legacy model filename and existing recommendation selector.",
+      "maximum": 4
+    },
+    {
+      "path": "src/views/RuntimeView.tsx",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Runtime UI recognizes the legacy model filename and existing recommendation selector.",
+      "maximum": 1
+    },
+    {
+      "path": "src/views/SettingsView.tsx",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Settings preserve legacy checkout, binary, environment-variable, and integration guidance.",
+      "maximum": 2
+    },
+    {
+      "path": "src/views/SettingsView.tsx",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Settings preserve legacy checkout, binary, environment-variable, and integration guidance.",
+      "maximum": 2
+    },
+    {
+      "path": "tests/agent.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 14
+    },
+    {
+      "path": "tests/app.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 37
+    },
+    {
+      "path": "tests/app.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 9
+    },
+    {
+      "path": "tests/app.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 14
+    },
+    {
+      "path": "tests/brand-boundary-audit.test.ts",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 3
+    },
+    {
+      "path": "tests/brand-boundary-audit.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 8
+    },
+    {
+      "path": "tests/brand-boundary-audit.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 5
+    },
+    {
+      "path": "tests/brand-boundary-audit.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 7
+    },
+    {
+      "path": "tests/brand-boundary-audit.test.ts",
+      "token": "DwarfStar",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/catalog.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 21
+    },
+    {
+      "path": "tests/catalog.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 35
+    },
+    {
+      "path": "tests/catalog.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 38
+    },
+    {
+      "path": "tests/chat-session.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 2
+    },
+    {
+      "path": "tests/chat-session.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/config.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/config.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 3
+    },
+    {
+      "path": "tests/fixtures/hebrus-runtime-compatibility.ts",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 4
+    },
+    {
+      "path": "tests/fixtures/hebrus-runtime-compatibility.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 6
+    },
+    {
+      "path": "tests/fixtures/hebrus-runtime-compatibility.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 10
+    },
+    {
+      "path": "tests/fixtures/legacy-v0.3.2-state.json",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "Immutable pre-Hebrus application state freezes persisted legacy identifiers.",
+      "maximum": 6
+    },
+    {
+      "path": "tests/fixtures/qwen-dsbox-manifest-7bf9c3f.json",
+      "token": "DS4",
+      "classification": "serialized/permanent",
+      "reason": "Immutable published model manifest freezes serialized legacy artifact identifiers.",
+      "maximum": 4
+    },
+    {
+      "path": "tests/fixtures/qwen-dsbox-manifest-7bf9c3f.json",
+      "token": "ds4",
+      "classification": "serialized/permanent",
+      "reason": "Immutable published model manifest freezes serialized legacy artifact identifiers.",
+      "maximum": 3
+    },
+    {
+      "path": "tests/gguf-compatibility.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/gguf-compatibility.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 22
+    },
+    {
+      "path": "tests/gguf-compatibility.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 7
+    },
+    {
+      "path": "tests/hebrus-studio-brand.test.ts",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 4
+    },
+    {
+      "path": "tests/hebrus-studio-brand.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 6
+    },
+    {
+      "path": "tests/hebrus-studio-upgrade.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 2
+    },
+    {
+      "path": "tests/helpers/gguf.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 10
+    },
+    {
+      "path": "tests/helpers/gguf.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 4
+    },
+    {
+      "path": "tests/local-models.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 4
+    },
+    {
+      "path": "tests/macos-package-contract.test.ts",
+      "token": "DSBox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 4
+    },
+    {
+      "path": "tests/macos-package-contract.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 4
+    },
+    {
+      "path": "tests/macos-package-contract.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 5
+    },
+    {
+      "path": "tests/metrics.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/model-downloads.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/model-downloads.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 6
+    },
+    {
+      "path": "tests/model-downloads.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 3
+    },
+    {
+      "path": "tests/model-format.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/model-format.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 3
+    },
+    {
+      "path": "tests/model-format.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 8
+    },
+    {
+      "path": "tests/model-hardware-advisor.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 3
+    },
+    {
+      "path": "tests/model-hardware-advisor.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 3
+    },
+    {
+      "path": "tests/runtime-bridge-smoke.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 2
+    },
+    {
+      "path": "tests/runtime-bridge-smoke.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 12
+    },
+    {
+      "path": "tests/runtime-bridge-smoke.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 24
+    },
+    {
+      "path": "tests/runtime.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 17
+    },
+    {
+      "path": "tests/runtime.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 11
+    },
+    {
+      "path": "tests/runtime.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 78
+    },
+    {
+      "path": "tests/server-index.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/text-only.test.ts",
+      "token": "DS4",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 1
+    },
+    {
+      "path": "tests/theme-contrast.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 2
+    },
+    {
+      "path": "tests/theme-registry.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 9
+    },
+    {
+      "path": "tests/theme-runtime.test.ts",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
+      "maximum": 12
+    },
+    {
+      "path": "vite.config.ts",
+      "token": "dsbox",
+      "classification": "migration-pending",
+      "reason": "Internal development-plugin namespace remains to be renamed mechanically.",
+      "maximum": 1
+    }
+  ]
 }
