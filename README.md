@@ -163,9 +163,12 @@ release URL and these checksum-first installation steps:
    ```
 
 3. Open the DMG and drag **Hebrus Studio** to **Applications**.
-4. The community build is ad-hoc signed but not notarized. On first launch, Control-click **Hebrus Studio**, choose **Open**, then confirm **Open**.
+4. Confirm that macOS identifies the published app as Developer ID signed and
+   notarized. Public release readiness cannot pass without both checks.
 
-The checksum-first Gatekeeper and “app is damaged” recovery flow is documented in [`docs/INSTALL-macOS.md`](docs/INSTALL-macOS.md). Only bypass quarantine for an artifact whose checksum you have verified.
+The checksum-first verification flow is documented in
+[`docs/INSTALL-macOS.md`](docs/INSTALL-macOS.md). A Gatekeeper rejection is a
+release failure; the public instructions do not ask users to bypass it.
 
 There is no automatic app updater yet. When upgrading from DSBox, quit the old
 app first: Finder will not replace `DSBox.app` with the differently named
@@ -275,7 +278,9 @@ The table below uses the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF and the i
 - Hebrus Studio is currently text-only. Image, audio, video, and file parts are rejected before they can reach Hebrus.
 - Web search is not fully offline. In Agent mode **Web on** is the default persistent preference, so the model can choose `web_search` without a per-message authorization step; the visible control is an explicit opt-out. Turning it off blocks the executor before any network request, including when an older web call remains in thread history. Standard chat separately routes explicit or clearly time-sensitive requests through the local search classifier. When enabled, a normalized query of at most 400 characters is sent to DuckDuckGo Lite, and search failure falls back to local inference.
 - Metal utilization remains `N/A` because macOS does not expose a reliable per-process value without elevated tooling. Hebrus Studio does not use `sudo` or `powermetrics`.
-- The community DMG is ad-hoc signed and not notarized. A fully trusted first launch requires Apple Developer ID signing and notarization.
+- Local development DMGs are ad-hoc signed and never presented as public
+  releases. The public workflow remains blocked until Developer ID signing,
+  notarization, stapling, and Gatekeeper verification pass.
 
 ## Architecture
 
@@ -324,29 +329,39 @@ npm test
 npm run build
 ```
 
-Build and verify the macOS artifacts:
+Create an explicitly non-release local development bundle:
 
 ```sh
 npm run pack:mac
-npm run verify:mac -- "release/mac-arm64/Hebrus Studio.app"
-npm run dist:mac
-npm run verify:mac
+npm run verify:mac:dev -- "release/mac-arm64/Hebrus Studio.app"
+npm run dist:mac:dev
+npm run verify:mac:dev -- "release/Hebrus-Studio-0.4.0-macOS-arm64.dmg"
 ```
 
-The verifier freezes the current Hebrus Studio bundle identity and confirms that the
-Electron package does not embed a Hebrus or legacy DS4 engine. See the
-[macOS packaging contract](docs/PACKAGING-macOS.md) for the exact checks and
-the optional isolated launch smoke.
+This ad-hoc bundle is for local development only and must not be published. The
+release verifier intentionally rejects its development provenance. The tagged
+workflow creates the public candidate only after strict readiness, embeds
+clean-tree exact-commit provenance, and verifies identity, legal notices,
+architecture, icon, external engine delivery, and the final checksums. See the
+[macOS packaging contract](docs/PACKAGING-macOS.md) for the complete lane.
+If Gatekeeper quarantines a locally built ad-hoc copy, first Control-click it in
+Finder and choose **Open**. The
+[installation guide](docs/INSTALL-macOS.md#local-development-build) records the
+single-app `xattr` exception. That exception is only for a bundle you built or
+received through a trusted development channel; it is never the public release
+path.
 
 State-compatibility changes must also pass the real packaged sequence:
 
 ```sh
-npm run verify:upgrade-rollback:e2e
+npm run verify:upgrade-rollback:e2e -- --source
 ```
 
-That gate builds the frozen DSBox checkpoint and the current Hebrus Studio
+Normal CI builds the frozen DSBox checkpoint and the current Hebrus Studio
 commit, then launches DSBox -> Hebrus Studio -> DSBox against one disposable
-legacy profile. It never starts model inference.
+legacy profile. The release lane instead runs `--release` after the final DMG
+and SBOM exist, mounts the app from that DMG, and emits a hash-bound JSON report
+plus log. Neither mode starts model inference.
 
 Normal CI reports release readiness without failing on known external work:
 
@@ -357,9 +372,13 @@ npm run release:readiness
 The tag workflow instead runs `npm run release:readiness:strict` before any
 application build. A matching version tag cannot currently build or publish a
 public release because every external gate remains explicitly pending. Once
-all gates carry reviewed evidence, that workflow will also generate and
-validate the versioned CycloneDX SBOM from `package-lock.json` before publishing
-the DMG, SBOM, SHA-256 file, and installation guide.
+all gates carry reviewed evidence, the workflow requires a clean tagged commit,
+embeds its provenance in the app and SBOM, enriches every SBOM component from
+installed package license metadata, publishes a license inventory, tests the
+app mounted from the final DMG, and hashes the DMG, SBOM, inventory, E2E report,
+and E2E log before publication. The public artifact must be Developer ID signed,
+notarized, stapled, and accepted by Gatekeeper; ad-hoc packaging remains a
+separate local-development lane.
 
 ## Security
 

@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+PROVENANCE_MODE="release"
+if [[ "${1:-}" == "--development" ]]; then
+  PROVENANCE_MODE="development"
+  shift
+fi
+
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION=$(node -p "require('$ROOT_DIR/package.json').version")
 CONTRACT="$ROOT_DIR/scripts/macos-package-contract.json"
@@ -39,6 +45,10 @@ if [[ ! -e "$ARTIFACT" ]]; then
   echo "Package not found: $ARTIFACT" >&2
   exit 1
 fi
+if [[ "$PROVENANCE_MODE" == "development" && "${DSBOX_VERIFY_CHECKSUMS:-0}" == "1" ]]; then
+  echo "Development package verification cannot authorize release checksums." >&2
+  exit 1
+fi
 
 case "$ARTIFACT" in
   *.dmg)
@@ -52,15 +62,32 @@ case "$ARTIFACT" in
         echo "Checksum file is missing: $CHECKSUM_FILE" >&2
         exit 1
       }
-      (cd "$(dirname "$ARTIFACT")" && shasum -a 256 -c SHA256SUMS.txt)
+      node "$ROOT_DIR/scripts/validate-release-checksums.mjs" "$(dirname "$ARTIFACT")"
     fi
     echo "Verifying disk image structure..."
     hdiutil verify "$ARTIFACT" >/dev/null
+    if [[ "$PROVENANCE_MODE" == "release" ]]; then
+      codesign --verify --verbose=2 "$ARTIFACT"
+      DMG_SIGNATURE_DETAILS=$(codesign -dv --verbose=4 "$ARTIFACT" 2>&1)
+      grep -q "^Authority=Developer ID Application:" <<<"$DMG_SIGNATURE_DETAILS" || {
+        echo "Release DMG is not signed with a Developer ID Application certificate." >&2
+        exit 1
+      }
+      grep -Eq "^TeamIdentifier=[A-Z0-9]{10}$" <<<"$DMG_SIGNATURE_DETAILS" || {
+        echo "Release DMG has no valid Apple signing team identifier." >&2
+        exit 1
+      }
+      xcrun stapler validate "$ARTIFACT"
+    fi
     hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$ARTIFACT" >/dev/null
     ATTACHED=1
     APP_PATH="$MOUNT_DIR/${PRODUCT_NAME}.app"
     ;;
   *.app)
+    if [[ "$PROVENANCE_MODE" == "release" ]]; then
+      echo "Release verification requires the final notarized and stapled DMG, not a loose app bundle." >&2
+      exit 1
+    fi
     APP_PATH=${ARTIFACT%/}
     ;;
   *)
@@ -134,6 +161,42 @@ while IFS= read -r REQUIRED_NOTICE; do
   }
 done < <(node -p "require('$CONTRACT').requiredLegalNotices.join('\n')")
 
+PROVENANCE_FILE=$(node -p "require('$CONTRACT').provenance.embeddedFile")
+PROVENANCE_PATH="$APP_PATH/Contents/Resources/$PROVENANCE_FILE"
+[[ -f "$PROVENANCE_PATH" ]] || {
+  echo "Release provenance is missing from the packaged application: $PROVENANCE_FILE" >&2
+  exit 1
+}
+EXPECTED_COMMIT="${HEBRUS_VERIFY_COMMIT:-$(git -C "$ROOT_DIR" rev-parse HEAD)}"
+EXPECTED_TAG="${HEBRUS_VERIFY_TAG:-v${VERSION}}"
+(
+cd "$ROOT_DIR"
+node --input-type=module - "$PROVENANCE_PATH" "$CONTRACT" "$ROOT_DIR/package.json" "$EXPECTED_COMMIT" "$EXPECTED_TAG" "$PROVENANCE_MODE" <<'NODE'
+import { readFile } from "node:fs/promises";
+import { validateReleaseProvenance } from "./scripts/release-artifact-utils.mjs";
+
+const [, , provenancePath, contractPath, packagePath, expectedCommit, expectedTag, mode] = process.argv;
+const [provenance, contract, packageJson] = await Promise.all(
+  [provenancePath, contractPath, packagePath].map(async (filePath) => JSON.parse(await readFile(filePath, "utf8")))
+);
+if (mode === "release") {
+  validateReleaseProvenance(provenance, { packageJson, contract, expectedCommit, expectedTag });
+} else {
+  const valid = provenance?.schemaVersion === 1
+    && provenance?.subject?.name === contract.productName
+    && provenance?.subject?.packageName === packageJson.name
+    && provenance?.subject?.version === packageJson.version
+    && provenance?.subject?.architecture === contract.architecture
+    && provenance?.source?.commit === expectedCommit
+    && provenance?.source?.tag === null
+    && provenance?.source?.treeState === "development"
+    && provenance?.build?.provider === "local-development"
+    && provenance?.build?.workflow === "local-development";
+  if (!valid) throw new Error("Invalid local-development package provenance");
+}
+NODE
+)
+
 ARCHITECTURES=$(lipo -archs "$EXECUTABLE")
 [[ "$ARCHITECTURES" == "$EXPECTED_ARCHITECTURE" ]] || {
   echo "Unexpected app architecture: $ARCHITECTURES" >&2
@@ -181,17 +244,33 @@ if [[ -n "$PHYSICAL_ENGINE" ]]; then
   exit 1
 fi
 
-echo "Verifying the sealed ad-hoc bundle..."
+echo "Verifying the sealed ${PROVENANCE_MODE} bundle..."
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 SIGNATURE_DETAILS=$(codesign -dv --verbose=4 "$APP_PATH" 2>&1)
-grep -q "^Signature=adhoc$" <<<"$SIGNATURE_DETAILS" || {
-  echo "Expected an ad-hoc signature." >&2
-  exit 1
-}
-grep -q "^TeamIdentifier=not set$" <<<"$SIGNATURE_DETAILS" || {
-  echo "Unexpected signing team in the community build." >&2
-  exit 1
-}
+if [[ "$PROVENANCE_MODE" == "development" ]]; then
+  grep -q "^Signature=adhoc$" <<<"$SIGNATURE_DETAILS" || {
+    echo "Development package must use an ad-hoc signature." >&2
+    exit 1
+  }
+  grep -q "^TeamIdentifier=not set$" <<<"$SIGNATURE_DETAILS" || {
+    echo "Development package unexpectedly has a signing team." >&2
+    exit 1
+  }
+else
+  grep -q "^Authority=Developer ID Application:" <<<"$SIGNATURE_DETAILS" || {
+    echo "Release package is not signed with a Developer ID Application certificate." >&2
+    exit 1
+  }
+  grep -Eq "^TeamIdentifier=[A-Z0-9]{10}$" <<<"$SIGNATURE_DETAILS" || {
+    echo "Release package has no valid Apple signing team identifier." >&2
+    exit 1
+  }
+  grep -q "^Runtime Version=" <<<"$SIGNATURE_DETAILS" || {
+    echo "Release package does not enable the hardened runtime." >&2
+    exit 1
+  }
+  spctl --assess --type execute --verbose=4 "$APP_PATH"
+fi
 
 if [[ "${DSBOX_VERIFY_LAUNCH:-0}" == "1" ]]; then
   PORT=${DSBOX_VERIFY_PORT:-4343}
@@ -224,5 +303,9 @@ if [[ "${DSBOX_VERIFY_LAUNCH:-0}" == "1" ]]; then
   fi
 fi
 
-echo "Verified ${PRODUCT_NAME} ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ${EXECUTABLE_NAME}, ${ICON_NAME}, legal notices, external engine, ad-hoc signed."
-echo "Developer ID signing and notarization are intentionally not asserted."
+if [[ "$PROVENANCE_MODE" == "development" ]]; then
+  echo "Verified local-development ${PRODUCT_NAME} ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ${EXECUTABLE_NAME}, ${ICON_NAME}, development provenance, legal notices, external engine, ad-hoc signed."
+  echo "Developer ID signing and notarization are intentionally not asserted for this non-release build."
+else
+  echo "Verified release ${PRODUCT_NAME} ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ${EXECUTABLE_NAME}, ${ICON_NAME}, exact-commit provenance, legal notices, external engine, Developer ID, hardened runtime, Gatekeeper, and stapled DMG."
+fi

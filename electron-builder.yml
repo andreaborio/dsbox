@@ -2,6 +2,7 @@ appId: com.dsbox.desktop
 productName: Hebrus Studio
 artifactName: Hebrus-Studio-${version}-macOS-${arch}.${ext}
 asar: true
+forceCodeSigning: true
 directories:
   output: release
   buildResources: build
@@ -11,6 +12,8 @@ files:
   - desktop/**/*
   - package.json
 extraResources:
+  - from: build/release-provenance.json
+    to: release-provenance.json
   - from: LICENSE
     to: LICENSE.txt
   - from: THIRD_PARTY_NOTICES.md
@@ -26,13 +29,12 @@ mac:
       arch:
         - arm64
   icon: build/icon.icns
-  # Ad-hoc signing gives Apple Silicon a structurally valid, sealed bundle.
-  # It does not establish a publisher identity or notarize the app.
-  identity: "-"
-  hardenedRuntime: false
+  hardenedRuntime: true
+  notarize: true
   minimumSystemVersion: "13.0"
   darkModeSupport: true
 dmg:
+  sign: true
   title: Hebrus Studio ${version}
   backgroundColor: "#f7f7f5"
   window:

@@ -4,6 +4,7 @@ dist-server/
 release/
 build/icon.iconset/
 build/icon-1024.png
+build/release-provenance.json
 .DS_Store
 *.log
 .env
