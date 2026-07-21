@@ -34,6 +34,8 @@
     "release:readiness": "node scripts/check-public-release-readiness.mjs --status",
     "release:readiness:strict": "node scripts/check-public-release-readiness.mjs --strict",
     "release:provenance": "node scripts/generate-release-provenance.mjs --output build/release-provenance.json",
+    "release:attestation:create": "node scripts/create-release-attestation.mjs",
+    "release:attestation:validate": "node scripts/validate-release-attestation.mjs",
     "release:sbom:validate": "node scripts/validate-release-sbom.mjs",
     "release:licenses": "node scripts/create-release-license-inventory.mjs",
     "release:e2e:report:validate": "node scripts/validate-upgrade-rollback-report.mjs",

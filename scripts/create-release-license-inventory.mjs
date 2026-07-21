@@ -43,9 +43,12 @@ async function main() {
     const licenses = component.licenses.map((license, index) => (
       cycloneDxLicenseExpression(license, `${component.name}@${component.version} license[${index}]`)
     )).join(" OR ");
+    const lockPath = component.properties?.find((property) => property?.name === "hebrus:package-lock:path")?.value;
+    if (typeof lockPath !== "string" || !lockPath) throw new Error(`${component.name}@${component.version} has no package-lock path`);
     return {
       name: component.name,
       version: component.version,
+      lockPath,
       scope: scopeOf(component),
       licenses,
       purl: component.purl
@@ -53,6 +56,7 @@ async function main() {
   }).sort((left, right) => (
     left.name.localeCompare(right.name)
     || left.version.localeCompare(right.version)
+    || String(left.lockPath).localeCompare(String(right.lockPath))
     || String(left.purl).localeCompare(String(right.purl))
   ));
   const sourceCommit = sbom.metadata?.properties?.find((property) => property?.name === "hebrus:source-commit")?.value;
@@ -63,9 +67,9 @@ async function main() {
     `Generated from the validated CycloneDX SBOM for source commit \`${sourceCommit}\`.`,
     "This inventory reports package metadata; the bundled notice files remain authoritative where required.",
     "",
-    "| Component | Version | Scope | SPDX license | Package URL |",
-    "| --- | --- | --- | --- | --- |",
-    ...rows.map((row) => `| ${escaped(row.name)} | ${escaped(row.version)} | ${row.scope} | ${escaped(row.licenses)} | ${escaped(row.purl)} |`),
+    "| Component | Version | Locked path | Scope | SPDX license | Package URL |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...rows.map((row) => `| ${escaped(row.name)} | ${escaped(row.version)} | ${escaped(row.lockPath)} | ${row.scope} | ${escaped(row.licenses)} | ${escaped(row.purl)} |`),
     ""
   ];
   await writeTextAtomic(outputPath, lines.join("\n"));

@@ -17,6 +17,44 @@ const requiredGateIds = [
   "engine-model-backed-exact-commit"
 ];
 const temporaryDirectories: string[] = [];
+const releaseCommit = "a".repeat(40);
+const engineCommit = "b".repeat(40);
+
+function makeReady(manifest: any) {
+  const evidence: Record<string, object> = {
+    "naming-legal-approval": { approvalReference: "review-1" },
+    "private-vulnerability-reporting": { intakeReference: "private-1", testReference: "test-1" },
+    "private-conduct-intake": { intakeReference: "private-2", testReference: "test-2" },
+    "developer-id-signing": {
+      certificateCommonName: "Developer ID Application: Hebrus Test (ABCDE12345)",
+      certificateSha1: "c".repeat(40),
+      teamIdentifier: "ABCDE12345",
+      verificationReference: "signing-1"
+    },
+    "notarization-stapling": {
+      submissionId: "12345678-1234-4234-8234-123456789abc",
+      stapleVerification: "staple-1",
+      gatekeeperVerification: "gatekeeper-1"
+    },
+    "hosted-ci-exact-commit": { workflowReference: "ci-1" },
+    "engine-model-backed-exact-commit": {
+      engineCommit,
+      modelArtifactSha256: "d".repeat(64),
+      reportReference: "model-1"
+    }
+  };
+  manifest.publicRelease.state = "ready";
+  for (const gate of manifest.gates) {
+    gate.ready = true;
+    gate.status = "ready";
+    gate.evidence = {
+      verifiedBy: "release-reviewer",
+      verifiedAt: "2026-07-22T00:00:00.000Z",
+      ...evidence[gate.id]
+    };
+  }
+  return manifest;
+}
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
@@ -80,6 +118,41 @@ describe("public-release readiness interlock", () => {
     expect(result.stderr).toContain("naming-legal-approval.evidence must be an object when the gate is ready");
   });
 
+  it("binds ready signing evidence to protected certificate and team variables", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "hebrus-readiness-signing-test-"));
+    temporaryDirectories.push(directory);
+    const manifest = makeReady(JSON.parse(await readFile(manifestPath, "utf8")));
+    const readyPath = path.join(directory, "ready.json");
+    await writeFile(readyPath, JSON.stringify(manifest));
+    const env = {
+      ...process.env,
+      GITHUB_ACTIONS: "true",
+      GITHUB_REF_TYPE: "tag",
+      GITHUB_REF_NAME: "v0.4.0",
+      GITHUB_SHA: releaseCommit,
+      HEBRUS_HOSTED_CI_COMMIT: releaseCommit,
+      HEBRUS_MODEL_BACKED_STUDIO_COMMIT: releaseCommit,
+      HEBRUS_MODEL_BACKED_ENGINE_COMMIT: engineCommit,
+      HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME: "Developer ID Application: Hebrus Test (ABCDE12345)",
+      HEBRUS_SIGNING_CERTIFICATE_SHA1: "c".repeat(40),
+      HEBRUS_SIGNING_TEAM_ID: "ABCDE12345"
+    };
+    const accepted = spawnSync(process.execPath, [checker, "--strict", "--manifest", readyPath], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      env
+    });
+    expect(accepted.status, accepted.stderr).toBe(0);
+
+    const rejected = spawnSync(process.execPath, [checker, "--strict", "--manifest", readyPath], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      env: { ...env, HEBRUS_SIGNING_CERTIFICATE_SHA1: "e".repeat(40) }
+    });
+    expect(rejected.status).toBe(1);
+    expect(rejected.stderr).toContain("protected certificate SHA-1 does not match readiness evidence");
+  });
+
   it("runs strict mode before build and publish while normal CI uses status only", async () => {
     const [releaseWorkflow, ciWorkflow, packageJsonText] = await Promise.all([
       readFile(path.join(repositoryRoot, ".github", "workflows", "release-macos.yml"), "utf8"),
@@ -97,6 +170,7 @@ describe("public-release readiness interlock", () => {
     expect(build).toBeLessThan(publish);
     expect(ciWorkflow).toContain("npm run release:readiness");
     expect(ciWorkflow).not.toContain("release:readiness:strict");
+    expect(releaseWorkflow).toContain("environment: public-release");
   });
 
   it("does not advertise a stale public release while readiness is blocked", async () => {

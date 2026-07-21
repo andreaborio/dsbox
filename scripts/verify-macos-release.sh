@@ -21,6 +21,7 @@ ARTIFACT_BASE_NAME=$(node -p "require('$CONTRACT').artifactBaseName")
 EXPECTED_DMG_NAME="${ARTIFACT_BASE_NAME}-${VERSION}-macOS-${EXPECTED_ARCHITECTURE}.dmg"
 ARTIFACT=${1:-"$ROOT_DIR/release/${ARTIFACT_BASE_NAME}-${VERSION}-macOS-${EXPECTED_ARCHITECTURE}.dmg"}
 MOUNT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dsbox-release.XXXXXX")
+IDENTITY_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/hebrus-signing-identity.XXXXXX")
 APP_PATH=""
 APP_PROCESS=""
 ATTACHED=0
@@ -37,9 +38,56 @@ cleanup() {
   if [[ -n "$LAUNCH_ROOT" && -d "$LAUNCH_ROOT" ]]; then
     rm -r "$LAUNCH_ROOT"
   fi
+  rm -r "$IDENTITY_ROOT"
   rmdir "$MOUNT_DIR" 2>/dev/null || true
 }
 trap cleanup EXIT
+
+if [[ "$PROVENANCE_MODE" == "release" ]]; then
+  EXPECTED_CERTIFICATE_COMMON_NAME="${HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME:-}"
+  EXPECTED_CERTIFICATE_SHA1=$(tr '[:upper:]' '[:lower:]' <<<"${HEBRUS_SIGNING_CERTIFICATE_SHA1:-}")
+  EXPECTED_TEAM_ID="${HEBRUS_SIGNING_TEAM_ID:-}"
+  [[ "$EXPECTED_CERTIFICATE_COMMON_NAME" == "Developer ID Application:"* ]] || {
+    echo "HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME is missing or invalid." >&2
+    exit 1
+  }
+  [[ "$EXPECTED_CERTIFICATE_SHA1" =~ ^[a-f0-9]{40}$ ]] || {
+    echo "HEBRUS_SIGNING_CERTIFICATE_SHA1 is missing or invalid." >&2
+    exit 1
+  }
+  [[ "$EXPECTED_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || {
+    echo "HEBRUS_SIGNING_TEAM_ID is missing or invalid." >&2
+    exit 1
+  }
+fi
+
+verify_exact_signing_identity() {
+  local target="$1"
+  local label="$2"
+  local slug="$3"
+  local details common_name team_id certificate_prefix certificate_sha1
+  details=$(codesign -dv --verbose=4 "$target" 2>&1)
+  common_name=$(sed -n 's/^Authority=\(Developer ID Application:.*\)$/\1/p' <<<"$details" | head -1)
+  team_id=$(sed -n 's/^TeamIdentifier=\([A-Z0-9]\{10\}\)$/\1/p' <<<"$details" | head -1)
+  [[ -n "$common_name" ]] || { echo "$label is not signed with a Developer ID Application certificate." >&2; return 1; }
+  [[ -n "$team_id" ]] || { echo "$label has no valid Apple signing team identifier." >&2; return 1; }
+  certificate_prefix="$IDENTITY_ROOT/${slug}-certificate-"
+  codesign -d --extract-certificates "$certificate_prefix" "$target" >/dev/null 2>&1
+  [[ -f "${certificate_prefix}0" ]] || { echo "$label leaf signing certificate could not be extracted." >&2; return 1; }
+  certificate_sha1=$(shasum -a 1 "${certificate_prefix}0" | awk '{print $1}')
+  [[ "$common_name" == "$EXPECTED_CERTIFICATE_COMMON_NAME" ]] || {
+    echo "$label certificate common name does not match the protected release identity." >&2
+    return 1
+  }
+  [[ "$certificate_sha1" == "$EXPECTED_CERTIFICATE_SHA1" ]] || {
+    echo "$label certificate SHA-1 does not match the protected release identity." >&2
+    return 1
+  }
+  [[ "$team_id" == "$EXPECTED_TEAM_ID" ]] || {
+    echo "$label Apple team id does not match the protected release identity." >&2
+    return 1
+  }
+}
 
 if [[ ! -e "$ARTIFACT" ]]; then
   echo "Package not found: $ARTIFACT" >&2
@@ -77,6 +125,7 @@ case "$ARTIFACT" in
         echo "Release DMG has no valid Apple signing team identifier." >&2
         exit 1
       }
+      verify_exact_signing_identity "$ARTIFACT" "Release DMG" "dmg"
       xcrun stapler validate "$ARTIFACT"
     fi
     hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$ARTIFACT" >/dev/null
@@ -180,9 +229,19 @@ const [provenance, contract, packageJson] = await Promise.all(
   [provenancePath, contractPath, packagePath].map(async (filePath) => JSON.parse(await readFile(filePath, "utf8")))
 );
 if (mode === "release") {
-  validateReleaseProvenance(provenance, { packageJson, contract, expectedCommit, expectedTag });
+  validateReleaseProvenance(provenance, {
+    packageJson,
+    contract,
+    expectedCommit,
+    expectedTag,
+    expectedSigning: {
+      certificateCommonName: process.env.HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME,
+      certificateSha1: process.env.HEBRUS_SIGNING_CERTIFICATE_SHA1,
+      teamIdentifier: process.env.HEBRUS_SIGNING_TEAM_ID
+    }
+  });
 } else {
-  const valid = provenance?.schemaVersion === 1
+  const valid = provenance?.schemaVersion === contract.provenance.developmentSchemaVersion
     && provenance?.subject?.name === contract.productName
     && provenance?.subject?.packageName === packageJson.name
     && provenance?.subject?.version === packageJson.version
@@ -265,6 +324,7 @@ else
     echo "Release package has no valid Apple signing team identifier." >&2
     exit 1
   }
+  verify_exact_signing_identity "$APP_PATH" "Release package" "application"
   grep -q "^Runtime Version=" <<<"$SIGNATURE_DETAILS" || {
     echo "Release package does not enable the hardened runtime." >&2
     exit 1

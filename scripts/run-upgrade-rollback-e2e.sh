@@ -22,6 +22,7 @@ Environment overrides:
   DSBOX_UPGRADE_E2E_OLD_REF   Frozen legacy checkpoint
   DSBOX_UPGRADE_E2E_NEW_REF   Current checkpoint for --source only
   HEBRUS_RELEASE_DMG          Final DMG for --release
+  HEBRUS_RELEASE_ATTESTATION  Signed/notarized release attestation for --release
   HEBRUS_RELEASE_SBOM         Final SBOM for --release
   HEBRUS_VERIFY_COMMIT        Expected source commit for --release
   HEBRUS_VERIFY_TAG           Expected source tag for --release
@@ -137,6 +138,7 @@ version="$(node -p "require('$repo_root/package.json').version")"
 release_dir="$repo_root/release"
 dmg="${HEBRUS_RELEASE_DMG:-$release_dir/Hebrus-Studio-${version}-macOS-arm64.dmg}"
 sbom="${HEBRUS_RELEASE_SBOM:-$release_dir/Hebrus-Studio-${version}-SBOM.cdx.json}"
+attestation="${HEBRUS_RELEASE_ATTESTATION:-$release_dir/Hebrus-Studio-${version}-Release-Attestation.json}"
 report="$release_dir/Hebrus-Studio-${version}-Upgrade-Rollback-E2E.json"
 log="$release_dir/Hebrus-Studio-${version}-Upgrade-Rollback-E2E.log"
 provenance="$repo_root/build/release-provenance.json"
@@ -145,6 +147,7 @@ expected_tag="${HEBRUS_VERIFY_TAG:-v${version}}"
 
 [[ -f "$dmg" ]] || { echo "Final release DMG is missing: $dmg" >&2; exit 1; }
 [[ -f "$sbom" ]] || { echo "Final release SBOM is missing: $sbom" >&2; exit 1; }
+[[ -f "$attestation" ]] || { echo "Final release attestation is missing: $attestation" >&2; exit 1; }
 [[ -f "$provenance" ]] || { echo "Release provenance is missing: $provenance" >&2; exit 1; }
 
 echo "Building frozen legacy package $old_commit for final-DMG qualification..."
@@ -160,6 +163,7 @@ node "$repo_root/scripts/run-final-dmg-upgrade-rollback-e2e.mjs" \
   --old-commit "$old_commit" \
   --old-build-log "$old_log" \
   --dmg "$dmg" \
+  --attestation "$attestation" \
   --sbom "$sbom" \
   --expected-commit "$expected_commit" \
   --expected-tag "$expected_tag" \
@@ -168,6 +172,7 @@ node "$repo_root/scripts/run-final-dmg-upgrade-rollback-e2e.mjs" \
 
 node "$repo_root/scripts/validate-upgrade-rollback-report.mjs" "$report" \
   --dmg "$dmg" \
+  --attestation "$attestation" \
   --sbom "$sbom" \
   --log "$log" \
   --provenance "$provenance" \

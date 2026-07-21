@@ -40,7 +40,7 @@
       "ready": false,
       "status": "pending",
       "requirement": "Sign the macOS application with an authorized Apple Developer ID Application identity instead of the community ad-hoc identity.",
-      "remediation": "Configure protected signing credentials, replace the ad-hoc packaging contract, and record the certificate identity and verification reference.",
+      "remediation": "Configure the public-release environment, record the exact Developer ID common name, SHA-1 fingerprint, Apple team identifier, and verification reference, and mirror those values in its protected variables.",
       "evidence": null
     },
     {
@@ -49,7 +49,7 @@
       "ready": false,
       "status": "pending",
       "requirement": "Notarize the signed macOS artifact, staple the accepted ticket, and pass Gatekeeper assessment on a clean Mac.",
-      "remediation": "Configure notarization, verify stapling and Gatekeeper, and record the submission and clean-machine verification references.",
+      "remediation": "Record a real qualification submission UUID plus stapling and clean-machine Gatekeeper references; the tag workflow separately captures the new submission UUID for each final DMG.",
       "evidence": null
     },
     {

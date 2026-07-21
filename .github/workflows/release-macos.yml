@@ -11,6 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: macos-14
+    environment: public-release
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,6 +39,9 @@ jobs:
           HEBRUS_HOSTED_CI_COMMIT: ${{ vars.HEBRUS_HOSTED_CI_COMMIT }}
           HEBRUS_MODEL_BACKED_STUDIO_COMMIT: ${{ vars.HEBRUS_MODEL_BACKED_STUDIO_COMMIT }}
           HEBRUS_MODEL_BACKED_ENGINE_COMMIT: ${{ vars.HEBRUS_MODEL_BACKED_ENGINE_COMMIT }}
+          HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME }}
+          HEBRUS_SIGNING_CERTIFICATE_SHA1: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_SHA1 }}
+          HEBRUS_SIGNING_TEAM_ID: ${{ vars.HEBRUS_SIGNING_TEAM_ID }}
         run: npm run release:readiness:strict
       - name: Require Developer ID and notarization credentials
         shell: bash
@@ -47,6 +51,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          HEBRUS_SIGNING_TEAM_ID: ${{ vars.HEBRUS_SIGNING_TEAM_ID }}
         run: |
           set -euo pipefail
           for secret_name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
@@ -55,10 +60,18 @@ jobs:
               exit 1
             fi
           done
+          if [[ "$APPLE_TEAM_ID" != "$HEBRUS_SIGNING_TEAM_ID" ]]; then
+            echo "APPLE_TEAM_ID does not match the protected signing-team attestation." >&2
+            exit 1
+          fi
       - run: npm run typecheck
       - run: npm run check:brand
       - run: npm test
       - name: Generate exact-commit release provenance
+        env:
+          HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME }}
+          HEBRUS_SIGNING_CERTIFICATE_SHA1: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_SHA1 }}
+          HEBRUS_SIGNING_TEAM_ID: ${{ vars.HEBRUS_SIGNING_TEAM_ID }}
         run: npm run release:provenance
       - name: Build Developer ID signed and app-notarized DMG
         env:
@@ -77,33 +90,66 @@ jobs:
         run: |
           set -euo pipefail
           DMG="release/Hebrus-Studio-${{ steps.version.outputs.version }}-macOS-arm64.dmg"
+          NOTARY_JSON="build/final-dmg-notary.json"
+          NOTARY_TMP="${NOTARY_JSON}.tmp"
           codesign --verify --verbose=2 "$DMG"
           xcrun notarytool submit "$DMG" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait \
+            --output-format json > "$NOTARY_TMP"
+          mv "$NOTARY_TMP" "$NOTARY_JSON"
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
       - name: Verify packaged application and embedded provenance
         env:
           HEBRUS_VERIFY_COMMIT: ${{ github.sha }}
           HEBRUS_VERIFY_TAG: ${{ github.ref_name }}
+          HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME }}
+          HEBRUS_SIGNING_CERTIFICATE_SHA1: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_SHA1 }}
+          HEBRUS_SIGNING_TEAM_ID: ${{ vars.HEBRUS_SIGNING_TEAM_ID }}
         run: npm run verify:mac
+      - name: Bind signing and notarization to persistent release evidence
+        shell: bash
+        env:
+          HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME }}
+          HEBRUS_SIGNING_CERTIFICATE_SHA1: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_SHA1 }}
+          HEBRUS_SIGNING_TEAM_ID: ${{ vars.HEBRUS_SIGNING_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          DMG="release/Hebrus-Studio-${{ steps.version.outputs.version }}-macOS-arm64.dmg"
+          ATTESTATION="release/Hebrus-Studio-${{ steps.version.outputs.version }}-Release-Attestation.json"
+          node scripts/create-release-attestation.mjs \
+            --dmg "$DMG" \
+            --provenance build/release-provenance.json \
+            --notary-json build/final-dmg-notary.json \
+            --output "$ATTESTATION" \
+            --expected-commit "${{ github.sha }}" \
+            --expected-tag "${{ github.ref_name }}"
+          node scripts/validate-release-attestation.mjs "$ATTESTATION" \
+            --dmg "$DMG" \
+            --provenance build/release-provenance.json \
+            --expected-commit "${{ github.sha }}" \
+            --expected-tag "${{ github.ref_name }}"
       - name: Generate and validate CycloneDX SBOM from package-lock
         shell: bash
         run: |
           set -euo pipefail
           SBOM_PATH="release/Hebrus-Studio-${{ steps.version.outputs.version }}-SBOM.cdx.json"
           LICENSES_PATH="release/Hebrus-Studio-${{ steps.version.outputs.version }}-THIRD-PARTY-LICENSES.md"
+          ATTESTATION_PATH="release/Hebrus-Studio-${{ steps.version.outputs.version }}-Release-Attestation.json"
           npm sbom --sbom-format cyclonedx --sbom-type application --package-lock-only \
-            | node scripts/normalize-release-sbom.mjs --provenance build/release-provenance.json > "$SBOM_PATH"
-          node scripts/validate-release-sbom.mjs "$SBOM_PATH" --provenance build/release-provenance.json
+            | node scripts/normalize-release-sbom.mjs --provenance build/release-provenance.json --attestation "$ATTESTATION_PATH" > "$SBOM_PATH"
+          node scripts/validate-release-sbom.mjs "$SBOM_PATH" --provenance build/release-provenance.json --attestation "$ATTESTATION_PATH"
           node scripts/create-release-license-inventory.mjs "$SBOM_PATH" "$LICENSES_PATH"
       - name: Verify upgrade and rollback against the final DMG
         env:
           HEBRUS_VERIFY_COMMIT: ${{ github.sha }}
           HEBRUS_VERIFY_TAG: ${{ github.ref_name }}
+          HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME }}
+          HEBRUS_SIGNING_CERTIFICATE_SHA1: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_SHA1 }}
+          HEBRUS_SIGNING_TEAM_ID: ${{ vars.HEBRUS_SIGNING_TEAM_ID }}
         run: npm run verify:upgrade-rollback:e2e -- --release
       - name: Create and validate final release checksums
         run: |
@@ -114,6 +160,9 @@ jobs:
           DSBOX_VERIFY_CHECKSUMS: "1"
           HEBRUS_VERIFY_COMMIT: ${{ github.sha }}
           HEBRUS_VERIFY_TAG: ${{ github.ref_name }}
+          HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME }}
+          HEBRUS_SIGNING_CERTIFICATE_SHA1: ${{ vars.HEBRUS_SIGNING_CERTIFICATE_SHA1 }}
+          HEBRUS_SIGNING_TEAM_ID: ${{ vars.HEBRUS_SIGNING_TEAM_ID }}
         run: npm run verify:mac
       - name: Publish GitHub release
         env:
@@ -122,6 +171,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "release/Hebrus-Studio-${{ steps.version.outputs.version }}-macOS-arm64.dmg#Hebrus Studio for Apple Silicon" \
+            "release/Hebrus-Studio-${{ steps.version.outputs.version }}-Release-Attestation.json#Signing and notarization attestation" \
             "release/Hebrus-Studio-${{ steps.version.outputs.version }}-SBOM.cdx.json#CycloneDX SBOM" \
             "release/Hebrus-Studio-${{ steps.version.outputs.version }}-THIRD-PARTY-LICENSES.md#Third-party license inventory" \
             "release/Hebrus-Studio-${{ steps.version.outputs.version }}-Upgrade-Rollback-E2E.json#Upgrade and rollback evidence" \

@@ -72,7 +72,7 @@ function validateReadyEvidence(gate, errors) {
     "naming-legal-approval": ["approvalReference"],
     "private-vulnerability-reporting": ["intakeReference", "testReference"],
     "private-conduct-intake": ["intakeReference", "testReference"],
-    "developer-id-signing": ["certificateCommonName", "certificateSha1", "verificationReference"],
+    "developer-id-signing": ["certificateCommonName", "certificateSha1", "teamIdentifier", "verificationReference"],
     "notarization-stapling": ["submissionId", "stapleVerification", "gatekeeperVerification"],
     "hosted-ci-exact-commit": ["workflowReference"],
     "engine-model-backed-exact-commit": ["engineCommit", "modelArtifactSha256", "reportReference"]
@@ -92,6 +92,20 @@ function validateReadyEvidence(gate, errors) {
     && !/^[a-f0-9]{40}$/i.test(gate.evidence.certificateSha1)
   ) {
     errors.push(`${gate.id}.evidence.certificateSha1 must be a full 40-character SHA-1 fingerprint`);
+  }
+  if (
+    gate.id === "developer-id-signing"
+    && typeof gate.evidence.teamIdentifier === "string"
+    && !/^[A-Z0-9]{10}$/.test(gate.evidence.teamIdentifier)
+  ) {
+    errors.push(`${gate.id}.evidence.teamIdentifier must be a 10-character Apple team id`);
+  }
+  if (
+    gate.id === "notarization-stapling"
+    && typeof gate.evidence.submissionId === "string"
+    && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(gate.evidence.submissionId)
+  ) {
+    errors.push(`${gate.id}.evidence.submissionId must be a notarytool UUID`);
   }
   if (
     gate.id === "engine-model-backed-exact-commit"
@@ -162,6 +176,7 @@ async function implementationBlockers(manifest, packageJson, environment) {
   const blockers = [];
   const gates = new Map(manifest.gates.map((gate) => [gate.id, gate]));
   if (gates.get("developer-id-signing")?.ready) {
+    const evidence = gates.get("developer-id-signing").evidence;
     const builder = await readFile(path.join(repositoryRoot, "electron-builder.yml"), "utf8");
     const verifier = await readFile(path.join(repositoryRoot, "scripts", "verify-macos-release.sh"), "utf8");
     if (/^\s*identity:\s*["']?-["']?\s*$/m.test(builder)) {
@@ -169,6 +184,15 @@ async function implementationBlockers(manifest, packageJson, environment) {
     }
     if (/Expected an ad-hoc signature/.test(verifier)) {
       blockers.push("developer-id-signing: the package verifier still requires an ad-hoc signature");
+    }
+    if (environment.HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME !== evidence.certificateCommonName) {
+      blockers.push("developer-id-signing: protected certificate common name does not match readiness evidence");
+    }
+    if (environment.HEBRUS_SIGNING_CERTIFICATE_SHA1?.toLowerCase() !== evidence.certificateSha1.toLowerCase()) {
+      blockers.push("developer-id-signing: protected certificate SHA-1 does not match readiness evidence");
+    }
+    if (environment.HEBRUS_SIGNING_TEAM_ID !== evidence.teamIdentifier) {
+      blockers.push("developer-id-signing: protected Apple team id does not match readiness evidence");
     }
   }
   if (gates.get("notarization-stapling")?.ready) {

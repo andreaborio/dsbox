@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { readJson, writeJsonAtomic } from "./release-artifact-utils.mjs";
+import { readJson, sha256Buffer, writeJsonAtomic } from "./release-artifact-utils.mjs";
 
 const defaultRepository = path.resolve(import.meta.dirname, "..");
 
@@ -38,7 +39,12 @@ function requireEnvironment(name, predicate = (value) => Boolean(value)) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const packageJson = await readJson(path.join(options.repository, "package.json"));
+  const readinessPath = path.join(options.repository, "scripts", "public-release-readiness.json");
+  const [packageJson, readinessBytes] = await Promise.all([
+    readJson(path.join(options.repository, "package.json")),
+    readFile(readinessPath)
+  ]);
+  const readiness = JSON.parse(readinessBytes.toString("utf8"));
   const expectedTag = `v${packageJson.version}`;
   const head = git(options.repository, ["rev-parse", "HEAD"]);
   const status = git(options.repository, ["status", "--porcelain=v1", "--untracked-files=all"]);
@@ -54,7 +60,29 @@ async function main() {
   const runAttempt = requireEnvironment("GITHUB_RUN_ATTEMPT", (value) => /^\d+$/.test(value));
   const runnerOs = requireEnvironment("RUNNER_OS");
   const runnerArch = requireEnvironment("RUNNER_ARCH");
+  const signingCommonName = requireEnvironment("HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME", (value) => value.startsWith("Developer ID Application:"));
+  const signingSha1 = requireEnvironment("HEBRUS_SIGNING_CERTIFICATE_SHA1", (value) => /^[a-f0-9]{40}$/i.test(value));
+  const signingTeamId = requireEnvironment("HEBRUS_SIGNING_TEAM_ID", (value) => /^[A-Z0-9]{10}$/.test(value));
   if (githubSha !== head) throw new Error(`GITHUB_SHA ${githubSha} does not equal clean-tree HEAD ${head}`);
+
+  if (readiness.publicRelease?.state !== "ready") throw new Error("Release provenance requires publicRelease.state=ready");
+  const gates = new Map((readiness.gates ?? []).map((gate) => [gate.id, gate]));
+  const signingEvidence = gates.get("developer-id-signing")?.evidence;
+  const notarizationEvidence = gates.get("notarization-stapling")?.evidence;
+  if (
+    gates.get("developer-id-signing")?.ready !== true
+    || signingEvidence?.certificateCommonName !== signingCommonName
+    || signingEvidence?.certificateSha1?.toLowerCase() !== signingSha1.toLowerCase()
+    || signingEvidence?.teamIdentifier !== signingTeamId
+  ) {
+    throw new Error("Protected signing identity does not match ready Developer ID evidence");
+  }
+  if (
+    gates.get("notarization-stapling")?.ready !== true
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(notarizationEvidence?.submissionId ?? "")
+  ) {
+    throw new Error("Ready notarization qualification evidence is missing a valid submission id");
+  }
 
   let taggedCommit = "";
   try {
@@ -65,7 +93,7 @@ async function main() {
   if (taggedCommit !== head) throw new Error(`Release tag ${expectedTag} points to ${taggedCommit}, not HEAD ${head}`);
 
   const provenance = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     subject: {
       name: "Hebrus Studio",
       packageName: packageJson.name,
@@ -89,6 +117,15 @@ async function main() {
       runnerOs,
       runnerArch,
       githubActions: githubActions === "true"
+    },
+    authorization: {
+      readinessManifestSha256: sha256Buffer(readinessBytes),
+      signing: {
+        certificateCommonName: signingCommonName,
+        certificateSha1: signingSha1.toLowerCase(),
+        teamIdentifier: signingTeamId
+      },
+      notarizationQualificationSubmissionId: notarizationEvidence.submissionId
     }
   };
   await writeJsonAtomic(options.output, provenance);

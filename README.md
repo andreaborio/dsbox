@@ -381,10 +381,11 @@ The tag workflow instead runs `npm run release:readiness:strict` before any
 application build. A matching version tag cannot currently build or publish a
 public release because every external gate remains explicitly pending. Once
 all gates carry reviewed evidence, the workflow requires a clean tagged commit,
-embeds its provenance in the app and SBOM, enriches every SBOM component from
-installed package license metadata, publishes a license inventory, tests the
-app mounted from the final DMG, and hashes the DMG, SBOM, inventory, E2E report,
-and E2E log before publication. The public artifact must be Developer ID signed,
+embeds its provenance in the app and SBOM, captures an exact-certificate and
+notary-submission attestation, expands every locked package path into the SBOM,
+publishes a license inventory, tests the app mounted from the final DMG, and
+hashes the DMG, attestation, SBOM, inventory, E2E report, and E2E log before
+publication. The public artifact must be Developer ID signed,
 notarized, stapled, and accepted by Gatekeeper; ad-hoc packaging remains a
 separate local-development lane.
 

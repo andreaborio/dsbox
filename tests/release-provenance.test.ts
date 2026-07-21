@@ -17,11 +17,31 @@ async function fixture() {
   temporaryDirectories.push(directory);
   const repository = path.join(directory, "repository");
   await mkdir(repository);
+  await mkdir(path.join(repository, "scripts"));
   await writeFile(path.join(repository, "package.json"), JSON.stringify({ name: "hebrus-studio", version: "0.4.0" }));
+  await writeFile(path.join(repository, "scripts", "public-release-readiness.json"), JSON.stringify({
+    publicRelease: { state: "ready" },
+    gates: [
+      {
+        id: "developer-id-signing",
+        ready: true,
+        evidence: {
+          certificateCommonName: "Developer ID Application: Hebrus Test (ABCDE12345)",
+          certificateSha1: "b".repeat(40),
+          teamIdentifier: "ABCDE12345"
+        }
+      },
+      {
+        id: "notarization-stapling",
+        ready: true,
+        evidence: { submissionId: "12345678-1234-4234-8234-123456789abc" }
+      }
+    ]
+  }));
   execFileSync("git", ["init", "-q", repository]);
   execFileSync("git", ["-C", repository, "config", "user.email", "release-test@example.invalid"]);
   execFileSync("git", ["-C", repository, "config", "user.name", "Release Test"]);
-  execFileSync("git", ["-C", repository, "add", "package.json"]);
+  execFileSync("git", ["-C", repository, "add", "package.json", "scripts/public-release-readiness.json"]);
   execFileSync("git", ["-C", repository, "commit", "-qm", "fixture"]);
   execFileSync("git", ["-C", repository, "tag", "v0.4.0"]);
   const commit = execFileSync("git", ["-C", repository, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -40,7 +60,10 @@ function environment(commit: string) {
     GITHUB_RUN_ID: "123456",
     GITHUB_RUN_ATTEMPT: "1",
     RUNNER_OS: "macOS",
-    RUNNER_ARCH: "X64"
+    RUNNER_ARCH: "ARM64",
+    HEBRUS_SIGNING_CERTIFICATE_COMMON_NAME: "Developer ID Application: Hebrus Test (ABCDE12345)",
+    HEBRUS_SIGNING_CERTIFICATE_SHA1: "b".repeat(40),
+    HEBRUS_SIGNING_TEAM_ID: "ABCDE12345"
   };
 }
 
@@ -54,10 +77,18 @@ describe("exact-commit release provenance", () => {
     expect(result.status, result.stderr).toBe(0);
     const provenance = JSON.parse(await readFile(source.output, "utf8"));
     expect(provenance).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       subject: { name: "Hebrus Studio", packageName: "hebrus-studio", version: "0.4.0" },
       source: { commit: source.commit, tag: "v0.4.0", treeState: "clean" },
-      build: { provider: "github-actions", workflow: "release-macos", event: "push", refType: "tag", githubActions: true }
+      build: { provider: "github-actions", workflow: "release-macos", event: "push", refType: "tag", githubActions: true },
+      authorization: {
+        signing: {
+          certificateCommonName: "Developer ID Application: Hebrus Test (ABCDE12345)",
+          certificateSha1: "b".repeat(40),
+          teamIdentifier: "ABCDE12345"
+        },
+        notarizationQualificationSubmissionId: "12345678-1234-4234-8234-123456789abc"
+      }
     });
   });
 

@@ -4,6 +4,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   cycloneDxLicenseExpression,
+  lockComponentRef,
+  lockDependencyGraph,
+  packageNameFromLockPath,
   readJson,
   sha256Buffer,
   validateReleaseProvenance,
@@ -17,31 +20,34 @@ function requireValue(condition, message, errors) {
 }
 
 function parseArgs(argv) {
-  const options = { sbomPath: "", provenancePath: "" };
+  const options = { sbomPath: "", provenancePath: "", attestationPath: "" };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--provenance") options.provenancePath = path.resolve(argv[++index] || "");
+    else if (argument === "--attestation") options.attestationPath = path.resolve(argv[++index] || "");
     else if (["--help", "-h"].includes(argument)) {
-      console.log("Usage: node scripts/validate-release-sbom.mjs <release-sbom.cdx.json> --provenance <release-provenance.json>");
+      console.log("Usage: node scripts/validate-release-sbom.mjs <release-sbom.cdx.json> --provenance <release-provenance.json> --attestation <release-attestation.json>");
       process.exit(0);
     } else if (!options.sbomPath) options.sbomPath = path.resolve(argument);
     else throw new Error(`Unexpected argument: ${argument}`);
   }
-  if (!options.sbomPath || !options.provenancePath) throw new Error("SBOM path and --provenance are required");
+  if (!options.sbomPath || !options.provenancePath || !options.attestationPath) throw new Error("SBOM path, --provenance, and --attestation are required");
   return options;
 }
 
 async function main() {
-  const { sbomPath, provenancePath } = parseArgs(process.argv.slice(2));
-  const [raw, packageText, lockfile, contract, provenance, provenanceBytes] = await Promise.all([
+  const { sbomPath, provenancePath, attestationPath } = parseArgs(process.argv.slice(2));
+  const [raw, packageText, lockfile, contract, provenance, provenanceBytes, attestationBytes] = await Promise.all([
     readFile(sbomPath, "utf8"),
     readFile(path.join(repositoryRoot, "package.json"), "utf8"),
     readFile(path.join(repositoryRoot, "package-lock.json")),
     readJson(path.join(repositoryRoot, "scripts", "macos-package-contract.json")),
     readJson(provenancePath),
-    readFile(provenancePath)
+    readFile(provenancePath),
+    readFile(attestationPath)
   ]);
   const packageJson = JSON.parse(packageText);
+  const lock = JSON.parse(lockfile.toString("utf8"));
   validateReleaseProvenance(provenance, { packageJson, contract });
   const sbom = JSON.parse(raw);
   const expectedName = versioned(contract.sbom.fileNameTemplate, packageJson.version);
@@ -66,14 +72,30 @@ async function main() {
   requireValue(metadataProperties.get("hebrus:source-commit") === provenance.source.commit, "SBOM source commit does not match release provenance", errors);
   requireValue(metadataProperties.get("hebrus:source-tag") === provenance.source.tag, "SBOM source tag does not match release provenance", errors);
   requireValue(metadataProperties.get("hebrus:release-provenance:sha256") === sha256Buffer(provenanceBytes), "SBOM provenance SHA-256 does not match release provenance", errors);
+  requireValue(metadataProperties.get("hebrus:release-attestation:sha256") === sha256Buffer(attestationBytes), "SBOM release-attestation SHA-256 does not match release evidence", errors);
   requireValue(/^\d+$/.test(metadataProperties.get("hebrus:license-components-enriched") ?? ""), "SBOM license enrichment count is missing", errors);
 
   const componentRefs = new Set();
+  const componentPaths = new Set();
   for (const component of sbom.components ?? []) {
     const coordinate = `${component?.name ?? "<unknown>"}@${component?.version ?? "<unknown>"}`;
     requireValue(typeof component?.["bom-ref"] === "string" && component["bom-ref"].length > 0, "every component must have a bom-ref", errors);
     if (componentRefs.has(component?.["bom-ref"])) errors.push(`duplicate component bom-ref: ${component["bom-ref"]}`);
     componentRefs.add(component?.["bom-ref"]);
+    const lockPaths = (component?.properties ?? [])
+      .filter((property) => property?.name === "hebrus:package-lock:path")
+      .map((property) => property?.value);
+    requireValue(lockPaths.length === 1, `${coordinate} must have exactly one package-lock path`, errors);
+    const lockPath = lockPaths[0];
+    if (componentPaths.has(lockPath)) errors.push(`duplicate package-lock path: ${lockPath}`);
+    componentPaths.add(lockPath);
+    const lockMetadata = lock.packages?.[lockPath];
+    requireValue(Boolean(lockMetadata), `component references unknown package-lock path: ${lockPath}`, errors);
+    if (lockMetadata) {
+      requireValue(component.name === packageNameFromLockPath(lockPath), `${lockPath} component name mismatch`, errors);
+      requireValue(component.version === lockMetadata.version, `${lockPath} component version mismatch`, errors);
+      requireValue(component["bom-ref"] === lockComponentRef(lockPath), `${lockPath} component bom-ref mismatch`, errors);
+    }
     if (!Array.isArray(component?.licenses) || component.licenses.length === 0) {
       errors.push(`${coordinate} has no license metadata`);
     } else {
@@ -86,17 +108,24 @@ async function main() {
       });
     }
   }
-  const lock = JSON.parse(lockfile.toString("utf8"));
-  const rootLock = lock.packages?.[""] ?? {};
-  const lockedRootDependencies = {
-    ...(rootLock.dependencies ?? {}),
-    ...(rootLock.devDependencies ?? {})
-  };
-  const componentsByName = new Set((sbom.components ?? []).map((component) => component?.name));
-  for (const dependency of Object.keys(lockedRootDependencies).sort()) {
-    requireValue(componentsByName.has(dependency), `locked root dependency is missing from SBOM: ${dependency}`, errors);
+  const expectedPaths = Object.keys(lock.packages ?? {}).filter(Boolean).sort();
+  const actualPaths = [...componentPaths].sort();
+  requireValue(JSON.stringify(actualPaths) === JSON.stringify(expectedPaths), "SBOM component package-lock paths do not exactly match package-lock.json", errors);
+  const expectedGraph = lockDependencyGraph(lock, root?.["bom-ref"]);
+  const expectedNodes = new Map(expectedGraph.map((dependency) => [dependency.ref, dependency.dependsOn]));
+  const actualNodes = new Map();
+  for (const dependency of sbom.dependencies ?? []) {
+    requireValue(typeof dependency?.ref === "string" && dependency.ref.length > 0, "every dependency node must have a ref", errors);
+    if (actualNodes.has(dependency?.ref)) errors.push(`duplicate dependency ref: ${dependency.ref}`);
+    const dependsOn = Array.isArray(dependency?.dependsOn) ? [...dependency.dependsOn].sort() : [];
+    actualNodes.set(dependency?.ref, dependsOn);
+    for (const ref of dependsOn) requireValue(ref === root?.["bom-ref"] || componentRefs.has(ref), `dependency graph references unknown component: ${ref}`, errors);
   }
-  requireValue(componentsByName.has("electron"), "SBOM must include the packaged Electron runtime", errors);
+  requireValue(JSON.stringify([...actualNodes.keys()].sort()) === JSON.stringify([...expectedNodes.keys()].sort()), "SBOM dependency nodes do not exactly match package-lock.json", errors);
+  for (const [ref, dependsOn] of expectedNodes) {
+    requireValue(JSON.stringify(actualNodes.get(ref)) === JSON.stringify(dependsOn), `dependency edges do not match package-lock.json for ${ref}`, errors);
+  }
+  requireValue((sbom.components ?? []).some((component) => component?.name === "electron"), "SBOM must include the packaged Electron runtime", errors);
 
   if (errors.length) {
     console.error("Invalid release SBOM:\n" + [...new Set(errors)].map((error) => `- ${error}`).join("\n"));

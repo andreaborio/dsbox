@@ -56,16 +56,21 @@ the source while reporting the pending work.
 
 After every gate is evidenced, the release workflow will generate provenance
 from the clean exact tagged commit and embed it in both the app and the
-versioned `Hebrus-Studio-0.4.0-SBOM.cdx.json`. SBOM normalization fills npm's
-missing license fields only from installed, lockfile-resolved package metadata;
-the release fails if any component remains missing or non-identifiable and also
-publishes a sorted third-party license inventory.
+versioned `Hebrus-Studio-0.4.0-SBOM.cdx.json`. A protected `public-release`
+environment binds the exact certificate common name, SHA-1, and Apple team to
+provenance and both final signatures. The workflow records the current accepted
+notary submission in a persistent release attestation. SBOM normalization fills
+npm's missing license fields only from installed, lockfile-resolved package
+metadata and expands every lockfile path, including nested duplicate
+coordinates; the release fails if any component, edge, or identifiable license
+is missing and also publishes a path-aware third-party license inventory.
 
 The compatibility E2E then mounts the app from the final DMG instead of
 building a second Hebrus package, writes an atomic hash-bound JSON report and
 log, and validates them. Only after that gate passes does `SHA256SUMS.txt` cover
-the DMG, SBOM, license inventory, E2E report, and E2E log. No such asset or
-public binary is claimed as published while readiness remains blocked.
+the DMG, signing/notarization attestation, SBOM, license inventory, E2E report,
+and E2E log. No such asset or public binary is claimed as published while
+readiness remains blocked.
 
 ## Historical release notes
 
