@@ -9,6 +9,9 @@ existing installations.
 
 - Publishes `Hebrus Studio.app` and
   `Hebrus-Studio-0.4.0-macOS-arm64.dmg`.
+- Uses the project-supplied Hebrus PNG unchanged in the README and application;
+  web depth is a CSS-only drop shadow, and the macOS icon is generated from the
+  same hash-frozen master during packaging.
 - Retains `com.dsbox.desktop`, `~/.dsbox`,
   `~/Library/Application Support/DSBox`, `DSBOX_*`, `dsbox:*` local-storage
   keys, control headers, SSE identifiers, and the `ds4-server` fallback.
