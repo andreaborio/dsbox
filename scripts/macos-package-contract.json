@@ -6,6 +6,10 @@
   "bundleIdentifier": "com.dsbox.desktop",
   "executableName": "Hebrus Studio",
   "iconFile": "icon.icns",
+  "brandLogo": {
+    "archivePrefix": "/dist/assets/hebrus-logo-",
+    "sha256": "4be8949c73bd52e7abef58396dcd57f636165a8bb6cd6d536a600bcbf880594c"
+  },
   "architecture": "arm64",
   "engineDelivery": "external",
   "compatibility": {

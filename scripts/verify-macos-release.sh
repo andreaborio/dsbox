@@ -149,6 +149,16 @@ const embeddedEngine = archiveEntries.find((entry) =>
 );
 if (embeddedEngine) throw new Error(`Engine executable embedded in app.asar: ${embeddedEngine}`);
 
+const brandLogos = archiveEntries.filter((entry) => entry.startsWith(contract.brandLogo.archivePrefix));
+if (brandLogos.length !== 1) {
+  throw new Error(`Expected exactly one packaged Hebrus logo, found ${brandLogos.length}`);
+}
+const brandLogo = asar.extractFile(archivePath, brandLogos[0].replace(/^\/+/, ""));
+const brandLogoHash = createHash("sha256").update(brandLogo).digest("hex");
+if (brandLogoHash !== contract.brandLogo.sha256) {
+  throw new Error(`Packaged Hebrus logo was modified: expected ${contract.brandLogo.sha256}, got ${brandLogoHash}`);
+}
+
 const { headerString } = asar.getRawHeader(archivePath);
 const actualIntegrity = createHash("sha256").update(headerString).digest("hex");
 if (actualIntegrity !== expectedIntegrity) {
