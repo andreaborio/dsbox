@@ -130,6 +130,7 @@ describe("macOS package contract", () => {
     expect(packageJson.scripts["pack:mac"]).toContain("--config electron-builder.dev.yml --mac dir --arm64");
     expect(packageJson.scripts["dist:mac"]).toMatch(/^npm run build:legal-notices && npm run build:icon && /);
     expect(packageJson.scripts["dist:mac"]).not.toContain("electron-builder.dev.yml");
+    expect(packageJson.scripts["dist:mac:dev"]).toMatch(/^node scripts\/clean-public-release-assets\.mjs release && /);
     expect(packageJson.scripts["dist:mac:dev"]).toContain("--config electron-builder.dev.yml --mac dmg --arm64");
     expect(packageJson.scripts["verify:upgrade-rollback:e2e:dev-dmg"]).toBe("bash scripts/run-upgrade-rollback-e2e.sh --development");
     expect(packageJson.scripts["development:e2e:report:validate"]).toBe("node scripts/validate-development-upgrade-rollback-report.mjs");

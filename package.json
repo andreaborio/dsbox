@@ -26,7 +26,7 @@
     "build:legal-notices": "node node_modules/electron/install.js",
     "pack:mac": "npm run build:provenance:dev && npm run build:legal-notices && npm run build:icon && npm run build && electron-builder --config electron-builder.dev.yml --mac dir --arm64",
     "dist:mac": "npm run build:legal-notices && npm run build:icon && npm run build && electron-builder --mac dmg --arm64 --publish never",
-    "dist:mac:dev": "npm run build:provenance:dev && npm run build:legal-notices && npm run build:icon && npm run build && electron-builder --config electron-builder.dev.yml --mac dmg --arm64 --publish never",
+    "dist:mac:dev": "node scripts/clean-public-release-assets.mjs release && npm run build:provenance:dev && npm run build:legal-notices && npm run build:icon && npm run build && electron-builder --config electron-builder.dev.yml --mac dmg --arm64 --publish never",
     "verify:mac": "bash scripts/verify-macos-release.sh",
     "verify:mac:dev": "bash scripts/verify-macos-release.sh --development",
     "verify:upgrade-rollback:e2e": "bash scripts/run-upgrade-rollback-e2e.sh",

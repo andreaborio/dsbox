@@ -345,6 +345,10 @@ workflow creates the public candidate only after strict readiness, embeds
 clean-tree exact-commit provenance, and verifies identity, legal notices,
 architecture, icon, external engine delivery, and the final checksums. See the
 [macOS packaging contract](docs/PACKAGING-macOS.md) for the complete lane.
+`dist:mac:dev` first removes the exact current-version public evidence filenames
+and `SHA256SUMS.txt` from `release/`, so the development DMG cannot remain beside
+stale release evidence for a different DMG; development evidence in its own
+subdirectory and unrelated files are preserved.
 If Gatekeeper quarantines a locally built ad-hoc copy, first Control-click it in
 Finder and choose **Open**. The
 [installation guide](docs/INSTALL-macOS.md#local-development-build) records the
