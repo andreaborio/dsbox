@@ -17,7 +17,7 @@
 > unchanged in the bridge release so existing installs can upgrade safely.
 
 <p align="center">
-  <a href="https://github.com/andreaborio/dsbox/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/andreaborio/dsbox?display_name=tag&sort=semver&style=flat-square"></a>
+  <img alt="Hebrus Studio 0.4.0 release candidate" src="https://img.shields.io/badge/release%20candidate-0.4.0-7257d5?style=flat-square">
   <a href="https://github.com/andreaborio/dsbox/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/andreaborio/dsbox/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <img alt="macOS 13 or later" src="https://img.shields.io/badge/macOS-13%2B-1b1b1b?style=flat-square&logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-1b1b1b?style=flat-square">
@@ -25,10 +25,18 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/andreaborio/dsbox/releases/latest"><strong>Download for Apple Silicon</strong></a>
+  <strong>Hebrus Studio 0.4.0 release candidate</strong>
+  · <a href="docs/PACKAGING-macOS.md">Packaging status</a>
   · <a href="docs/INSTALL-macOS.md">Installation guide</a>
   · <a href="#run-from-source">Run from source</a>
 </p>
+
+> **Public release blocked by policy.** Version 0.4.0 is a release candidate,
+> not an announced binary release. The machine-readable
+> [`public-release-readiness.json`](scripts/public-release-readiness.json)
+> intentionally has pending external gates, and the tag workflow refuses to
+> build or publish while any remain. The final launch commit will restore the
+> public release URL and download CTA only after strict readiness passes.
 
 ![Hebrus Studio local chat](docs/media/01-chat.png)
 
@@ -136,12 +144,21 @@ Recommendations are made by **Hebrus Studio**, never presented as an endorsement
 
 Installed inventory models appear beside the Thinking control. If Hebrus is off, a selection applies to the next start. If it is running, Hebrus Studio validates the replacement first, restarts the server, and attempts to restore the previous model and runtime if the new launch fails. Switching is disabled while a generation, download, or conflicting runtime operation is active.
 
-## Install the macOS app
+## macOS release candidate
 
-Hebrus Studio ships as an arm64 Electron app for macOS 13 or later.
+Hebrus Studio 0.4.0 is being prepared as an arm64 Electron app for macOS 13 or
+later. This README intentionally does not link a public binary while release
+readiness is blocked; an older repository release may still carry the previous
+product identity and must not be presented as the Hebrus Studio launch.
 
-1. Download `Hebrus-Studio-<version>-macOS-arm64.dmg` and `SHA256SUMS.txt` from the [latest release](https://github.com/andreaborio/dsbox/releases/latest).
-2. Verify the download from the same folder:
+Release reviewers can inspect the local [packaging contract](docs/PACKAGING-macOS.md)
+and [installation procedure](docs/INSTALL-macOS.md). Once every public-release
+gate is evidenced and strict mode passes, the launch commit will add the exact
+release URL and these checksum-first installation steps:
+
+1. Obtain the approved `Hebrus-Studio-<version>-macOS-arm64.dmg` and
+   `SHA256SUMS.txt` from the same public release.
+2. Verify both from the same folder:
 
    ```sh
    shasum -a 256 -c SHA256SUMS.txt
@@ -333,7 +350,18 @@ That gate builds the frozen DSBox checkpoint and the current Hebrus Studio
 commit, then launches DSBox -> Hebrus Studio -> DSBox against one disposable
 legacy profile. It never starts model inference.
 
-A version tag matching `package.json` runs the same checks on GitHub Actions and publishes the DMG, SHA-256 file, and installation guide.
+Normal CI reports release readiness without failing on known external work:
+
+```sh
+npm run release:readiness
+```
+
+The tag workflow instead runs `npm run release:readiness:strict` before any
+application build. A matching version tag cannot currently build or publish a
+public release because every external gate remains explicitly pending. Once
+all gates carry reviewed evidence, that workflow will also generate and
+validate the versioned CycloneDX SBOM from `package-lock.json` before publishing
+the DMG, SBOM, SHA-256 file, and installation guide.
 
 ## Security
 

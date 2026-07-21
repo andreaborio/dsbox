@@ -26,6 +26,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
+      - name: Report public-release readiness without authorizing release
+        run: npm run release:readiness
       - run: npm run typecheck
       - run: npm run check:brand
       - run: npm test
@@ -47,6 +49,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Report public-release readiness without authorizing release
+        run: npm run release:readiness
       - run: npm run pack:mac
       - name: Verify packaged application contract
         run: npm run verify:mac -- "release/mac-arm64/Hebrus Studio.app"

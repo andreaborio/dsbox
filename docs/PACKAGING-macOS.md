@@ -23,6 +23,51 @@ The repository does not claim Developer ID signing or notarization. Those are
 separate release gates and must not be inferred from a successful community
 package verification.
 
+## Public-release interlock
+
+[`scripts/public-release-readiness.json`](../scripts/public-release-readiness.json)
+is the machine-readable authority for external launch readiness. It currently
+marks all required gates `ready: false` and `status: pending`: naming and legal
+approval, private vulnerability reporting, private conduct intake, Developer
+ID signing, notarization and stapling, hosted CI on the exact release commit,
+and model-backed qualification of exact Studio and engine commits.
+
+Inspect the truthful status without failing normal development or CI:
+
+```sh
+npm run release:readiness
+```
+
+The release workflow uses the fail-closed mode before `dist:mac` or any
+`gh release create` command:
+
+```sh
+npm run release:readiness:strict
+```
+
+Strict mode rejects pending gates, incomplete evidence, mismatched version or
+state fields, missing exact-commit attestations, and signing/notarization claims
+that still conflict with the package configuration. Do not set a gate ready
+from intent alone; record the evidence fields described by the checker and keep
+the protected release attestations aligned with the tagged `GITHUB_SHA`.
+
+## Release SBOM
+
+Only after strict readiness passes, the release workflow runs `npm sbom`
+against the complete `package-lock.json` and emits
+`Hebrus-Studio-<version>-SBOM.cdx.json`. The full lockfile graph is intentional:
+it includes runtime, Electron, build, and test dependencies rather than hiding
+the packaged Electron runtime because npm classifies it as a development
+dependency.
+
+The normalization step changes only npm's checkout-directory-derived root name
+to the canonical `hebrus-studio` application identity and adds the exact
+`package-lock.json` SHA-256. `scripts/validate-release-sbom.mjs` then enforces
+the versioned filename, CycloneDX 1.5 format, application identity, component
+references, complete root dependency set, Electron presence, and lockfile hash.
+The validated SBOM is an explicit release asset; this document does not claim
+that it has been published while the readiness manifest remains blocked.
+
 ## Reproduce the verification
 
 Build and inspect the unpacked application without creating a disk image:
