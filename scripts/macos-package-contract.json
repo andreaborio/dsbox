@@ -14,6 +14,12 @@
   },
   "architecture": "arm64",
   "engineDelivery": "external",
+  "requiredLegalNotices": [
+    "LICENSE.txt",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSE.electron.txt",
+    "LICENSES.chromium.html"
+  ],
   "compatibility": {
     "legacyProductName": "DSBox",
     "legacyUserDataDirectoryName": "DSBox",

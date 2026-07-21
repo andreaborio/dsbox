@@ -15,6 +15,7 @@ The community package is:
   `src/assets/hebrus-logo.png` (SHA-256
   `4be8949c73bd52e7abef58396dcd57f636165a8bb6cd6d536a600bcbf880594c`);
 - an ASAR-packaged Electron UI and control plane;
+- bundled project, third-party, Electron, and Chromium legal notices;
 - independent of engine delivery: no Hebrus or legacy DS4 executable is
   embedded. Hebrus Studio discovers and builds the compatible engine separately.
 
@@ -50,8 +51,8 @@ The verifier checks the disk image when present, application and executable
 names, canonical DMG filename, the master-derived icon byte for byte, bundle
 identifier, package and bundle versions, exact architecture, ASAR header
 integrity, the exact embedded logo SHA-256, packaged `package.json`, absence of
-embedded engine executables, checksum when required by the release lane, and
-the sealed ad-hoc code signature.
+embedded engine executables, the four required legal-notice files, checksum
+when required by the release lane, and the sealed ad-hoc code signature.
 
 An optional launch smoke uses disposable Hebrus Studio state and Electron user-data
 directories:
