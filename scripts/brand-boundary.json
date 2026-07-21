@@ -494,13 +494,6 @@
       "maximum": 2
     },
     {
-      "path": "src/components/Onboarding.tsx",
-      "token": "ds4",
-      "classification": "migration-pending",
-      "reason": "Legacy engine wording remains on a public onboarding surface pending copy migration.",
-      "maximum": 1
-    },
-    {
       "path": "src/design-system/index.ts",
       "token": "DSBox",
       "classification": "compatibility",
@@ -905,6 +898,13 @@
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
       "maximum": 6
+    },
+    {
+      "path": "tests/hebrus-studio-brand.test.ts",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Negative regression assertion prevents the legacy engine name from reappearing in visible onboarding copy.",
+      "maximum": 1
     },
     {
       "path": "tests/hebrus-studio-upgrade.test.ts",

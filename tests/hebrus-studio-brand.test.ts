@@ -25,10 +25,11 @@ describe("Hebrus Studio public identity", () => {
   });
 
   it("uses the new name across the browser and desktop entry points", async () => {
-    const [html, desktop, packageJson] = await Promise.all([
+    const [html, desktop, packageJson, onboarding] = await Promise.all([
       text("index.html"),
       text("desktop/main.cjs"),
-      text("package.json")
+      text("package.json"),
+      text("src/components/Onboarding.tsx")
     ]);
 
     expect(html).toContain("<title>Hebrus Studio</title>");
@@ -37,6 +38,8 @@ describe("Hebrus Studio public identity", () => {
       name: "hebrus-studio",
       author: "Hebrus Studio contributors"
     });
+    expect(onboarding).toContain("Metal · Hebrus");
+    expect(onboarding).not.toContain("Metal · ds4");
   });
 
   it("retains all state and wire identifiers needed by existing DSBox installs", async () => {
