@@ -23,6 +23,8 @@ describe("macOS package contract", () => {
       executableName: "Hebrus Studio",
       iconFile: "icon.icns",
       brandLogo: {
+        source: "src/assets/hebrus-logo.png",
+        appIcon: "build/icon.icns",
         archivePrefix: "/dist/assets/hebrus-logo-",
         sha256: "4be8949c73bd52e7abef58396dcd57f636165a8bb6cd6d536a600bcbf880594c"
       },
@@ -49,6 +51,9 @@ describe("macOS package contract", () => {
     expect(builder).toMatch(/^        - arm64$/m);
     expect(builder).not.toMatch(/^(extraFiles|extraResources):/m);
     expect(packageJson.scripts["verify:mac"]).toBe("bash scripts/verify-macos-release.sh");
+    expect(packageJson.scripts["build:icon"]).toBe("bash scripts/build-macos-icon.sh");
+    expect(packageJson.scripts["pack:mac"]).toMatch(/^npm run build:icon && /);
+    expect(packageJson.scripts["dist:mac"]).toMatch(/^npm run build:icon && /);
     expect(packageJson.name).toBe("hebrus-studio");
   });
 
