@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  cycloneDxLicenseExpression,
+  readJson,
+  sha256Buffer,
+  validateReleaseProvenance,
+  versioned
+} from "./release-artifact-utils.mjs";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 
@@ -10,23 +16,35 @@ function requireValue(condition, message, errors) {
   if (!condition) errors.push(message);
 }
 
-async function main() {
-  if (process.argv.length !== 3 || ["--help", "-h"].includes(process.argv[2])) {
-    console.log("Usage: node scripts/validate-release-sbom.mjs <release-sbom.cdx.json>");
-    process.exitCode = process.argv.length === 3 ? 0 : 2;
-    return;
+function parseArgs(argv) {
+  const options = { sbomPath: "", provenancePath: "" };
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "--provenance") options.provenancePath = path.resolve(argv[++index] || "");
+    else if (["--help", "-h"].includes(argument)) {
+      console.log("Usage: node scripts/validate-release-sbom.mjs <release-sbom.cdx.json> --provenance <release-provenance.json>");
+      process.exit(0);
+    } else if (!options.sbomPath) options.sbomPath = path.resolve(argument);
+    else throw new Error(`Unexpected argument: ${argument}`);
   }
-  const sbomPath = path.resolve(process.argv[2]);
-  const [raw, packageText, lockfile, contractText] = await Promise.all([
+  if (!options.sbomPath || !options.provenancePath) throw new Error("SBOM path and --provenance are required");
+  return options;
+}
+
+async function main() {
+  const { sbomPath, provenancePath } = parseArgs(process.argv.slice(2));
+  const [raw, packageText, lockfile, contract, provenance, provenanceBytes] = await Promise.all([
     readFile(sbomPath, "utf8"),
     readFile(path.join(repositoryRoot, "package.json"), "utf8"),
     readFile(path.join(repositoryRoot, "package-lock.json")),
-    readFile(path.join(repositoryRoot, "scripts", "macos-package-contract.json"), "utf8")
+    readJson(path.join(repositoryRoot, "scripts", "macos-package-contract.json")),
+    readJson(provenancePath),
+    readFile(provenancePath)
   ]);
   const packageJson = JSON.parse(packageText);
-  const contract = JSON.parse(contractText);
+  validateReleaseProvenance(provenance, { packageJson, contract });
   const sbom = JSON.parse(raw);
-  const expectedName = contract.sbom.fileNameTemplate.replace("{version}", packageJson.version);
+  const expectedName = versioned(contract.sbom.fileNameTemplate, packageJson.version);
   const errors = [];
   requireValue(path.basename(sbomPath) === expectedName, `filename must be ${expectedName}`, errors);
   requireValue(sbom.bomFormat === contract.sbom.format, `bomFormat must be ${contract.sbom.format}`, errors);
@@ -42,15 +60,31 @@ async function main() {
   requireValue(Array.isArray(sbom.components) && sbom.components.length > 0, "components must be a non-empty array", errors);
   requireValue(Array.isArray(sbom.dependencies) && sbom.dependencies.length > 0, "dependencies must be a non-empty array", errors);
 
-  const lockHash = createHash("sha256").update(lockfile).digest("hex");
-  const declaredLockHash = sbom.metadata?.properties?.find((property) => property?.name === "hebrus:package-lock:sha256")?.value;
-  requireValue(declaredLockHash === lockHash, "package-lock SHA-256 property does not match the current lockfile", errors);
+  const metadataProperties = new Map((sbom.metadata?.properties ?? []).map((property) => [property?.name, property?.value]));
+  const lockHash = sha256Buffer(lockfile);
+  requireValue(metadataProperties.get("hebrus:package-lock:sha256") === lockHash, "package-lock SHA-256 property does not match the current lockfile", errors);
+  requireValue(metadataProperties.get("hebrus:source-commit") === provenance.source.commit, "SBOM source commit does not match release provenance", errors);
+  requireValue(metadataProperties.get("hebrus:source-tag") === provenance.source.tag, "SBOM source tag does not match release provenance", errors);
+  requireValue(metadataProperties.get("hebrus:release-provenance:sha256") === sha256Buffer(provenanceBytes), "SBOM provenance SHA-256 does not match release provenance", errors);
+  requireValue(/^\d+$/.test(metadataProperties.get("hebrus:license-components-enriched") ?? ""), "SBOM license enrichment count is missing", errors);
 
   const componentRefs = new Set();
   for (const component of sbom.components ?? []) {
+    const coordinate = `${component?.name ?? "<unknown>"}@${component?.version ?? "<unknown>"}`;
     requireValue(typeof component?.["bom-ref"] === "string" && component["bom-ref"].length > 0, "every component must have a bom-ref", errors);
     if (componentRefs.has(component?.["bom-ref"])) errors.push(`duplicate component bom-ref: ${component["bom-ref"]}`);
     componentRefs.add(component?.["bom-ref"]);
+    if (!Array.isArray(component?.licenses) || component.licenses.length === 0) {
+      errors.push(`${coordinate} has no license metadata`);
+    } else {
+      component.licenses.forEach((license, index) => {
+        try {
+          cycloneDxLicenseExpression(license, `${coordinate} license[${index}]`);
+        } catch (error) {
+          errors.push(error.message);
+        }
+      });
+    }
   }
   const lock = JSON.parse(lockfile.toString("utf8"));
   const rootLock = lock.packages?.[""] ?? {};
@@ -69,7 +103,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`Validated ${expectedName}: ${sbom.bomFormat} ${sbom.specVersion}, ${sbom.components.length} locked components, package-lock ${lockHash}.`);
+  console.log(`Validated ${expectedName}: ${sbom.bomFormat} ${sbom.specVersion}, ${sbom.components.length} locked components with identifiable licenses, package-lock ${lockHash}, source ${provenance.source.commit}.`);
 }
 
 main().catch((error) => {

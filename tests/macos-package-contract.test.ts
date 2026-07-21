@@ -12,11 +12,12 @@ describe("macOS package contract", () => {
   it("publishes the Hebrus Studio identity without breaking DSBox state", async () => {
     const contract = JSON.parse(await text("scripts/macos-package-contract.json"));
     const builder = await text("electron-builder.yml");
+    const developmentBuilder = await text("electron-builder.dev.yml");
     const packageJson = JSON.parse(await text("package.json"));
     const verifier = await text("scripts/verify-macos-release.sh");
 
     expect(contract).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       productName: "Hebrus Studio",
       packageName: "hebrus-studio",
       artifactBaseName: "Hebrus-Studio",
@@ -31,12 +32,35 @@ describe("macOS package contract", () => {
       },
       architecture: "arm64",
       engineDelivery: "external",
+      signing: {
+        release: {
+          identity: "Developer ID Application",
+          hardenedRuntime: true,
+          notarizedApp: true,
+          notarizedAndStapledDmg: true,
+          gatekeeperRequired: true
+        },
+        development: { identity: "adhoc", hardenedRuntime: false, notarized: false }
+      },
       sbom: {
         format: "CycloneDX",
         specVersion: "1.5",
         componentType: "application",
         source: "package-lock.json",
-        fileNameTemplate: "Hebrus-Studio-{version}-SBOM.cdx.json"
+        fileNameTemplate: "Hebrus-Studio-{version}-SBOM.cdx.json",
+        licenseInventoryFileNameTemplate: "Hebrus-Studio-{version}-THIRD-PARTY-LICENSES.md"
+      },
+      provenance: {
+        embeddedFile: "release-provenance.json",
+        sourceFile: "build/release-provenance.json",
+        schemaVersion: 1,
+        workflow: "release-macos"
+      },
+      upgradeRollback: {
+        schemaVersion: 1,
+        legacyCommit: "595e9952c4fd1197de3aa3ccde66a5ddccddd397",
+        reportFileNameTemplate: "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.json",
+        logFileNameTemplate: "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.log"
       },
       requiredLegalNotices: [
         "LICENSE.txt",
@@ -61,23 +85,48 @@ describe("macOS package contract", () => {
     expect(builder).toMatch(/^productName: Hebrus Studio$/m);
     expect(builder).toMatch(/^artifactName: Hebrus-Studio-\$\{version\}-macOS-\$\{arch\}\.\$\{ext\}$/m);
     expect(builder).toMatch(/^asar: true$/m);
-    expect(builder).toMatch(/^  identity: "-"$/m);
+    expect(builder).toMatch(/^forceCodeSigning: true$/m);
+    expect(builder).not.toMatch(/^\s*identity:/m);
+    expect(builder).toMatch(/^  hardenedRuntime: true$/m);
+    expect(builder).toMatch(/^  notarize: true$/m);
+    expect(developmentBuilder).toContain("extends: ./electron-builder.yml");
+    expect(developmentBuilder).toMatch(/^forceCodeSigning: false$/m);
+    expect(developmentBuilder).toMatch(/^  identity: "-"$/m);
+    expect(developmentBuilder).toMatch(/^  hardenedRuntime: false$/m);
+    expect(developmentBuilder).toMatch(/^  notarize: false$/m);
+    expect(builder).toMatch(/^  sign: true$/m);
+    expect(developmentBuilder).toMatch(/^  sign: false$/m);
     expect(builder).toMatch(/^        - arm64$/m);
     expect(builder).not.toMatch(/^extraFiles:/m);
     expect(builder).toMatch(/^extraResources:\n(?:  - .+\n(?:    .+\n)*)+/m);
+    expect(builder).toContain("from: build/release-provenance.json\n    to: release-provenance.json");
     expect(builder).toContain("from: LICENSE\n    to: LICENSE.txt");
     expect(builder).toContain("from: THIRD_PARTY_NOTICES.md\n    to: THIRD_PARTY_NOTICES.md");
     expect(builder).toContain("from: node_modules/electron/dist/LICENSE\n    to: LICENSE.electron.txt");
     expect(builder).toContain("from: node_modules/electron/dist/LICENSES.chromium.html\n    to: LICENSES.chromium.html");
     expect(packageJson.scripts["verify:mac"]).toBe("bash scripts/verify-macos-release.sh");
+    expect(packageJson.scripts["verify:mac:dev"]).toBe("bash scripts/verify-macos-release.sh --development");
     expect(packageJson.scripts["release:sbom:validate"]).toBe("node scripts/validate-release-sbom.mjs");
+    expect(packageJson.scripts["release:provenance"]).toContain("generate-release-provenance.mjs");
+    expect(packageJson.scripts["release:checksums"]).toContain("create-release-checksums.mjs");
     expect(packageJson.scripts["build:icon"]).toBe("bash scripts/build-macos-icon.sh");
-    expect(packageJson.scripts["pack:mac"]).toMatch(/^npm run build:icon && /);
-    expect(packageJson.scripts["dist:mac"]).toMatch(/^npm run build:icon && /);
+    expect(packageJson.scripts["build:provenance:dev"]).toContain("generate-development-provenance.mjs");
+    expect(packageJson.scripts["build:legal-notices"]).toBe("node node_modules/electron/install.js");
+    expect(packageJson.scripts["pack:mac"]).toContain("--config electron-builder.dev.yml --mac dir --arm64");
+    expect(packageJson.scripts["dist:mac"]).toMatch(/^npm run build:legal-notices && npm run build:icon && /);
+    expect(packageJson.scripts["dist:mac"]).not.toContain("electron-builder.dev.yml");
+    expect(packageJson.scripts["dist:mac:dev"]).toContain("--config electron-builder.dev.yml --mac dmg --arm64");
     expect(packageJson.name).toBe("hebrus-studio");
     expect(verifier).toContain('cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON"');
     expect(verifier).toContain("requiredLegalNotices.join('\\n')");
     expect(verifier).toContain('Required legal notice is missing: $REQUIRED_NOTICE');
+    expect(verifier).toContain("validateReleaseProvenance");
+    expect(verifier).toContain("validate-release-checksums.mjs");
+    expect(verifier).toContain("Authority=Developer ID Application:");
+    expect(verifier).toContain('codesign --verify --verbose=2 "$ARTIFACT"');
+    expect(verifier).toContain("Release DMG has no valid Apple signing team identifier.");
+    expect(verifier).toContain("xcrun stapler validate");
+    expect(verifier).toContain("spctl --assess --type execute");
   });
 
   it("pins Electron to the legacy user-data directory before setting the new name", async () => {
@@ -106,5 +155,51 @@ describe("macOS package contract", () => {
       "desktop/**/*",
       "package.json"
     ]);
+  });
+
+  it("keeps normal macOS CI on explicit development provenance", async () => {
+    const ci = await text(".github/workflows/ci.yml");
+    expect(ci).toContain("npm run pack:mac");
+    expect(ci).toContain("npm run verify:mac:dev -- \"release/mac-arm64/Hebrus Studio.app\"");
+    expect(ci).toContain("npm run verify:upgrade-rollback:e2e -- --source");
+    expect(ci).not.toContain("npm run verify:mac -- \"release/mac-arm64/Hebrus Studio.app\"");
+  });
+
+  it("keeps public packaging on fail-closed Developer ID and outer-DMG notarization", async () => {
+    const workflow = await text(".github/workflows/release-macos.yml");
+    expect(workflow).not.toContain('CSC_IDENTITY_AUTO_DISCOVERY: "false"');
+    for (const secret of ["CSC_LINK", "CSC_KEY_PASSWORD", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"]) {
+      expect(workflow).toContain(`secrets.${secret}`);
+    }
+    expect(workflow).toContain('Required release secret $secret_name is missing.');
+    expect(workflow).toContain("xcrun notarytool submit \"$DMG\"");
+    expect(workflow).toContain("timeout-minutes: 60");
+    expect(workflow).toContain("codesign --verify --verbose=2 \"$DMG\"");
+    expect(workflow).toContain("xcrun stapler staple \"$DMG\"");
+    expect(workflow).toContain("xcrun stapler validate \"$DMG\"");
+    const strict = workflow.indexOf("npm run release:readiness:strict");
+    const preflight = workflow.indexOf("Require Developer ID and notarization credentials");
+    const build = workflow.indexOf("npm run dist:mac");
+    const outerNotary = workflow.indexOf("xcrun notarytool submit");
+    const packageVerify = workflow.indexOf("npm run verify:mac");
+    expect(strict).toBeLessThan(preflight);
+    expect(preflight).toBeLessThan(build);
+    expect(build).toBeLessThan(outerNotary);
+    expect(outerNotary).toBeLessThan(packageVerify);
+  });
+
+  it("keeps the local Gatekeeper exception out of the public install path", async () => {
+    const installGuide = await text("docs/INSTALL-macOS.md");
+    const publicSection = installGuide.slice(
+      installGuide.indexOf("## If Gatekeeper rejects the public app"),
+      installGuide.indexOf("## Local development build")
+    );
+    const developmentSection = installGuide.slice(installGuide.indexOf("## Local development build"));
+
+    expect(publicSection).toContain("Do not remove quarantine");
+    expect(publicSection).not.toContain("xattr -dr");
+    expect(developmentSection).toMatch(/Control-click the app in\s+Finder/);
+    expect(developmentSection).toContain('xattr -dr com.apple.quarantine "/Applications/Hebrus Studio.app"');
+    expect(developmentSection).toMatch(/Never use this local\s+exception for a purported public release/);
   });
 });

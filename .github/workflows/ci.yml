@@ -52,7 +52,7 @@ jobs:
       - name: Report public-release readiness without authorizing release
         run: npm run release:readiness
       - run: npm run pack:mac
-      - name: Verify packaged application contract
-        run: npm run verify:mac -- "release/mac-arm64/Hebrus Studio.app"
+      - name: Verify local-development packaged application contract
+        run: npm run verify:mac:dev -- "release/mac-arm64/Hebrus Studio.app"
       - name: Verify packaged legacy upgrade and rollback
-        run: npm run verify:upgrade-rollback:e2e
+        run: npm run verify:upgrade-rollback:e2e -- --source
