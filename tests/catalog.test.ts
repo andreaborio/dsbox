@@ -150,7 +150,7 @@ describe("Hugging Face model catalog", () => {
 
   it.each([
     ["missing size and checksum pins", "main", 64, undefined, undefined, "deepseek-v4-flash", "DS4 ExpertMajor v2 manifests must pin the single output file, byte size, and SHA-256"],
-    ["a non-main runtime branch", "codex/legacy", 64, 4096, "a".repeat(64), "deepseek-v4-flash", "DS4 ExpertMajor v2 artifacts must pin the andreaborio/ds4 main runtime"],
+    ["a non-main runtime branch", "codex/legacy", 64, 4096, "a".repeat(64), "deepseek-v4-flash", "DS4 ExpertMajor v2 artifacts must pin the andreaborio/ds4 or andreaborio/hebrus main runtime"],
     ["a memory floor below the release minimum", "main", 32, 4096, "a".repeat(64), "deepseek-v4-flash", "DS4 ExpertMajor v2 requires a minimumMemoryGb declaration of at least 64"],
     ["a mismatched byte size", "main", 64, 4097, "a".repeat(64), "deepseek-v4-flash", "The DSBox manifest size or SHA-256 does not match the pinned Hugging Face artifact"],
     ["a mismatched checksum", "main", 64, 4096, "b".repeat(64), "deepseek-v4-flash", "The DSBox manifest size or SHA-256 does not match the pinned Hugging Face artifact"],

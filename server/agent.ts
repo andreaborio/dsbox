@@ -900,7 +900,7 @@ export async function handleAgentChat(
   const capabilities = await resolveAgentCapabilities(services, fetcher, request.signal);
   if (capabilities.runtime.readiness !== "ready") {
     response.status(503).json({
-      error: { code: "runtime_unavailable", message: "ds4-server is not ready yet", retryable: true }
+      error: { code: "runtime_unavailable", message: "The engine server is not ready yet", retryable: true }
     });
     return;
   }

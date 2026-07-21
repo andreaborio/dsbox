@@ -107,7 +107,7 @@ async function relayToDs4(
   if (services.runtime.getState().readiness !== "ready") {
     response.status(503).json({
       error: {
-        message: "ds4-server is not ready yet",
+        message: "The engine server is not ready yet",
         type: "dsbox_runtime_unavailable"
       }
     });

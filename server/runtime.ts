@@ -738,11 +738,16 @@ export class RuntimeManager {
     return path.join(this.store.homeDirectory, "builds", `${checkoutId}.json`);
   }
 
-  private async recordBuildHead(directory: string): Promise<void> {
+  private async recordBuildHead(
+    directory: string,
+    binaryName: (typeof ENGINE_BINARY_NAMES)[number]
+  ): Promise<void> {
     const head = await this.fullGitHead(directory);
     if (!head) return;
-    const binary = await this.engineBinary(directory);
-    if (!binary) throw new Error("The engine build did not produce hebrus-server or ds4-server");
+    const binary = path.join(directory, binaryName);
+    if (!(await this.pathExists(binary, true))) {
+      throw new Error(`The engine build did not produce ${binaryName}`);
+    }
     const binarySha256 = await this.sha256(binary);
     const clean = await execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
       .then((result) => !result.stdout.trim())
@@ -1001,7 +1006,7 @@ export class RuntimeManager {
       this.setState({ phase: "building", currentTask: "Build Metal" });
       const target = await this.engineBuildTarget(directory);
       await this.runTask("make", [`-j${Math.max(2, Math.min(cpus().length, 12))}`, target], directory, "build");
-      await this.recordBuildHead(directory);
+      await this.recordBuildHead(directory, target);
       this.log("success", "dsbox", "Metal engine ready.");
       this.setState({ phase: "idle", currentTask: null, lastError: null });
     } catch (error) {
@@ -1032,7 +1037,7 @@ export class RuntimeManager {
       await this.ensureAppleMetalToolchain();
       const target = await this.engineBuildTarget(config.repository.directory);
       await this.runTask("make", [`-j${Math.max(2, Math.min(cpus().length, 12))}`, target], config.repository.directory, "build");
-      await this.recordBuildHead(config.repository.directory);
+      await this.recordBuildHead(config.repository.directory, target);
       this.log("success", "dsbox", "Metal build completed.");
       this.setState({ phase: "idle", currentTask: null });
     } catch (error) {
@@ -1996,7 +2001,7 @@ export class RuntimeManager {
       const failure = error as { stdout?: string; stderr?: string };
       const output = `${failure.stdout ?? ""}\n${failure.stderr ?? ""}`;
       if (output.trim()) return output;
-      throw new Error("Unable to read ds4-server capabilities");
+      throw new Error("Unable to read engine server capabilities");
     }
   }
 
@@ -2339,7 +2344,7 @@ export class RuntimeManager {
       const wasStopping = this.stopping;
       this.stopping = false;
       const normal = wasStopping || code === 0;
-      const message = normal ? null : `ds4-server exited with ${signal ? `signal ${signal}` : `code ${code ?? "?"}`}`;
+      const message = normal ? null : `${path.basename(binary)} exited with ${signal ? `signal ${signal}` : `code ${code ?? "?"}`}`;
       if (message) this.log("error", "dsbox", message);
       this.setState({
         phase: normal ? "idle" : "error",
@@ -2369,8 +2374,8 @@ export class RuntimeManager {
           "success",
           "dsbox",
           qwen35
-            ? "ds4-server is ready for Qwen chat and tool-enabled Chat Completions."
-            : "ds4-server is ready for chat and coding agents."
+            ? `${path.basename(binary)} is ready for Qwen chat and tool-enabled Chat Completions.`
+            : `${path.basename(binary)} is ready for chat and coding agents.`
         );
         this.setState({ phase: "running", readiness: "ready", currentTask: null });
         if (this.readinessTimer) clearInterval(this.readinessTimer);
@@ -2383,14 +2388,14 @@ export class RuntimeManager {
 
   private async stopEngine(): Promise<void> {
     if (this.automaticSafetyStopPromise) return this.automaticSafetyStopPromise;
-    if (!this.engine) throw new Error("ds4-server is not running");
+    if (!this.engine) throw new Error("The engine server is not running");
     if (this.stopping) return;
     if (this.readinessTimer) clearInterval(this.readinessTimer);
     this.readinessTimer = null;
     this.clearAutomaticMemoryWatchdog();
     this.stopping = true;
     this.setState({ phase: "stopping", currentTask: "Saving KV cache and stopping" });
-    this.log("info", "dsbox", "Sending SIGTERM so ds4 can finish the active request and save the KV cache.");
+    this.log("info", "dsbox", "Sending SIGTERM so the engine can finish the active request and save the KV cache.");
     const child = this.engine;
     child.kill("SIGTERM");
     await new Promise<void>((resolve) => {
@@ -2412,7 +2417,7 @@ export class RuntimeManager {
 
   async forceStop(): Promise<void> {
     if (this.modelSwitchPending) throw new Error("A model switch is already in progress");
-    if (!this.engine) throw new Error("ds4-server is not running");
+    if (!this.engine) throw new Error("The engine server is not running");
     this.log("warn", "dsbox", "Force stop requested; the latest KV checkpoint may not be saved.");
     this.clearAutomaticMemoryWatchdog();
     this.stopping = true;

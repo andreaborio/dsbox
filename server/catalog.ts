@@ -454,7 +454,7 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
     artifactPolicyError = "DS4 ExpertMajor manifests must pin one output file";
   }
   if (!artifactPolicyError && artifactFormat && runtimeBranch !== "main") {
-    artifactPolicyError = "DS4 ExpertMajor v2 artifacts must pin the andreaborio/ds4 main runtime";
+    artifactPolicyError = "DS4 ExpertMajor v2 artifacts must pin the andreaborio/ds4 or andreaborio/hebrus main runtime";
   }
   if (!artifactPolicyError && artifactFormat && (
     !runtimeBranch || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(runtimeCommit ?? "")
