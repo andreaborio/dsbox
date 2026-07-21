@@ -13,6 +13,7 @@ describe("macOS package contract", () => {
     const contract = JSON.parse(await text("scripts/macos-package-contract.json"));
     const builder = await text("electron-builder.yml");
     const packageJson = JSON.parse(await text("package.json"));
+    const verifier = await text("scripts/verify-macos-release.sh");
 
     expect(contract).toMatchObject({
       schemaVersion: 2,
@@ -55,6 +56,7 @@ describe("macOS package contract", () => {
     expect(packageJson.scripts["pack:mac"]).toMatch(/^npm run build:icon && /);
     expect(packageJson.scripts["dist:mac"]).toMatch(/^npm run build:icon && /);
     expect(packageJson.name).toBe("hebrus-studio");
+    expect(verifier).toContain('cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON"');
   });
 
   it("pins Electron to the legacy user-data directory before setting the new name", async () => {

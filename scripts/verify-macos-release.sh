@@ -9,6 +9,7 @@ PRODUCT_NAME=$(node -p "require('$CONTRACT').productName")
 BUNDLE_IDENTIFIER=$(node -p "require('$CONTRACT').bundleIdentifier")
 EXPECTED_EXECUTABLE=$(node -p "require('$CONTRACT').executableName")
 EXPECTED_ICON=$(node -p "require('$CONTRACT').iconFile")
+CANONICAL_ICON="$ROOT_DIR/$(node -p "require('$CONTRACT').brandLogo.appIcon")"
 EXPECTED_ARCHITECTURE=$(node -p "require('$CONTRACT').architecture")
 ARTIFACT_BASE_NAME=$(node -p "require('$CONTRACT').artifactBaseName")
 EXPECTED_DMG_NAME="${ARTIFACT_BASE_NAME}-${VERSION}-macOS-${EXPECTED_ARCHITECTURE}.dmg"
@@ -110,6 +111,14 @@ EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 }
 [[ "$ICON_NAME" == "$EXPECTED_ICON" && -f "$APP_PATH/Contents/Resources/$EXPECTED_ICON" ]] || {
   echo "Unexpected or missing application icon: plist=$ICON_NAME expected=$EXPECTED_ICON" >&2
+  exit 1
+}
+[[ -f "$CANONICAL_ICON" ]] || {
+  echo "Canonical application icon is missing: $CANONICAL_ICON" >&2
+  exit 1
+}
+cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON" || {
+  echo "Packaged application icon differs from the Hebrus master-derived icon." >&2
   exit 1
 }
 [[ -x "$EXECUTABLE" ]] || {
