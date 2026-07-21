@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -147,11 +147,13 @@ describe("development final-DMG compatibility evidence", () => {
   it("rejects development provenance and report in the release validator", async () => {
     const source = await fixture();
     const sbom = path.join(source.releaseDirectory, "Hebrus-Studio-0.4.0-SBOM.cdx.json");
-    await writeFile(sbom, "{}\n");
+    const attestation = path.join(source.releaseDirectory, "Hebrus-Studio-0.4.0-Release-Attestation.json");
+    await Promise.all([writeFile(sbom, "{}\n"), writeFile(attestation, "{}\n")]);
     const result = spawnSync(process.execPath, [
       releaseValidator,
       source.report,
       "--dmg", source.dmg,
+      "--attestation", attestation,
       "--sbom", sbom,
       "--log", source.log,
       "--provenance", source.provenance,
