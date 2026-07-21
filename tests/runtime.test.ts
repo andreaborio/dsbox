@@ -342,10 +342,20 @@ describe("ExpertMajor v2 one-click preparation", () => {
     await expect(internal.startEngine()).rejects.toThrow("requires at least 64 GiB");
   });
 
+  it("uses the Qwen-specific 16 GiB AUTO floor", async () => {
+    const config = createDefaultConfig(8 * 1024 ** 3);
+    config.model.id = "qwen3.6-35b-a3b";
+    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus(), 8 * 1024 ** 3);
+    const internal = runtime as unknown as { startEngine(): Promise<void> };
+
+    await expect(internal.startEngine()).rejects.toThrow("requires at least 16 GiB");
+  });
+
   it("shows a plain Qwen startup command without an environment gate prefix", async () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
     config.model = {
-      path: "/models/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-Q4_K_S.gguf",
+      path: "/models/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf",
       id: "qwen3.6-35b-a3b"
     };
     const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;

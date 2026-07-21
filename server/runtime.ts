@@ -32,7 +32,10 @@ import {
   inspectDs4Gguf,
   type Ds4GgufCompatibility
 } from "./gguf-compatibility.js";
-import { EXPERT_MAJOR_MINIMUM_MEMORY_GB } from "../src/lib/model-format.js";
+import {
+  EXPERT_MAJOR_MINIMUM_MEMORY_GB,
+  QWEN35_EXPERT_MAJOR_MINIMUM_MEMORY_GB
+} from "../src/lib/model-format.js";
 
 export { tokenizeArguments } from "../src/lib/arguments.js";
 export { buildEngineArguments } from "../src/lib/engine-arguments.js";
@@ -1843,9 +1846,11 @@ export class RuntimeManager {
         && header.includes("DS4_EXPERT_STORE_FAMILY_DEEPSEEK4")
         && header.includes("DS4_EXPERT_STORE_FAMILY_GLM_DSA")
         && header.includes("DS4_EXPERT_STORE_FAMILY_QWEN35_MOE")
+        && header.includes("DS4_EXPERT_STORE_STORAGE_MLX_AFFINE4")
         && implementation.includes("model_expand_deepseek4_native_expert_store")
         && implementation.includes("model_expand_glm_native_expert_store")
         && implementation.includes("model_expand_qwen35_expert_store_v2")
+        && implementation.includes("Qwen requires ExpertMajor v2 MLX affine4/group-64 payload")
         && implementation.includes("Qwen inference requires a DS4 ExpertMajor v2 GGUF")
         && implementation.includes("DeepSeek inference requires a DS4 ExpertMajor v2 GGUF")
         && implementation.includes("GLM inference requires a DS4 ExpertMajor v2 GGUF");
@@ -1859,6 +1864,7 @@ export class RuntimeManager {
       const binary = await readFile(path.join(directory, "ds4-server"));
       return binary.includes(Buffer.from("ds4.expert_major.v2"))
         && binary.includes(Buffer.from("Qwen inference requires a DS4 ExpertMajor v2 GGUF"))
+        && binary.includes(Buffer.from("Qwen requires ExpertMajor v2 MLX affine4/group-64 payload"))
         && binary.includes(Buffer.from("DeepSeek inference requires a DS4 ExpertMajor v2 GGUF"))
         && binary.includes(Buffer.from("GLM inference requires a DS4 ExpertMajor v2 GGUF"))
         && binary.includes(Buffer.from("embedded expert-major store active"));
@@ -1987,10 +1993,13 @@ export class RuntimeManager {
   }
 
   private async startEngine(modelSwitch = false): Promise<void> {
-    if (this.totalMemoryBytes < EXPERT_MAJOR_MINIMUM_MEMORY_GB * 1024 ** 3) {
-      throw new Error(`DS4 ExpertMajor v2 requires at least ${EXPERT_MAJOR_MINIMUM_MEMORY_GB} GiB of unified memory`);
-    }
     let config = this.store.get();
+    const configuredMinimumMemoryGb = config.model.id === QWEN35_MODEL_ID
+      ? QWEN35_EXPERT_MAJOR_MINIMUM_MEMORY_GB
+      : EXPERT_MAJOR_MINIMUM_MEMORY_GB;
+    if (this.totalMemoryBytes < configuredMinimumMemoryGb * 1024 ** 3) {
+      throw new Error(`DS4 ExpertMajor v2 requires at least ${configuredMinimumMemoryGb} GiB of unified memory`);
+    }
     const selectedModel = await this.validateLocalModel(config.model.path, config.model.path);
     const modelId = this.localModelId(selectedModel, config.model.id);
     if (modelId !== config.model.id) {
@@ -2000,6 +2009,12 @@ export class RuntimeManager {
       this.bus.publish({ type: "config", payload: config });
     }
     const qwen35 = selectedModel.architecture === QWEN35_ARCHITECTURE;
+    const inspectedMinimumMemoryGb = qwen35
+      ? QWEN35_EXPERT_MAJOR_MINIMUM_MEMORY_GB
+      : EXPERT_MAJOR_MINIMUM_MEMORY_GB;
+    if (this.totalMemoryBytes < inspectedMinimumMemoryGb * 1024 ** 3) {
+      throw new Error(`DS4 ExpertMajor v2 requires at least ${inspectedMinimumMemoryGb} GiB of unified memory`);
+    }
     const expertMajorManaged = isManagedExpertMajorV2Model(config, selectedModel.architecture);
     if (selectedModel.artifactFormat) {
       config = await this.ensureExpertMajorRuntimeCheckout(

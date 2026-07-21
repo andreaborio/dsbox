@@ -11,7 +11,8 @@ import type {
 } from "../src/types.js";
 import {
   ds4ArtifactFormatTensor,
-  EXPERT_MAJOR_MINIMUM_MEMORY_GB
+  EXPERT_MAJOR_MINIMUM_MEMORY_GB,
+  QWEN35_EXPERT_MAJOR_MINIMUM_MEMORY_GB
 } from "../src/lib/model-format.js";
 
 const AUTHOR = "andreaborio" as const;
@@ -96,6 +97,8 @@ interface DsboxManifest {
       version?: number;
       tensor?: string;
       requiresRuntime?: string;
+      storage?: string;
+      groupSize?: number;
     };
   };
 }
@@ -426,13 +429,22 @@ async function catalogModel(model: HubModel, publisher: CatalogPublisher, totalM
   const requiresExpertMajorV2 = modelId === "qwen3.6-35b-a3b"
     || modelId.startsWith("deepseek")
     || modelId === "glm-5.2";
+  const expertMajorMinimumMemoryGb = modelId === "qwen3.6-35b-a3b"
+    ? QWEN35_EXPERT_MAJOR_MINIMUM_MEMORY_GB
+    : EXPERT_MAJOR_MINIMUM_MEMORY_GB;
   if (!artifactPolicyError && publisher !== "unsloth" && requiresExpertMajorV2 && artifactFormat !== "ds4-expert-major-v2") {
     artifactPolicyError = `${modelId} requires a manifest-pinned DS4 ExpertMajor v2 artifact`;
   }
-  if (!artifactPolicyError && artifactFormat && (
-    minimumMemoryGb === null || minimumMemoryGb < EXPERT_MAJOR_MINIMUM_MEMORY_GB
+  if (!artifactPolicyError && modelId === "qwen3.6-35b-a3b" && artifactFormat === "ds4-expert-major-v2" && (
+    manifest?.artifact?.format?.storage !== "mlx-affine4"
+    || manifest?.artifact?.format?.groupSize !== 64
   )) {
-    artifactPolicyError = `DS4 ExpertMajor v2 requires a minimumMemoryGb declaration of at least ${EXPERT_MAJOR_MINIMUM_MEMORY_GB}`;
+    artifactPolicyError = "Qwen3.6 requires a manifest-pinned ExpertMajor v2 MLX affine4/group-64 artifact";
+  }
+  if (!artifactPolicyError && artifactFormat && (
+    minimumMemoryGb === null || minimumMemoryGb < expertMajorMinimumMemoryGb
+  )) {
+    artifactPolicyError = `DS4 ExpertMajor v2 requires a minimumMemoryGb declaration of at least ${expertMajorMinimumMemoryGb}`;
   }
   if (!artifactPolicyError && artifactFormat && manifest?.artifact?.assembly) {
     artifactPolicyError = "DS4 ExpertMajor v2 releases must publish one complete GGUF; multipart assembly is not supported";

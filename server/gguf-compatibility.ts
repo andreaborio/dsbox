@@ -11,6 +11,11 @@ const MAX_KEY_BYTES = 16 * 1024;
 const MAX_NAME_BYTES = 1024 * 1024;
 const MAX_ARRAY_ITEMS = 5_000_000;
 const READ_BUFFER_BYTES = 64 * 1024;
+const GGUF_DEFAULT_ALIGNMENT = 32;
+const EXPERT_MAJOR_V2_HEADER_PROBE_BYTES = 168;
+const EXPERT_MAJOR_V2_MAGIC = "DS4EXPV2";
+const EXPERT_MAJOR_STORAGE_MLX_AFFINE4 = 1;
+const EXPERT_MAJOR_MLX_GROUP_SIZE = 64;
 
 const GGUF_TYPE = {
   uint8: 0,
@@ -297,7 +302,19 @@ interface TensorLayoutExpectation {
 
 interface TensorDescriptor {
   dimensions: number[];
+  offset: number;
   type: number;
+}
+
+function alignUp(value: number, alignment: number): number {
+  if (!Number.isSafeInteger(value) || !Number.isSafeInteger(alignment) ||
+      value < 0 || alignment <= 0 || (alignment & (alignment - 1)) !== 0) {
+    throw new GgufParseError("GGUF data alignment is invalid");
+  }
+  const remainder = value % alignment;
+  const aligned = remainder === 0 ? value : value + alignment - remainder;
+  if (!Number.isSafeInteger(aligned)) throw new GgufParseError("GGUF data offset is too large");
+  return aligned;
 }
 
 function createQwen35MoeTensorLayout(): Map<string, TensorLayoutExpectation> {
@@ -789,8 +806,9 @@ const emptyHeader = {
 
 /**
  * Inspect the GGUF v3 header, metadata, and tensor directory required by the
- * current DS4 runtime. Tensor offsets are parsed, but model tensor bytes are
- * never read or mapped.
+ * current DS4 runtime. Tensor payloads are not mapped; Qwen additionally reads
+ * the fixed 168-byte ExpertMajor header prefix so DSBox can reject the retired
+ * GGML/Q4 store before attempting to launch the affine-only runtime.
  */
 export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibility> {
   let handle: FileHandle | null = null;
@@ -852,8 +870,8 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         dimensions.push(safeNumber(await cursor.u64((dimensionCount - dimension - 1) * 8 + 12 + tensorTail), `GGUF tensor ${name} dimension`));
       }
       const type = await cursor.u32(8 + tensorTail);
-      await cursor.u64(tensorTail + 8);
-      tensors.set(name, { dimensions, type });
+      const offset = safeNumber(await cursor.u64(tensorTail + 8), `GGUF tensor ${name} offset`);
+      tensors.set(name, { dimensions, offset, type });
     }
 
     const expertMajorV1Tensor = "ds4.expert_major.v1";
@@ -995,6 +1013,35 @@ export async function inspectDs4Gguf(filePath: string): Promise<Ds4GgufCompatibi
         return result(header, {
           code: "missing_tensor_signature",
           message: "This Qwen3.6 GGUF has an incompatible ExpertMajor v2 routed-store extent.",
+          invalidKeys: [expertMajorV2Tensor]
+        });
+      }
+      const declaredAlignment = metadata.get("general.alignment")?.value;
+      const dataAlignment = typeof declaredAlignment === "number"
+        ? declaredAlignment
+        : GGUF_DEFAULT_ALIGNMENT;
+      const dataStart = alignUp(cursor.position, dataAlignment);
+      const qwenStoreOffset = dataStart + (qwenStore?.offset ?? 0);
+      if (!Number.isSafeInteger(qwenStoreOffset) ||
+          qwenStoreOffset > file.size - EXPERT_MAJOR_V2_HEADER_PROBE_BYTES) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: "This Qwen3.6 GGUF has a truncated ExpertMajor v2 manifest.",
+          invalidKeys: [expertMajorV2Tensor]
+        });
+      }
+      const storeHeader = Buffer.allocUnsafe(EXPERT_MAJOR_V2_HEADER_PROBE_BYTES);
+      const { bytesRead } = await handle.read(
+        storeHeader, 0, storeHeader.length, qwenStoreOffset
+      );
+      const affineStore = bytesRead === storeHeader.length &&
+        storeHeader.subarray(0, 8).toString("ascii") === EXPERT_MAJOR_V2_MAGIC &&
+        storeHeader.readUInt32LE(160) === EXPERT_MAJOR_STORAGE_MLX_AFFINE4 &&
+        storeHeader.readUInt32LE(164) === EXPERT_MAJOR_MLX_GROUP_SIZE;
+      if (!affineStore) {
+        return result(header, {
+          code: "missing_tensor_signature",
+          message: "Qwen3.6 now requires the ExpertMajor v2 MLX affine4/group-64 payload; the retired GGML/Q4 store is not runnable.",
           invalidKeys: [expertMajorV2Tensor]
         });
       }

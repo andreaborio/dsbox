@@ -109,15 +109,15 @@ Appearance includes five instant choices: Follow system, DSBox Light, DSBox Dark
 
 ### Use a GGUF already on the Mac
 
-**Scan this Mac** checks Spotlight first and falls back to a bounded filesystem scan. Before adding a result, DSBox reads the GGUF v3 header, architecture metadata, and tensor index to verify that the file uses a layout supported by DS4. It never reads the model-weight payload during this check, so validation stays lightweight even for very large files. Verified findings are stored in `~/.dsbox/local-models.json` with user-only permissions, so the chat model switcher opens immediately instead of scanning the disk again. Deleted, unreadable, corrupt, multipart, or incompatible entries are pruned automatically.
+**Scan this Mac** checks Spotlight first and falls back to a bounded filesystem scan. Before adding a result, DSBox reads the GGUF v3 header, architecture metadata, and tensor index to verify that the file uses a layout supported by DS4. It does not read model weights; for Qwen it additionally probes the fixed 168-byte ExpertMajor manifest prefix so the retired GGML/Q4 payload is rejected before launch. Validation therefore stays lightweight even for very large files. Verified findings are stored in `~/.dsbox/local-models.json` with user-only permissions, so the chat model switcher opens immediately instead of scanning the disk again. Deleted, unreadable, corrupt, multipart, or incompatible entries are pruned automatically.
 
 **Choose GGUF file…** opens the native Finder picker. DSBox uses the selected model in place: it does not copy or upload it, and it never asks a non-technical user to type a path.
 
-A generic GGUF container is not enough: DS4 requires its own architecture metadata and tensor layout. Finder selection, disk scan, model switching, and server startup all use the same compatibility gate, with a specific explanation when a file cannot run. Qwen3.6, DeepSeek V4 Flash, and GLM-5.2 inference now require the opaque `ds4.expert_major.v2` store. Canonical routed tensors and the retired `ds4.expert_major.v1` layout are rejected, so the Library never presents them as runnable or portable llama.cpp/MLX GGUFs.
+A generic GGUF container is not enough: DS4 requires its own architecture metadata and tensor layout. Finder selection, disk scan, model switching, and server startup all use the same compatibility gate, with a specific explanation when a file cannot run. Qwen3.6, DeepSeek V4 Flash, and GLM-5.2 inference require the opaque `ds4.expert_major.v2` store; Qwen specifically requires its MLX affine4/group-64 payload inside that same v2 GGUF. Canonical routed tensors, Qwen v2 GGML/Q4 payloads, and the retired `ds4.expert_major.v1` layout are rejected.
 
 ### Download inside DSBox
 
-The catalog reads DS4-oriented sources from the Hugging Face `andreaborio` profile. Every installable Qwen, DeepSeek, or GLM model must have a revision-pinned `dsbox.json` declaring ExpertMajor v2, `ds4.expert_major.v2`, the required `andreaborio/ds4` `main` runtime, an exact runtime commit, and one complete GGUF whose byte size and SHA-256 match Hugging Face LFS metadata. DSBox enables download only when that complete contract is present, then verifies and builds the unified runtime before the download starts. Each public family repository may retain canonical, v1, chunked, or sidecar files for download continuity and reproducibility, but its root manifest selects only the v2 file and DSBox marks every other variant unavailable. Canonical inference, old GLM sidecars, and legacy runtime branches are not compatibility targets. Unsloth repositories remain visible for provenance, but their standard GGUF builds cannot be selected or downloaded.
+The catalog reads DS4-oriented sources from the Hugging Face `andreaborio` profile. Every installable Qwen, DeepSeek, or GLM model must have a revision-pinned `dsbox.json` declaring ExpertMajor v2, `ds4.expert_major.v2`, the required `andreaborio/ds4` `main` runtime, an exact runtime commit, and one complete GGUF whose byte size and SHA-256 match Hugging Face LFS metadata. Qwen manifests must additionally declare `storage: mlx-affine4` and `groupSize: 64`. DSBox enables download only when that complete contract is present, then verifies and builds the unified runtime before the download starts. Canonical, v1, Qwen Q4, chunked, and sidecar artifacts remain non-runnable history rather than fallback formats.
 
 A renamed model repository can declare `previousRepositories` in the same manifest. DSBox uses those ids only to recognize an already-installed bundle at its old local path; new downloads always use the current revision-pinned repository.
 
@@ -206,7 +206,7 @@ codex --model <selected-model-id> -c model_provider=ds4
 
 ## SSD streaming and safety
 
-DSBox does not pretend that “fits on SSD” means “will be fast.” ExpertMajor v2 release models require at least 64 GiB of unified memory. On supported Macs, a model larger than unified memory may run through DS4 SSD streaming, but speed still depends on model structure, quantization, storage, thermal state, and cache warmth. Insufficient memory or disk space blocks installation.
+DSBox does not pretend that “fits on SSD” means “will be fast.” DeepSeek and GLM ExpertMajor v2 releases require at least 64 GiB of unified memory; Qwen's qualified AUTO policy starts at 16 GiB. On supported Macs, a model larger than unified memory may run through DS4 SSD streaming, but speed still depends on model structure, quantization, storage, thermal state, and cache warmth. Insufficient memory or disk space blocks installation.
 
 Adaptive mode lets DS4 calculate its expert-cache budget from live model geometry and available memory. DSBox independently watches macOS pressure and swap activity while the runtime is active, and performs a safety stop if pressure becomes unsafe or required signals repeatedly disappear. Manual cache, residency, and power controls remain available only for unmanaged/custom runtimes. DeepSeek and GLM retain disk-KV; DeepSeek also retains imatrix and directional steering. Qwen keeps live context reuse but cannot serialize its recurrent session payload yet, while GLM keeps its graph-selected prefill schedule. Context, trace, safe extra flags, and environment controls remain available in Settings.
 
@@ -221,27 +221,17 @@ armed in every managed outcome.
 <details>
 <summary><strong>Recorded Qwen3.6 reference results</strong></summary>
 
-On a MacBook Pro M5 Pro with 64 GB unified memory, the 19.38 GiB
-`Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-Q4_K_S.gguf` artifact ran fully resident on Metal. A
-balanced six-run serial/parallel router A/B improved median generation from
-37.00 to 62.96 t/s (+70.2%) with identical output hashes. Five quiet-desktop
-confirmations measured median prefill at 223.73 t/s and generation at 65.63 t/s;
-the same binary measured 50.20 t/s generation under active compositor and Codex
-GPU contention. The optimized Thinking sampler improved a short-context A/B
-from 39.71 to 58.59 t/s (+47.6%). At positions 1,428-1,628, parallel full-
-attention GQA improved an adjacent A/B from 36.18 to 44.06 t/s (+21.8%) with an
-identical response hash. A 504-token DSBox-like Thinking turn measured 320.30
-t/s prefill and 41.04 t/s generation while its attention prefix grew from 1,426
-to 1,930 tokens. These changes schedule sampling and attention more efficiently;
-they do not change or further quantize model weights. Every recorded process
-reported zero swaps. A final active-desktop parity check measured 46.61 versus
-46.54 t/s at short context and 33.03 versus 33.19 t/s at a 1,403-token prefix
-without/with Thinking, confirming that full-vocabulary sampling no longer adds
-a material decode penalty. These are bounded machine-local measurements, not
-guarantees for arbitrary prompts or foreground GPU load. During the v2 migration,
-a controlled 2K-token A/B/A gate measured 318.83–318.96 t/s prefill and 29.54 t/s
-decode on v2, with byte-identical output and less than one percent delta versus
-the retired v1 container. The current release notes and methodology live in the
+On a MacBook Pro M5 Pro with 64 GB unified memory, the 20,808,566,880-byte
+`Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf` candidate runs through
+the same flag-free AUTO command in resident and SSD modes. Final resident
+prefill measured 1,661.18 t/s at 2K, 1,421.90 t/s at 8K, and 877.34 t/s at 32K.
+Forced SSD qualification measured 551.57, 269.10, and 83.69 t/s respectively.
+At 32K the adaptive macro scheduler read 16.875 GiB once (1.000x amplification),
+72.2% less than the 60.776 GiB multi-tile control, while throughput changed by
+-0.63%. A 128+16 generation lane produced identical resident/SSD greedy token
+IDs; resident decode was 57.43 t/s and the deliberately cold 321-expert SSD lane
+was 23.94 t/s. These are bounded machine-local measurements, not guarantees for
+arbitrary prompts or foreground GPU load. The full methodology lives in the
 [`andreaborio/ds4`](https://github.com/andreaborio/ds4) repository.
 
 </details>

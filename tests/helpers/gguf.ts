@@ -458,6 +458,7 @@ export interface Ds4QwenGgufFixtureOptions {
   /** Recreates the original Unsloth artifact's unsupported output quant. */
   rawUnslothLayout?: boolean;
   legacyExpertMajorV1?: boolean;
+  expertStorage?: "mlx-affine4-g64" | "ggml";
 }
 
 /**
@@ -529,7 +530,7 @@ export function createDs4QwenGgufFixture(options: Ds4QwenGgufFixtureOptions = {}
     if (options.includeCanonicalRoutedTensor && routed[0]) tensors.push(routed[0]);
   }
 
-  return Buffer.concat([
+  const directory = Buffer.concat([
     Buffer.from("GGUF", "ascii"),
     uint32(GGUF_VERSION),
     uint64(tensors.length),
@@ -537,4 +538,14 @@ export function createDs4QwenGgufFixture(options: Ds4QwenGgufFixtureOptions = {}
     ...metadata,
     ...tensors.map((tensor) => shapedTensorDescriptor(tensor.name, tensor.type, tensor.dimensions))
   ]);
+  if (options.canonical || options.legacyExpertMajorV1) return directory;
+
+  const padding = Buffer.alloc((32 - directory.length % 32) % 32);
+  const storeHeader = Buffer.alloc(168);
+  storeHeader.write("DS4EXPV2", 0, "ascii");
+  if (options.expertStorage !== "ggml") {
+    storeHeader.writeUInt32LE(1, 160);
+    storeHeader.writeUInt32LE(64, 164);
+  }
+  return Buffer.concat([directory, padding, storeHeader]);
 }

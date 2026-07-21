@@ -12,7 +12,12 @@ function requestedUrl(input: string | URL | Request): string {
   return input instanceof Request ? input.url : String(input);
 }
 
-function expertMajorArtifact(output: string, sizeBytes: number, sha256: string) {
+function expertMajorArtifact(
+  output: string,
+  sizeBytes: number,
+  sha256: string,
+  storage?: { storage: string; groupSize: number }
+) {
   return {
     output,
     sizeBytes,
@@ -21,7 +26,8 @@ function expertMajorArtifact(output: string, sizeBytes: number, sha256: string) 
       id: "ds4-expert-major",
       version: 2,
       tensor: "ds4.expert_major.v2",
-      requiresRuntime: "andreaborio/ds4"
+      requiresRuntime: "andreaborio/ds4",
+      ...storage
     }
   };
 }
@@ -286,7 +292,7 @@ describe("Hugging Face model catalog", () => {
         const isQwen = repository.includes("Qwen3.6");
         const isGlm = repository.toLowerCase().includes("glm");
         const file = isQwen
-          ? "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-Q4_K_S.gguf"
+          ? "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf"
           : isGlm
             ? "GLM-5.2-DS4-ExpertMajor-v2-Q2_K.gguf"
             : "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf";
@@ -307,7 +313,12 @@ describe("Hugging Face model catalog", () => {
             modelId: isQwen ? "qwen3.6-35b-a3b" : isGlm ? "glm-5.2" : "deepseek-v4-flash",
             runtimeBranch: "main",
             runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
-            artifact: expertMajorArtifact(file, 2048, "b".repeat(64))
+            artifact: expertMajorArtifact(
+              file,
+              2048,
+              "b".repeat(64),
+              isQwen ? { storage: "mlx-affine4", groupSize: 64 } : undefined
+            )
           });
         }
       }
@@ -447,7 +458,7 @@ describe("Hugging Face model catalog", () => {
     const revision = "2".repeat(40);
     const canonicalFile = "Qwen3.6-35B-A3B-ds4-Q4_K_S.gguf";
     const v1File = "Qwen3.6-35B-A3B-DS4-ExpertMajor-v1-Q4_K_S.gguf";
-    const modelFile = "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-Q4_K_S.gguf";
+    const modelFile = "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf";
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = requestedUrl(input);
       if (url.includes("/api/models?")) return jsonResponse([{ id: repository, sha: revision }]);
@@ -472,15 +483,20 @@ describe("Hugging Face model catalog", () => {
           runtimeBranch: "main",
           runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
           file: modelFile,
-          minimumMemoryGb: 64,
+          minimumMemoryGb: 16,
           previousRepositories: [previousRepository, null, 42, "not a repository", previousRepository],
-          artifact: expertMajorArtifact(modelFile, 20_808_566_880, "c".repeat(64))
+          artifact: expertMajorArtifact(
+            modelFile,
+            20_808_566_880,
+            "c".repeat(64),
+            { storage: "mlx-affine4", groupSize: 64 }
+          )
         });
       }
       throw new Error(`Unexpected request: ${url}`);
     }));
 
-    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+    const catalog = await new ModelCatalog().list(16 * 1024 ** 3, true);
     const qwen = catalog.models.find((model) => model.repository === repository);
 
     expect(qwen).toMatchObject({
@@ -497,6 +513,13 @@ describe("Hugging Face model catalog", () => {
       expect.objectContaining({ outputFile: modelFile, installable: true })
     ]));
     expect(catalog.recommended?.repository).toBe(repository);
+
+    const constrained = await new ModelCatalog().list(8 * 1024 ** 3, true);
+    expect(constrained.models[0]).toMatchObject({
+      installable: false,
+      recommended: false,
+      unavailableReason: "This ExpertMajor v2 model requires at least 16 GiB of unified memory"
+    });
   });
 
   it("refuses an ExpertMajor-named repository without the explicit DS4-only format contract", async () => {

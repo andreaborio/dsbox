@@ -274,6 +274,18 @@ describe("DS4 GGUF compatibility inspection", () => {
     expect(DS4_QWEN35MOE_EXPERT_STORE_BYTES).toBe(18_119_405_568);
   });
 
+  it("rejects the retired Qwen ExpertMajor v2 GGML/Q4 payload", async () => {
+    const result = await inspect(createDs4QwenGgufFixture({ expertStorage: "ggml" }));
+
+    expect(result.compatible).toBe(false);
+    expect(result.artifactFormat).toBe("ds4-expert-major-v2");
+    expect(result.reason).toMatchObject({
+      code: "missing_tensor_signature",
+      invalidKeys: ["ds4.expert_major.v2"]
+    });
+    expect(result.reason?.message).toContain("MLX affine4/group-64");
+  });
+
   it("rejects the legacy Qwen ExpertMajor v1 tensor contract", async () => {
     const result = await inspect(createDs4QwenGgufFixture({ legacyExpertMajorV1: true }));
 
