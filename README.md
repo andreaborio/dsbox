@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="build/icon.svg" width="96" height="96" alt="Hebrus Studio logo">
+  <img src="src/assets/hebrus-logo.png" width="320" alt="Hebrus Studio logo">
 </p>
 
 <h1 align="center">Hebrus Studio</h1>

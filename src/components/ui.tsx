@@ -1,19 +1,14 @@
 import { Check, ChevronDown, Copy, LoaderCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import hebrusLogo from "../assets/hebrus-logo.png";
 import type { EnginePhase } from "../types";
 
 export function BrandMark({ small = false, size }: { small?: boolean; size?: "md" | "hero" }) {
   const sizeClass = small ? "brand-mark--small" : size === "hero" ? "brand-mark--hero" : "";
   return (
     <span className={`brand-mark ${sizeClass}`} aria-hidden="true">
-      <svg viewBox="0 0 32 32" focusable="false" aria-hidden="true">
-        <rect className="brand-mark__tile" x="1" y="1" width="30" height="30" rx="9" />
-        <path
-          className="brand-mark__stream"
-          d="M22.5 9.6h-9.1c-2.35 0-4.05 1.34-4.05 3.3s1.7 3.3 4.05 3.3h5.2c2.35 0 4.05 1.34 4.05 3.3s-1.7 3.3-4.05 3.3H9.5"
-        />
-      </svg>
+      <img className="brand-mark__image" src={hebrusLogo} alt="" draggable={false} />
     </span>
   );
 }
