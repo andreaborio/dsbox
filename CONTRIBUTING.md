@@ -11,6 +11,7 @@ Before submitting a change, run:
 
 ```sh
 npm audit --audit-level=high
+npm run check:brand
 npm run typecheck
 npm test
 npm run build
@@ -22,6 +23,13 @@ files must also pass the arm64 package contract on macOS:
 ```sh
 npm run pack:mac
 npm run verify:mac -- "release/mac-arm64/Hebrus Studio.app"
+```
+
+Changes to bundle identity, Electron `userData`, `~/.dsbox`, config v2,
+downloads, local model inventory, or `dsbox:*` browser storage must also pass:
+
+```sh
+npm run verify:upgrade-rollback:e2e
 ```
 
 ## Runtime rules
@@ -62,3 +70,9 @@ Use fixtures or fake servers for logs, SSE, and process tests. Never start real 
 
 Freeze public catalog records as offline fixtures. Tests must not depend on a
 mutable branch, the current Hugging Face response, or an unpinned download URL.
+
+All contributors must follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+Maintainer and release authority is described in [GOVERNANCE.md](GOVERNANCE.md).
+Preserve the provenance recorded in [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md)
+and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) when changing or adding
+derived code.
