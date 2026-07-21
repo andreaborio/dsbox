@@ -187,6 +187,26 @@ describe("ExpertMajor engine capability bridge", () => {
     expect(binaryProbe).toHaveBeenCalledWith("/runtime/ds4-server");
   });
 
+  it("rejects a capability-less hebrus-server without invoking legacy probes", async () => {
+    const runtime = new RuntimeManager({} as ConfigStore, new EventBus());
+    const internal = runtime as unknown as {
+      engineBinary(directory: string): Promise<string | null>;
+      engineCapabilities(directory: string, binary: string): Promise<EngineCapabilities | null>;
+      checkoutHasExpertMajorV2Source(directory: string): Promise<boolean>;
+      legacyBinaryHasExpertMajorV2Runtime(binary: string): Promise<boolean>;
+      binaryHasExpertMajorV2Runtime(directory: string): Promise<boolean>;
+    };
+    vi.spyOn(internal, "engineBinary").mockResolvedValue("/runtime/hebrus-server");
+    vi.spyOn(internal, "engineCapabilities").mockResolvedValue(null);
+    const sourceProbe = vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockResolvedValue(true);
+    const binaryProbe = vi.spyOn(internal, "legacyBinaryHasExpertMajorV2Runtime").mockResolvedValue(true);
+
+    await expect(internal.binaryHasExpertMajorV2Runtime("/runtime"))
+      .rejects.toThrow(/hebrus-server does not expose the required structured capability contract/);
+    expect(sourceProbe).not.toHaveBeenCalled();
+    expect(binaryProbe).not.toHaveBeenCalled();
+  });
+
   it("does not fall back when the supported capability command fails closed", async () => {
     const runtime = new RuntimeManager({} as ConfigStore, new EventBus());
     const internal = runtime as unknown as {

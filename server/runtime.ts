@@ -2079,6 +2079,9 @@ export class RuntimeManager {
       }
       return true;
     }
+    if (path.basename(binary) !== "ds4-server") {
+      throw new Error("hebrus-server does not expose the required structured capability contract");
+    }
     return await this.checkoutHasExpertMajorV2Source(directory)
       && await this.legacyBinaryHasExpertMajorV2Runtime(binary);
   }
