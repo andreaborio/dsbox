@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "Qwen3.6-35B-A3B DS4 ExpertMajor v2 MLX Affine4 G64",
+  "description": "Stable single-file DS4 ExpertMajor v2 MLX-affine Qwen3.6-35B-A3B artifact for resident or SSD-streamed Metal inference on Apple Silicon.",
+  "status": "stable",
+  "recommended": true,
+  "modelId": "qwen3.6-35b-a3b",
+  "runtimeBranch": "main",
+  "runtimeCommit": "73a332fef82a0bcdd567d17e0de17aa004cad85d",
+  "file": "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf",
+  "minimumMemoryGb": 16,
+  "architecture": "moe",
+  "artifact": {
+    "output": "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf",
+    "sizeBytes": 20808566880,
+    "sha256": "dd17266185833a9f05531ce366fd7284ddca1ed64aa3dcf06e321e8c72c9ea3d",
+    "format": {
+      "id": "ds4-expert-major",
+      "version": 2,
+      "tensor": "ds4.expert_major.v2",
+      "requiresRuntime": "andreaborio/ds4",
+      "storage": "mlx-affine4",
+      "groupSize": 64
+    }
+  }
+}

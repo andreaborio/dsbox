@@ -222,7 +222,7 @@ armed in every managed outcome.
 <summary><strong>Recorded Qwen3.6 reference results</strong></summary>
 
 On a MacBook Pro M5 Pro with 64 GB unified memory, the 20,808,566,880-byte
-`Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf` candidate runs through
+`Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf` release runs through
 the same flag-free AUTO command in resident and SSD modes. Final resident
 prefill measured 1,661.18 t/s at 2K, 1,421.90 t/s at 8K, and 877.34 t/s at 32K.
 Forced SSD qualification measured 551.57, 269.10, and 83.69 t/s respectively.

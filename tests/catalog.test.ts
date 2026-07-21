@@ -1,5 +1,11 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModelCatalog } from "../server/catalog.js";
+
+const publishedQwenManifest = JSON.parse(readFileSync(
+  new URL("./fixtures/qwen-dsbox-manifest-7bf9c3f.json", import.meta.url),
+  "utf8"
+));
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -38,6 +44,100 @@ afterEach(() => {
 });
 
 describe("Hugging Face model catalog", () => {
+  it("accepts the exact published Qwen manifest at its immutable revision", async () => {
+    const repository = "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF";
+    const revision = "7bf9c3f7f6136aeb2599d75ee61c0cc2f18e2b02";
+    const runtimeCommit = "73a332fef82a0bcdd567d17e0de17aa004cad85d";
+    const modelFile = "Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-MLX-Affine4-G64.gguf";
+    const sizeBytes = 20_808_566_880;
+    const sha256 = "dd17266185833a9f05531ce366fd7284ddca1ed64aa3dcf06e321e8c72c9ea3d";
+    const requested: string[] = [];
+
+    expect(publishedQwenManifest).toEqual({
+      schemaVersion: 1,
+      name: "Qwen3.6-35B-A3B DS4 ExpertMajor v2 MLX Affine4 G64",
+      description: "Stable single-file DS4 ExpertMajor v2 MLX-affine Qwen3.6-35B-A3B artifact for resident or SSD-streamed Metal inference on Apple Silicon.",
+      status: "stable",
+      recommended: true,
+      modelId: "qwen3.6-35b-a3b",
+      runtimeBranch: "main",
+      runtimeCommit,
+      file: modelFile,
+      minimumMemoryGb: 16,
+      architecture: "moe",
+      artifact: {
+        output: modelFile,
+        sizeBytes,
+        sha256,
+        format: {
+          id: "ds4-expert-major",
+          version: 2,
+          tensor: "ds4.expert_major.v2",
+          requiresRuntime: "andreaborio/ds4",
+          storage: "mlx-affine4",
+          groupSize: 64
+        }
+      }
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestedUrl(input);
+      requested.push(url);
+      if (url === "https://huggingface.co/api/models?author=andreaborio&filter=ds4&sort=lastModified&direction=-1&limit=100&full=true") {
+        return jsonResponse([{ id: repository, sha: revision }]);
+      }
+      if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
+        return jsonResponse({
+          id: repository,
+          sha: revision,
+          tags: ["ds4", "gguf", "qwen3.6", "qwen35moe", "expert-major"],
+          siblings: [{ rfilename: modelFile, lfs: { size: sizeBytes, sha256 } }]
+        });
+      }
+      if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
+        return jsonResponse(publishedQwenManifest);
+      }
+      throw new Error(`Offline fixture has no response for: ${url}`);
+    }));
+
+    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+
+    expect(catalog.stale).toBe(false);
+    expect(catalog.recommended).toMatchObject({
+      repository,
+      revision,
+      label: publishedQwenManifest.name,
+      modelId: "qwen3.6-35b-a3b",
+      runtimeBranch: "main",
+      runtimeCommit,
+      outputFile: modelFile,
+      totalBytes: sizeBytes,
+      minimumMemoryGb: 16,
+      artifactFormat: "ds4-expert-major-v2",
+      architecture: "moe",
+      installable: true,
+      experimental: false,
+      recommended: true,
+      unavailableReason: null,
+      variantCount: 1
+    });
+    expect(catalog.recommended?.files).toEqual([{ name: modelFile, sizeBytes, sha256 }]);
+    expect(catalog.recommended?.variants).toEqual([
+      expect.objectContaining({
+        outputFile: modelFile,
+        totalBytes: sizeBytes,
+        installable: true,
+        unavailableReason: null,
+        files: [{ name: modelFile, sizeBytes, sha256 }]
+      })
+    ]);
+    expect(requested).toContain(`https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`);
+    expect(requested).toContain(`https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`);
+    expect(requested.filter((url) => url.includes(repository))).toSatisfy(
+      (urls: string[]) => urls.every((url) => url.includes(revision))
+    );
+  });
+
   it("hides the retired multipart GLM experimental repository", async () => {
     const repository = "andreaborio/glm52-ds4-native-64g-q2k-experimental";
     const revision = "696c749dada98815931d8f704e4ba1f1fdfeb5a7";

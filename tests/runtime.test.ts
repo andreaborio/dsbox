@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { createDefaultConfig } from "../server/config.js";
 import type { ConfigStore } from "../server/config.js";
@@ -30,6 +31,11 @@ import {
   tokenizeArguments
 } from "../server/runtime.js";
 import { runtimeCompatibilityMatrix } from "./fixtures/hebrus-runtime-compatibility.js";
+
+const publishedQwenManifest = JSON.parse(readFileSync(
+  new URL("./fixtures/qwen-dsbox-manifest-7bf9c3f.json", import.meta.url),
+  "utf8"
+));
 
 function engineCapabilities(engineId: "ds4" | "hebrus" = "ds4"): EngineCapabilities {
   return {
@@ -71,6 +77,41 @@ describe("managed Git remote identity", () => {
 
   it("does not accept a lookalike engine remote", () => {
     expect(isSupportedEngineRemote("https://github.com/example/hebrus.git")).toBe(false);
+  });
+});
+
+describe("published model runtime compatibility", () => {
+  it("requires the published Qwen runtime commit to be in the checkout ancestry", async () => {
+    const config = createDefaultConfig(64 * 1024 ** 3);
+    config.repository.directory = "/runtime/andreaborio-ds4";
+    const store = { get: vi.fn(() => structuredClone(config)) } as unknown as ConfigStore;
+    const runtime = new RuntimeManager(store, new EventBus());
+    const model = {
+      artifactFormat: "ds4-expert-major-v2",
+      modelId: publishedQwenManifest.modelId,
+      runtimeBranch: publishedQwenManifest.runtimeBranch,
+      runtimeCommit: publishedQwenManifest.runtimeCommit,
+      recommended: publishedQwenManifest.recommended
+    } as CatalogModel;
+    const internal = runtime as unknown as {
+      ensureCatalogRuntime(model: CatalogModel): Promise<void>;
+      pathExists(candidate: string): Promise<boolean>;
+      runtimeIncludesCommit(directory: string, commit: string): Promise<boolean>;
+      buildMatchesHead(directory: string): Promise<boolean>;
+    };
+    vi.spyOn(internal, "pathExists").mockResolvedValue(true);
+    const runtimeIncludesCommit = vi.spyOn(internal, "runtimeIncludesCommit").mockResolvedValue(true);
+    const buildMatchesHead = vi.spyOn(internal, "buildMatchesHead").mockResolvedValue(true);
+
+    await internal.ensureCatalogRuntime(model);
+
+    expect(publishedQwenManifest.artifact.format.requiresRuntime).toBe("andreaborio/ds4");
+    expect(runtimeIncludesCommit).toHaveBeenCalledOnce();
+    expect(runtimeIncludesCommit).toHaveBeenCalledWith(
+      config.repository.directory,
+      "73a332fef82a0bcdd567d17e0de17aa004cad85d"
+    );
+    expect(buildMatchesHead).toHaveBeenCalledWith(config.repository.directory);
   });
 });
 
