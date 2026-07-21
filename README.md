@@ -285,9 +285,15 @@ Build and verify the macOS artifacts:
 
 ```sh
 npm run pack:mac
+npm run verify:mac -- release/mac-arm64/DSBox.app
 npm run dist:mac
 npm run verify:mac
 ```
+
+The verifier freezes the current DSBox bundle identity and confirms that the
+Electron package does not embed a Hebrus or legacy DS4 engine. See the
+[macOS packaging contract](docs/PACKAGING-macOS.md) for the exact checks and
+the optional isolated launch smoke.
 
 A version tag matching `package.json` runs the same checks on GitHub Actions and publishes the DMG, SHA-256 file, and installation guide.
 

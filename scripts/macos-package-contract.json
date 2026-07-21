@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "productName": "DSBox",
+  "bundleIdentifier": "com.dsbox.desktop",
+  "executableName": "DSBox",
+  "architecture": "arm64",
+  "engineDelivery": "external",
+  "forbiddenEmbeddedEngineExecutables": [
+    "hebrus",
+    "hebrus-server",
+    "hebrus-agent",
+    "hebrus-bench",
+    "hebrus-eval",
+    "ds4",
+    "ds4-server",
+    "ds4-agent",
+    "ds4-bench",
+    "ds4-eval"
+  ]
+}

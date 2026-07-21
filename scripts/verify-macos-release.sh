@@ -4,11 +4,17 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION=$(node -p "require('$ROOT_DIR/package.json').version")
-DMG=${1:-"$ROOT_DIR/release/DSBox-${VERSION}-macOS-arm64.dmg"}
+CONTRACT="$ROOT_DIR/scripts/macos-package-contract.json"
+PRODUCT_NAME=$(node -p "require('$CONTRACT').productName")
+BUNDLE_IDENTIFIER=$(node -p "require('$CONTRACT').bundleIdentifier")
+EXPECTED_EXECUTABLE=$(node -p "require('$CONTRACT').executableName")
+EXPECTED_ARCHITECTURE=$(node -p "require('$CONTRACT').architecture")
+ARTIFACT=${1:-"$ROOT_DIR/release/${PRODUCT_NAME}-${VERSION}-macOS-${EXPECTED_ARCHITECTURE}.dmg"}
 MOUNT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dsbox-release.XXXXXX")
-APP_PATH="$MOUNT_DIR/DSBox.app"
+APP_PATH=""
 APP_PROCESS=""
 ATTACHED=0
+LAUNCH_ROOT=""
 
 cleanup() {
   if [[ -n "$APP_PROCESS" ]] && kill -0 "$APP_PROCESS" 2>/dev/null; then
@@ -18,43 +24,125 @@ cleanup() {
   if [[ "$ATTACHED" -eq 1 ]]; then
     hdiutil detach "$MOUNT_DIR" -quiet || true
   fi
+  if [[ -n "$LAUNCH_ROOT" && -d "$LAUNCH_ROOT" ]]; then
+    rm -r "$LAUNCH_ROOT"
+  fi
   rmdir "$MOUNT_DIR" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-if [[ ! -f "$DMG" ]]; then
-  echo "DMG not found: $DMG" >&2
+if [[ ! -e "$ARTIFACT" ]]; then
+  echo "Package not found: $ARTIFACT" >&2
   exit 1
 fi
 
-echo "Verifying disk image checksum..."
-hdiutil verify "$DMG" >/dev/null
-hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$DMG" >/dev/null
-ATTACHED=1
+case "$ARTIFACT" in
+  *.dmg)
+    echo "Verifying disk image structure..."
+    hdiutil verify "$ARTIFACT" >/dev/null
+    hdiutil attach -readonly -nobrowse -mountpoint "$MOUNT_DIR" "$ARTIFACT" >/dev/null
+    ATTACHED=1
+    APP_PATH="$MOUNT_DIR/${PRODUCT_NAME}.app"
+    ;;
+  *.app)
+    APP_PATH=${ARTIFACT%/}
+    ;;
+  *)
+    echo "Expected a .app bundle or .dmg disk image: $ARTIFACT" >&2
+    exit 1
+    ;;
+esac
 
 if [[ ! -d "$APP_PATH" ]]; then
-  echo "DSBox.app is missing from the disk image." >&2
+  echo "${PRODUCT_NAME}.app is missing: $APP_PATH" >&2
   exit 1
 fi
 
 INFO_PLIST="$APP_PATH/Contents/Info.plist"
-EXECUTABLE="$APP_PATH/Contents/MacOS/DSBox"
-BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$INFO_PLIST")
-BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST")
-ARCHITECTURES=$(lipo -archs "$EXECUTABLE")
+if [[ ! -f "$INFO_PLIST" ]]; then
+  echo "Info.plist is missing from $APP_PATH." >&2
+  exit 1
+fi
 
-[[ "$BUNDLE_ID" == "com.dsbox.desktop" ]] || {
+BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$INFO_PLIST")
+DISPLAY_NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$INFO_PLIST")
+BUNDLE_NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "$INFO_PLIST")
+BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$INFO_PLIST")
+SHORT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST")
+EXECUTABLE_NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$INFO_PLIST")
+EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
+
+[[ "$(basename "$APP_PATH")" == "${PRODUCT_NAME}.app" ]] || {
+  echo "Unexpected application bundle name: $(basename "$APP_PATH")" >&2
+  exit 1
+}
+[[ "$DISPLAY_NAME" == "$PRODUCT_NAME" && "$BUNDLE_NAME" == "$PRODUCT_NAME" ]] || {
+  echo "Unexpected product name: display=$DISPLAY_NAME bundle=$BUNDLE_NAME" >&2
+  exit 1
+}
+[[ "$BUNDLE_ID" == "$BUNDLE_IDENTIFIER" ]] || {
   echo "Unexpected bundle identifier: $BUNDLE_ID" >&2
   exit 1
 }
-[[ "$BUNDLE_VERSION" == "$VERSION" ]] || {
-  echo "Bundle version $BUNDLE_VERSION does not match package version $VERSION." >&2
+[[ "$SHORT_VERSION" == "$VERSION" && "$BUNDLE_VERSION" == "$VERSION" ]] || {
+  echo "Bundle versions short=$SHORT_VERSION build=$BUNDLE_VERSION do not match package version $VERSION." >&2
   exit 1
 }
-[[ " $ARCHITECTURES " == *" arm64 "* ]] || {
-  echo "The app executable is not arm64: $ARCHITECTURES" >&2
+[[ "$EXECUTABLE_NAME" == "$EXPECTED_EXECUTABLE" ]] || {
+  echo "Unexpected executable name: $EXECUTABLE_NAME" >&2
   exit 1
 }
+[[ -x "$EXECUTABLE" ]] || {
+  echo "The declared executable is missing or not executable: $EXECUTABLE" >&2
+  exit 1
+}
+
+ARCHITECTURES=$(lipo -archs "$EXECUTABLE")
+[[ "$ARCHITECTURES" == "$EXPECTED_ARCHITECTURE" ]] || {
+  echo "Unexpected app architecture: $ARCHITECTURES" >&2
+  exit 1
+}
+
+ASAR_PATH="$APP_PATH/Contents/Resources/app.asar"
+if [[ ! -f "$ASAR_PATH" ]]; then
+  echo "The packaged application payload is not an ASAR archive." >&2
+  exit 1
+fi
+ASAR_INTEGRITY=$(/usr/libexec/PlistBuddy -c "Print :ElectronAsarIntegrity:Resources/app.asar:hash" "$INFO_PLIST")
+
+node - "$ASAR_PATH" "$CONTRACT" "$VERSION" "$ASAR_INTEGRITY" <<'NODE'
+const { createHash } = require("node:crypto");
+const path = require("node:path");
+const asar = require("@electron/asar");
+
+const [, , archivePath, contractPath, expectedVersion, expectedIntegrity] = process.argv;
+const contract = require(contractPath);
+const packaged = JSON.parse(asar.extractFile(archivePath, "package.json").toString("utf8"));
+
+if (packaged.name !== "dsbox" || packaged.version !== expectedVersion) {
+  throw new Error(`Unexpected packaged metadata: ${packaged.name}@${packaged.version}`);
+}
+
+const archiveEntries = asar.listPackage(archivePath);
+const embeddedEngine = archiveEntries.find((entry) =>
+  contract.forbiddenEmbeddedEngineExecutables.includes(path.posix.basename(entry))
+);
+if (embeddedEngine) throw new Error(`Engine executable embedded in app.asar: ${embeddedEngine}`);
+
+const { headerString } = asar.getRawHeader(archivePath);
+const actualIntegrity = createHash("sha256").update(headerString).digest("hex");
+if (actualIntegrity !== expectedIntegrity) {
+  throw new Error(`ASAR integrity mismatch: plist=${expectedIntegrity} archive=${actualIntegrity}`);
+}
+NODE
+
+PHYSICAL_ENGINE=$(find "$APP_PATH/Contents" -type f -print | awk -F/ '
+  $NF ~ /^(hebrus|hebrus-server|hebrus-agent|hebrus-bench|hebrus-eval|ds4|ds4-server|ds4-agent|ds4-bench|ds4-eval)([.]exe)?$/ { print; exit }
+')
+if [[ -n "$PHYSICAL_ENGINE" ]]; then
+  echo "Engine executable embedded outside app.asar: $PHYSICAL_ENGINE" >&2
+  exit 1
+fi
 
 echo "Verifying the sealed ad-hoc bundle..."
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
@@ -70,8 +158,14 @@ grep -q "^TeamIdentifier=not set$" <<<"$SIGNATURE_DETAILS" || {
 
 if [[ "${DSBOX_VERIFY_LAUNCH:-0}" == "1" ]]; then
   PORT=${DSBOX_VERIFY_PORT:-4343}
-  LOG_FILE=$(mktemp "${TMPDIR:-/tmp}/dsbox-release-launch.XXXXXX.log")
-  DSBOX_PORT="$PORT" "$EXECUTABLE" >"$LOG_FILE" 2>&1 &
+  if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1024 || PORT > 65535 )); then
+    echo "DSBOX_VERIFY_PORT must be an unprivileged TCP port." >&2
+    exit 1
+  fi
+  LAUNCH_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/dsbox-release-launch.XXXXXX")
+  LOG_FILE="$LAUNCH_ROOT/launch.log"
+  DSBOX_HOME="$LAUNCH_ROOT/state" DSBOX_PORT="$PORT" \
+    "$EXECUTABLE" --user-data-dir="$LAUNCH_ROOT/electron" >"$LOG_FILE" 2>&1 &
   APP_PROCESS=$!
 
   READY=0
@@ -89,10 +183,9 @@ if [[ "${DSBOX_VERIFY_LAUNCH:-0}" == "1" ]]; then
   if [[ "$READY" -ne 1 ]]; then
     echo "The packaged app did not expose a healthy control plane." >&2
     sed -n '1,160p' "$LOG_FILE" >&2
-    rm -f "$LOG_FILE"
     exit 1
   fi
-  rm -f "$LOG_FILE"
 fi
 
-echo "Verified DSBox ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ad-hoc signed."
+echo "Verified ${PRODUCT_NAME} ${VERSION}: ${BUNDLE_ID}, ${ARCHITECTURES}, ${EXECUTABLE_NAME}, external engine, ad-hoc signed."
+echo "Developer ID signing and notarization are intentionally not asserted."
