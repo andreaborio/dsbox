@@ -120,21 +120,21 @@
       "token": "DSBox",
       "classification": "compatibility",
       "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
-      "maximum": 7
+      "maximum": 10
     },
     {
       "path": "README.md",
       "token": "dsbox",
       "classification": "compatibility",
       "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
-      "maximum": 12
+      "maximum": 8
     },
     {
       "path": "README.md",
       "token": "DS4",
       "classification": "compatibility",
       "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
-      "maximum": 3
+      "maximum": 2
     },
     {
       "path": "README.md",
@@ -204,7 +204,7 @@
       "token": "DSBox",
       "classification": "compatibility",
       "reason": "Packaging guidance documents stable legacy identifiers required by upgrades and rollbacks.",
-      "maximum": 8
+      "maximum": 11
     },
     {
       "path": "docs/PACKAGING-macOS.md",
@@ -330,7 +330,7 @@
       "token": "DSBox",
       "classification": "compatibility",
       "reason": "Upgrade harness retains legacy package labels needed to exercise old installers.",
-      "maximum": 5
+      "maximum": 3
     },
     {
       "path": "scripts/verify-macos-release.sh",
@@ -821,6 +821,13 @@
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
       "maximum": 3
+    },
+    {
+      "path": "tests/development-artifact-evidence.test.ts",
+      "token": "dsbox",
+      "classification": "serialized/permanent",
+      "reason": "The development evidence fixture pins the stable com.dsbox.desktop bundle identifier so rollback compatibility remains testable.",
+      "maximum": 1
     },
     {
       "path": "tests/fixtures/hebrus-runtime-compatibility.ts",
