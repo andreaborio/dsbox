@@ -702,8 +702,46 @@ export class RuntimeManager {
     }
   }
 
-  private async engineBinary(directory: string): Promise<string | null> {
+  private async preferredEngineBinary(directory: string): Promise<string | null> {
     return resolveEngineBinaryPath(directory, (candidate) => this.pathExists(candidate, true));
+  }
+
+  private async validatedStampedEngineBinary(directory: string): Promise<string | null> {
+    if (!this.store.homeDirectory) return null;
+    try {
+      const stamp = JSON.parse(await readFile(this.buildStampPath(directory), "utf8")) as {
+        directory?: string;
+        head?: string;
+        clean?: boolean;
+        binaryPath?: string;
+        binarySha256?: string;
+      };
+      const resolvedDirectory = path.resolve(directory);
+      const allowedBinaryPaths = ENGINE_BINARY_NAMES.map((name) => path.join(resolvedDirectory, name));
+      if (stamp.directory !== resolvedDirectory
+        || stamp.clean !== true
+        || typeof stamp.binaryPath !== "string"
+        || !allowedBinaryPaths.includes(stamp.binaryPath)
+        || !/^[a-f0-9]{64}$/i.test(stamp.binarySha256 ?? "")
+        || !(await this.pathExists(stamp.binaryPath, true))) return null;
+      const [head, checkoutClean] = await Promise.all([
+        this.fullGitHead(directory),
+        execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
+          .then((result) => !result.stdout.trim())
+          .catch(() => false)
+      ]);
+      if (!head || stamp.head !== head || !checkoutClean) return null;
+      return await this.sha256(stamp.binaryPath) === stamp.binarySha256
+        ? stamp.binaryPath
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async engineBinary(directory: string): Promise<string | null> {
+    return await this.validatedStampedEngineBinary(directory)
+      ?? await this.preferredEngineBinary(directory);
   }
 
   private async engineBuildTarget(directory: string): Promise<(typeof ENGINE_BINARY_NAMES)[number]> {
@@ -767,31 +805,7 @@ export class RuntimeManager {
   }
 
   private async buildMatchesHead(directory: string): Promise<boolean> {
-    const binary = await this.engineBinary(directory);
-    if (!binary) return false;
-    const head = await this.fullGitHead(directory);
-    if (!head) return false;
-    const checkoutClean = await execFileAsync("git", ["status", "--porcelain"], { cwd: directory })
-      .then((result) => !result.stdout.trim())
-      .catch(() => false);
-    if (!checkoutClean) return false;
-    try {
-      const stamp = JSON.parse(await readFile(this.buildStampPath(directory), "utf8")) as {
-        directory?: string;
-        head?: string;
-        clean?: boolean;
-        binaryPath?: string;
-        binarySha256?: string;
-      };
-      if (stamp.directory !== path.resolve(directory)
-        || stamp.head !== head
-        || stamp.clean !== true
-        || stamp.binaryPath !== path.resolve(binary)
-        || !stamp.binarySha256) return false;
-      return await this.sha256(binary) === stamp.binarySha256;
-    } catch {
-      return false;
-    }
+    return await this.validatedStampedEngineBinary(directory) !== null;
   }
 
   private async ensureDiskSpace(target: string, requiredBytes: number): Promise<void> {

@@ -137,15 +137,14 @@ describe("filesystem runtime bridge smoke", () => {
       };
       expect(stamp.binaryPath).toBe(fixture.ds4Binary);
       expect(stamp.binarySha256).toBe(await sha256(fixture.ds4Binary));
-      await expect(runtime.buildMatchesHead(fixture.repository)).resolves.toBe(false);
+      await expect(runtime.engineBinary(fixture.repository)).resolves.toBe(fixture.ds4Binary);
+      await expect(runtime.buildMatchesHead(fixture.repository)).resolves.toBe(true);
 
-      await chmod(fixture.hebrusBinary, 0o644);
       const binary = await runtime.engineBinary(fixture.repository);
       expect(binary).toBe(fixture.ds4Binary);
       await expect(probeEngineCapabilities(binary!, fixture.repository))
         .resolves.toMatchObject({ engine_id: "ds4", executable_role: "server" });
       await expect(runtime.binaryHasExpertMajorV2Runtime(fixture.repository)).resolves.toBe(true);
-      await expect(runtime.buildMatchesHead(fixture.repository)).resolves.toBe(true);
     } finally {
       await rm(fixture.root, { recursive: true, force: true });
     }
