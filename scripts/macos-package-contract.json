@@ -15,6 +15,13 @@
   },
   "architecture": "arm64",
   "engineDelivery": "external",
+  "sbom": {
+    "format": "CycloneDX",
+    "specVersion": "1.5",
+    "componentType": "application",
+    "source": "package-lock.json",
+    "fileNameTemplate": "Hebrus-Studio-{version}-SBOM.cdx.json"
+  },
   "requiredLegalNotices": [
     "LICENSE.txt",
     "THIRD_PARTY_NOTICES.md",

@@ -8,8 +8,9 @@ external release gates below are complete.
 
 ## Identity and upgrade safety
 
-- Publishes `Hebrus Studio.app` and
-  `Hebrus-Studio-0.4.0-macOS-arm64.dmg`.
+- Uses the candidate artifact names `Hebrus Studio.app` and
+  `Hebrus-Studio-0.4.0-macOS-arm64.dmg`; publication remains blocked by the
+  readiness interlock below.
 - Uses the project-supplied Hebrus PNG unchanged in the README and application;
   web depth is a CSS-only drop shadow, and the macOS icon is generated from the
   same hash-frozen master during packaging.
@@ -43,6 +44,18 @@ external release gates below are complete.
 The community build is arm64, ad-hoc signed, and not notarized. Developer ID
 signing, notarization, stapling, and clean-machine Gatekeeper verification are
 separate launch gates and are not claimed by this release candidate.
+
+Public publication is mechanically blocked while
+`scripts/public-release-readiness.json` contains a pending gate. The release
+workflow runs strict readiness before building, so creating a `v0.4.0` tag today
+cannot publish this candidate. Normal CI uses status mode and continues to test
+the source while reporting the pending work.
+
+After every gate is evidenced, the release workflow will generate a versioned
+`Hebrus-Studio-0.4.0-SBOM.cdx.json` with `npm sbom` from the complete
+`package-lock.json`, normalize the root application identity, validate the
+CycloneDX 1.5 document and lockfile digest, and attach it to the release. No
+SBOM or public binary is claimed as published while readiness remains blocked.
 
 ## Historical release notes
 

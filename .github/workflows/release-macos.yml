@@ -35,12 +35,26 @@ jobs:
             exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+      - name: Enforce public-release readiness before build
+        env:
+          HEBRUS_HOSTED_CI_COMMIT: ${{ vars.HEBRUS_HOSTED_CI_COMMIT }}
+          HEBRUS_MODEL_BACKED_STUDIO_COMMIT: ${{ vars.HEBRUS_MODEL_BACKED_STUDIO_COMMIT }}
+          HEBRUS_MODEL_BACKED_ENGINE_COMMIT: ${{ vars.HEBRUS_MODEL_BACKED_ENGINE_COMMIT }}
+        run: npm run release:readiness:strict
       - run: npm run typecheck
       - run: npm run check:brand
       - run: npm test
       - name: Verify packaged legacy upgrade and rollback
         run: npm run verify:upgrade-rollback:e2e
       - run: npm run dist:mac
+      - name: Generate and validate CycloneDX SBOM from package-lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          SBOM_PATH="release/Hebrus-Studio-${{ steps.version.outputs.version }}-SBOM.cdx.json"
+          npm sbom --sbom-format cyclonedx --sbom-type application --package-lock-only \
+            | node scripts/normalize-release-sbom.mjs > "$SBOM_PATH"
+          node scripts/validate-release-sbom.mjs "$SBOM_PATH"
       - name: Create checksum
         shell: bash
         run: |
@@ -57,6 +71,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "release/Hebrus-Studio-${{ steps.version.outputs.version }}-macOS-arm64.dmg#Hebrus Studio for Apple Silicon" \
+            "release/Hebrus-Studio-${{ steps.version.outputs.version }}-SBOM.cdx.json#CycloneDX SBOM" \
             "release/SHA256SUMS.txt#SHA-256 checksum" \
             "docs/INSTALL-macOS.md#Installation guide" \
             --verify-tag \

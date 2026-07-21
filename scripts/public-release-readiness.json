@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "productName": "Hebrus Studio",
+  "candidateVersion": "0.4.0",
+  "publicRelease": {
+    "state": "blocked",
+    "policy": "Every required gate must be ready, evidenced, and rechecked in strict mode on the tagged commit before any public artifact is built or published."
+  },
+  "gates": [
+    {
+      "id": "naming-legal-approval",
+      "title": "Naming and legal approval",
+      "ready": false,
+      "status": "pending",
+      "requirement": "Approve the Hebrus and Hebrus Studio names, collision and trademark review, licensing, attribution, and public-release legal posture.",
+      "remediation": "Record the final approval reference and reviewer after all naming and legal checks close.",
+      "evidence": null
+    },
+    {
+      "id": "private-vulnerability-reporting",
+      "title": "Private vulnerability reporting",
+      "ready": false,
+      "status": "pending",
+      "requirement": "Enable and test a private vulnerability-reporting route that does not expose report details publicly.",
+      "remediation": "Enable GitHub private vulnerability reporting, submit a harmless test report, and record the private intake and test references.",
+      "evidence": null
+    },
+    {
+      "id": "private-conduct-intake",
+      "title": "Private conduct-report intake",
+      "ready": false,
+      "status": "pending",
+      "requirement": "Provide and test a private maintainer channel for sensitive Code of Conduct reports.",
+      "remediation": "Publish the private route in CODE_OF_CONDUCT.md, test maintainer receipt, and record the intake and test references.",
+      "evidence": null
+    },
+    {
+      "id": "developer-id-signing",
+      "title": "Developer ID signing",
+      "ready": false,
+      "status": "pending",
+      "requirement": "Sign the macOS application with an authorized Apple Developer ID Application identity instead of the community ad-hoc identity.",
+      "remediation": "Configure protected signing credentials, replace the ad-hoc packaging contract, and record the certificate identity and verification reference.",
+      "evidence": null
+    },
+    {
+      "id": "notarization-stapling",
+      "title": "Notarization and stapling",
+      "ready": false,
+      "status": "pending",
+      "requirement": "Notarize the signed macOS artifact, staple the accepted ticket, and pass Gatekeeper assessment on a clean Mac.",
+      "remediation": "Configure notarization, verify stapling and Gatekeeper, and record the submission and clean-machine verification references.",
+      "evidence": null
+    },
+    {
+      "id": "hosted-ci-exact-commit",
+      "title": "Hosted CI on the exact release commit",
+      "ready": false,
+      "status": "pending",
+      "requirement": "Complete the required hosted CI lanes on the exact commit targeted by the version tag.",
+      "remediation": "Run hosted CI on the final commit, record the workflow reference, and set HEBRUS_HOSTED_CI_COMMIT to that full commit in the protected release environment.",
+      "evidence": null
+    },
+    {
+      "id": "engine-model-backed-exact-commit",
+      "title": "Model-backed engine qualification on exact commits",
+      "ready": false,
+      "status": "pending",
+      "requirement": "Qualify packaged Studio against an exact Hebrus engine commit and immutable model artifact with model-backed startup, inference, and shutdown evidence.",
+      "remediation": "Record the engine commit, model SHA-256, qualification report, and protected exact-commit attestations for both Studio and engine.",
+      "evidence": null
+    }
+  ]
+}

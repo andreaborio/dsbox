@@ -32,6 +32,13 @@ describe("macOS package contract", () => {
       },
       architecture: "arm64",
       engineDelivery: "external",
+      sbom: {
+        format: "CycloneDX",
+        specVersion: "1.5",
+        componentType: "application",
+        source: "package-lock.json",
+        fileNameTemplate: "Hebrus-Studio-{version}-SBOM.cdx.json"
+      },
       requiredLegalNotices: [
         "LICENSE.txt",
         "THIRD_PARTY_NOTICES.md",
@@ -64,6 +71,7 @@ describe("macOS package contract", () => {
     expect(builder).toContain("from: node_modules/electron/dist/LICENSE\n    to: LICENSE.electron.txt");
     expect(builder).toContain("from: node_modules/electron/dist/LICENSES.chromium.html\n    to: LICENSES.chromium.html");
     expect(packageJson.scripts["verify:mac"]).toBe("bash scripts/verify-macos-release.sh");
+    expect(packageJson.scripts["release:sbom:validate"]).toBe("node scripts/validate-release-sbom.mjs");
     expect(packageJson.scripts["build:icon"]).toBe("bash scripts/build-macos-icon.sh");
     expect(packageJson.scripts["pack:mac"]).toMatch(/^npm run build:icon && /);
     expect(packageJson.scripts["dist:mac"]).toMatch(/^npm run build:icon && /);
