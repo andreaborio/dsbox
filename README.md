@@ -276,6 +276,29 @@ flowchart LR
 
 The gateway parses and validates incoming requests, rejects unsupported media, removes hop-by-hop headers, and relays response status, safe headers, and streaming bytes. It does not translate semantic text, tool, or reasoning fields.
 
+## Provenance and acknowledgments
+
+Hebrus Studio is the companion application for the Hebrus engine. Hebrus began
+as a fork of [`antirez/ds4`](https://github.com/antirez/ds4) and still retains
+substantial core implementation, architecture, utilities, and Git history from
+that project. Salvatore Sanfilippo (antirez) and the upstream contributors
+created the foundation from which the engine's Metal, ExpertMajor, and SSD
+streaming work evolved.
+
+[`llama.cpp`](https://github.com/ggml-org/llama.cpp),
+[`GGML`](https://github.com/ggml-org/ggml),
+[`MLX`](https://github.com/ml-explore/mlx), and MLX-LM are important engine
+implementation and validation references. Hebrus Studio does not claim their
+endorsement and does not present them as runtime dependencies of the desktop
+application. Exact scopes, retained code notices, and further references live
+in the engine's
+[`ACKNOWLEDGMENTS.md`](https://github.com/andreaborio/ds4/blob/main/ACKNOWLEDGMENTS.md)
+and
+[`THIRD_PARTY_NOTICES.md`](https://github.com/andreaborio/ds4/blob/main/THIRD_PARTY_NOTICES.md).
+Application-specific credits and dependency guidance are recorded in
+[ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Development and releases
 
 ```sh
@@ -298,6 +321,16 @@ Electron package does not embed a Hebrus or legacy DS4 engine. See the
 [macOS packaging contract](docs/PACKAGING-macOS.md) for the exact checks and
 the optional isolated launch smoke.
 
+State-compatibility changes must also pass the real packaged sequence:
+
+```sh
+npm run verify:upgrade-rollback:e2e
+```
+
+That gate builds the frozen DSBox checkpoint and the current Hebrus Studio
+commit, then launches DSBox -> Hebrus Studio -> DSBox against one disposable
+legacy profile. It never starts model inference.
+
 A version tag matching `package.json` runs the same checks on GitHub Actions and publishes the DMG, SHA-256 file, and installation guide.
 
 ## Security
@@ -305,6 +338,14 @@ A version tag matching `package.json` runs the same checks on GitHub Actions and
 Follow the [security policy](SECURITY.md) for private reporting. Do not expose
 Hebrus Studio or its Hebrus/legacy DS4 engine server directly on `0.0.0.0`; use an
 authenticated tunnel for access from another machine.
+
+Project participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md),
+and release ownership is described in [GOVERNANCE.md](GOVERNANCE.md).
+
+## Changelog
+
+User-visible changes are tracked in [CHANGELOG.md](CHANGELOG.md). Detailed
+macOS bridge notes remain in [docs/RELEASE-NOTES-macOS.md](docs/RELEASE-NOTES-macOS.md).
 
 ## License
 

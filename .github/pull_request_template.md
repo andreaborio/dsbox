@@ -13,10 +13,12 @@ state, or packaging boundary it owns.
 ## Verification
 
 - [ ] `npm audit --audit-level=high`
+- [ ] `npm run check:brand`
 - [ ] `npm run typecheck`
 - [ ] `npm test`
 - [ ] `npm run build`
 - [ ] macOS package contract run when packaging or release contents changed
+- [ ] packaged upgrade/rollback E2E run when persisted identity or state changed
 - [ ] no real model download or private user data entered tests or fixtures
 
 List any model-backed or packaged-app evidence separately. Do not present an

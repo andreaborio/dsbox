@@ -39,6 +39,13 @@
   },
   "entries": [
     {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "The existing repository URL remains valid until a separately authorized hosted-repository rename.",
+      "maximum": 1
+    },
+    {
       "path": ".github/pull_request_template.md",
       "token": "DS4",
       "classification": "compatibility",
@@ -51,6 +58,48 @@
       "classification": "migration-pending",
       "reason": "Internal CI concurrency namespace remains to be renamed mechanically.",
       "maximum": 1
+    },
+    {
+      "path": "ACKNOWLEDGMENTS.md",
+      "token": "ds4",
+      "classification": "historical-attribution",
+      "reason": "Fork provenance and upstream acknowledgments must retain the original ds4 project name and links.",
+      "maximum": 4
+    },
+    {
+      "path": "CHANGELOG.md",
+      "token": "DSBox",
+      "classification": "historical-attribution",
+      "reason": "Release history records the predecessor application name and upgrade path.",
+      "maximum": 3
+    },
+    {
+      "path": "CHANGELOG.md",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Release history documents stable legacy identifiers preserved across upgrades and rollbacks.",
+      "maximum": 2
+    },
+    {
+      "path": "CHANGELOG.md",
+      "token": "ds4",
+      "classification": "compatibility",
+      "reason": "Release history documents the supported legacy engine command alias.",
+      "maximum": 1
+    },
+    {
+      "path": "CITATION.cff",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Citation metadata keeps the current hosted repository URL until a separately authorized rename.",
+      "maximum": 2
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "token": "dsbox",
+      "classification": "compatibility",
+      "reason": "Contributor guidance names stable persisted identifiers required during the compatibility window.",
+      "maximum": 2
     },
     {
       "path": "CONTRIBUTING.md",
@@ -71,7 +120,7 @@
       "token": "DSBox",
       "classification": "compatibility",
       "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
-      "maximum": 4
+      "maximum": 7
     },
     {
       "path": "README.md",
@@ -92,7 +141,7 @@
       "token": "ds4",
       "classification": "compatibility",
       "reason": "Migration, upgrade, provenance, and compatibility guidance names the predecessor product and engine.",
-      "maximum": 13
+      "maximum": 17
     },
     {
       "path": "SECURITY.md",
@@ -114,6 +163,13 @@
       "classification": "compatibility",
       "reason": "Security guidance names supported legacy installations, paths, and engine identities.",
       "maximum": 1
+    },
+    {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "token": "ds4",
+      "classification": "historical-attribution",
+      "reason": "Legal provenance retains the original upstream project and fork-document links.",
+      "maximum": 4
     },
     {
       "path": "desktop/main.cjs",
