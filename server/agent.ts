@@ -157,7 +157,9 @@ const agentRequestSchema = z.object({
   messages: z.array(chatMessageSchema).min(1).max(200),
   max_tokens: z.number().int().min(1).max(32_768).optional(),
   allow_web_search: z.boolean().default(false),
-  thinking: z.object({ type: z.literal("disabled") }).strict().optional()
+  thinking: z.object({ type: z.literal("disabled") }).strict().optional(),
+  reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
+  reasoning: z.object({ effort: z.enum(["low", "medium", "high"]) }).strip().optional()
 }).strip();
 
 type AgentMessage = z.infer<typeof chatMessageSchema>;
@@ -1003,6 +1005,10 @@ export async function handleAgentChat(
         max_tokens: input.max_tokens ?? Math.min(services.store.get().server.maxOutputTokens, 32_768)
       };
       if (input.thinking) upstreamBody.thinking = input.thinking;
+      const reasoningEffort = input.reasoning_effort ?? input.reasoning?.effort;
+      if (!input.thinking && reasoningEffort) {
+        upstreamBody.reasoning_effort = reasoningEffort;
+      }
       const turn = await modelTurn(
         fetcher,
         internalBaseUrl(services),

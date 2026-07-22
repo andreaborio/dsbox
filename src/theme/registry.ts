@@ -15,24 +15,24 @@ export interface ThemeDefinition {
 
 export const DEFAULT_THEME_ID: ThemeId = "dsbox-light";
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = DEFAULT_THEME_ID;
-export const SYSTEM_THEME_SWATCHES = ["#fcfcfb", "#f4f4f2", "#292927", "#8377de"] as const;
+export const SYSTEM_THEME_SWATCHES = ["#f5f7fb", "#ffffff", "#0b1020", "#1557ff"] as const;
 
 export const THEME_REGISTRY: readonly ThemeDefinition[] = Object.freeze([
   {
     id: "dsbox-light",
     label: "Hebrus Light",
-    description: "The original quiet, warm workspace.",
+    description: "Bright Mac studio palette with Hebrus blue.",
     colorScheme: "light",
-    canvasColor: "#fcfcfb",
-    swatches: ["#fcfcfb", "#ffffff", "#191918", "#6658d3"]
+    canvasColor: "#f5f7fb",
+    swatches: ["#f5f7fb", "#ffffff", "#080b14", "#1557ff"]
   },
   {
     id: "dsbox-dark",
     label: "Hebrus Dark",
-    description: "Low-glare charcoal with Hebrus violet.",
+    description: "Night engine surface with luminous blue.",
     colorScheme: "dark",
-    canvasColor: "#171716",
-    swatches: ["#171716", "#292927", "#f2f2ef", "#8377de"]
+    canvasColor: "#0b1020",
+    swatches: ["#0b1020", "#151c2e", "#f7f9fd", "#8aa6ff"]
   },
   {
     id: "nord",

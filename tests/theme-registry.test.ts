@@ -37,6 +37,6 @@ describe("theme registry", () => {
     expect(getThemeDefinition("dsbox-dark").colorScheme).toBe("dark");
     expect(getThemeDefinition("nord").label).toBe("Nord");
     expect(getThemeDefinition("solarized-dark").swatches).toHaveLength(4);
-    expect(getThemeDefinition("dsbox-light").canvasColor).toBe("#fcfcfb");
+    expect(getThemeDefinition("dsbox-light").canvasColor).toBe("#f5f7fb");
   });
 });

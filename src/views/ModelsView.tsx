@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   Box,
   Check,
-  ChevronDown,
   CircleStop,
   Compass,
   Download,
@@ -37,11 +36,6 @@ import {
   shouldRevealActiveDownload
 } from "../lib/model-download-state";
 import { assessLocalModelHardware, assessModelHardware } from "../lib/model-hardware-advisor";
-import {
-  readUnavailableModelsDisclosurePreference,
-  unavailableModelsDisclosureIsOpen,
-  writeUnavailableModelsDisclosurePreference
-} from "../lib/models-disclosure-preference";
 import { catalogModelForVariant, catalogModelIsReady, chooseDefaultCatalogVariant } from "../lib/model-variants";
 import {
   localModelIsRunnable,
@@ -129,7 +123,6 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   const [finderMessage, setFinderMessage] = useState<string | null>(null);
   const [downloadModel, setDownloadModel] = useState<CatalogModel | null>(null);
   const [discardDownloadId, setDiscardDownloadId] = useState<string | null>(null);
-  const [unsupportedOpen, setUnsupportedOpen] = useState(() => readUnavailableModelsDisclosurePreference(window.sessionStorage));
   const downloadBannerRef = useRef<HTMLElement | null>(null);
   const previousActiveDownloadIdRef = useRef<string | null>(null);
   const reduceMotion = useReducedMotion();
@@ -212,7 +205,6 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
   const runtimeBusy = Boolean(activeDownload) || ["preparing", "installing", "updating", "building", "downloading", "starting", "running", "stopping"].includes(snapshot.runtime.phase);
   const downloadActive = Boolean(activeDownload);
   const normalizedQuery = query.trim().toLowerCase();
-  const effectiveUnsupportedOpen = unavailableModelsDisclosureIsOpen(unsupportedOpen, normalizedQuery);
   const visibleLocalModels = useMemo(() => localModels.filter((model) => {
     if (!normalizedQuery) return true;
     return [model.name, model.modelId, model.path].some((value) => value.toLowerCase().includes(normalizedQuery));
@@ -229,13 +221,6 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     }), [catalog, normalizedQuery]);
   const readyCatalogModels = visibleCatalogModels.filter((model) => catalogModelIsReady(model, snapshot.system.totalMemoryBytes));
   const unsupportedCatalogModels = visibleCatalogModels.filter((model) => !catalogModelIsReady(model, snapshot.system.totalMemoryBytes));
-
-  const toggleUnsupportedModels = () => {
-    if (normalizedQuery) return;
-    const nextOpen = !unsupportedOpen;
-    setUnsupportedOpen(nextOpen);
-    writeUnavailableModelsDisclosurePreference(window.sessionStorage, nextOpen);
-  };
 
   const startScan = async () => {
     setLocalError(null);
@@ -330,7 +315,6 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
 
   const diskFreeBytes = snapshot.metrics.at(-1)?.diskFreeBytes ?? 0;
   const catalogHeader = {
-    eyebrow: "Hugging Face",
     title: "Discover models",
     description: "Download verified models directly in Hebrus Studio. Unsupported sources remain visible for reference."
   };
@@ -348,16 +332,21 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
       const reason = model.unavailableReason ?? (!defaultVariant ? "No complete Hebrus-compatible GGUF version is available." : "This model layout has not been verified for Hebrus.");
       return (
         <article className="catalog-card catalog-card--unsupported" key={model.repository}>
-          <div className="catalog-card__head">
-            <span className={`catalog-card__tile catalog-card__tile--${identity}`}><ModelIdentityIcon identity={identity} fallback={<Box size={18} />} /></span>
-            <div>
-              <div><h3>{model.label}</h3><span className="source-chip">{sourceLabel}</span>{artifactFormatLabel && <span className="source-chip">{artifactFormatLabel}</span>}</div>
-              <p>Hugging Face · {model.repository}</p>
+          <span className={`catalog-card__tile catalog-card__tile--${identity}`}><ModelIdentityIcon identity={identity} fallback={<Box size={18} />} /></span>
+          <div className="catalog-card__main">
+            <div className="catalog-card__head">
+              <div className="catalog-card__title-row"><h3>{model.label}</h3></div>
+              <p>{reason}</p>
             </div>
-          </div>
-          <div className="catalog-card__unsupported-copy">
-            <strong>Not supported by Hebrus</strong>
-            <p>{reason}</p>
+            <div className="catalog-card__meta-row">
+              <span>Hugging Face</span>
+              <span>{model.repository}</span>
+            </div>
+            <div className="catalog-card__badges">
+              <span className="source-chip">{sourceLabel}</span>
+              {artifactFormatLabel && <span className="source-chip">{artifactFormatLabel}</span>}
+              <span className="catalog-card__unavailable">Unavailable</span>
+            </div>
           </div>
           <a className="catalog-card__source-link" href={model.sourceUrl} target="_blank" rel="noreferrer">View source <ExternalLink size={12} /></a>
         </article>
@@ -365,7 +354,6 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     }
 
     const branchCompatible = !model.runtimeBranch || snapshot.config.repository.branch === model.runtimeBranch;
-    const memoryGb = snapshot.system.totalMemoryBytes / 1024 ** 3;
     const assessedModel = defaultVariant ? catalogModelForVariant(model, defaultVariant) : model;
     const assessment = assessModelHardware(assessedModel, {
       totalMemoryBytes: snapshot.system.totalMemoryBytes,
@@ -375,16 +363,41 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
     const unavailable = (!branchCompatible ? `Requires the ${model.runtimeBranch} engine channel` : null)
       ?? (!defaultVariant ? "No complete GGUF version is available" : null)
       ?? (runtimeBusy ? "Turn off Hebrus Studio before changing models" : null);
+    const sizeLabel = model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Unknown";
+    const formatLabel = artifactFormatLabel ?? (defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF");
 
     return (
       <article className={active ? "catalog-card catalog-card--active" : "catalog-card"} key={model.repository}>
-        <div className="catalog-card__head"><span className={`catalog-card__tile catalog-card__tile--${identity} ${model.experimental ? "catalog-card__tile--experimental" : ""}`}><ModelIdentityIcon identity={identity} fallback={<Box size={22} />} /></span><div><div><h3>{model.label}</h3>{model.recommended && <span className="dsbox-recommended">Recommended by Hebrus Studio</span>}{publisher.toLowerCase() !== "andreaborio" && <span className="source-chip">{sourceLabel}</span>}{artifactFormatLabel && <span className="source-chip">{artifactFormatLabel}</span>}{model.experimental && <span className="experimental-chip">Experimental</span>}{active && <span className="active-chip"><i /> Active</span>}</div><p>Hugging Face · {model.repository}</p></div></div>
-        <p className="catalog-card__description">{model.description}</p>
-        <div className="catalog-card__facts"><span>{model.variantCount > 1 ? `${model.variantCount} versions` : defaultVariant ? formatBytes(defaultVariant.totalBytes, 0) : "Size unavailable"}</span>{model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB minimum</span>}<span>{artifactFormatLabel ?? (defaultVariant?.files.length === 1 ? "Single GGUF" : defaultVariant ? `${defaultVariant.files.length} shards` : "GGUF")}</span>{artifactFormatLabel && <span>Hebrus only · not llama.cpp</span>}{defaultVariant?.files.every((file) => file.sha256) && <span>Checksums published</span>}</div>
-        <div className={`catalog-card__advisor catalog-card__advisor--${assessment.performance.level}`} title={assessment.performance.explanation}>
-          <span className="catalog-card__advisor-icon" aria-hidden="true">{assessment.performance.level === "very-slow" || assessment.performance.level === "may-be-slow" ? <AlertTriangle size={15} /> : <HardDrive size={15} />}</span>
-          <div><span>On this {Math.round(memoryGb)} GB Mac</span><strong>{assessment.performance.label}</strong></div>
-          <Badge tone="neutral" icon={assessment.compatibility.status === "verified" ? <ShieldCheck size={12} /> : undefined}>{assessment.compatibility.label}</Badge>
+        <span className={`catalog-card__tile catalog-card__tile--${identity} ${model.experimental ? "catalog-card__tile--experimental" : ""}`}><ModelIdentityIcon identity={identity} fallback={<Box size={22} />} /></span>
+        <div className="catalog-card__main">
+          <div className="catalog-card__head">
+            <div className="catalog-card__title-row">
+              <h3>{model.label}</h3>
+              {active && <span className="active-chip"><i /> Active</span>}
+            </div>
+            <p>{model.description}</p>
+          </div>
+          <div className="catalog-card__meta-row">
+            <span>Hugging Face</span>
+            <span>{model.repository}</span>
+          </div>
+          <div className="catalog-card__badges">
+            {model.recommended && <span className="dsbox-recommended">Recommended</span>}
+            {publisher.toLowerCase() !== "andreaborio" && <span className="source-chip">{sourceLabel}</span>}
+            {artifactFormatLabel && <span className="source-chip">{artifactFormatLabel}</span>}
+            {model.experimental && <span className="experimental-chip">Experimental</span>}
+          </div>
+          <div className="catalog-card__detail-row" aria-label="Model details">
+            <span>{sizeLabel}</span>
+            {model.minimumMemoryGb && <span>{model.minimumMemoryGb} GB min</span>}
+            <span>{formatLabel}</span>
+            {artifactFormatLabel && <span>Hebrus only</span>}
+            {defaultVariant?.files.every((file) => file.sha256) && <span>Checksums</span>}
+          </div>
+          <div className={`catalog-card__advisor catalog-card__advisor--${assessment.performance.level}`} title={assessment.performance.explanation}>
+            <span className="catalog-card__advisor-icon" aria-hidden="true">{assessment.performance.level === "very-slow" || assessment.performance.level === "may-be-slow" ? <AlertTriangle size={15} /> : <HardDrive size={15} />}</span>
+            <strong>{assessment.performance.label}</strong>
+          </div>
         </div>
         <div className="catalog-card__footer">
           {active ? <span className="catalog-card__active-label"><Check size={14} /> Ready on this Mac</span> : selectable ? <Button variant="primary" icon={<Download size={14} />} onClick={() => setDownloadModel(model)}>{model.variantCount > 1 ? "Choose & download" : assessment.requiresAcknowledgement ? "Review download" : "Download & use"}</Button> : <span className="catalog-card__unavailable">{unavailable ?? "No downloadable version"}</span>}
@@ -585,24 +598,14 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
                 </div>
 
                 {unsupportedLocalModels.length > 0 && (
-                  <div className={`local-library-group local-library-group--unsupported ${effectiveUnsupportedOpen ? "local-library-group--open" : ""}`}>
-                    <button
-                      type="button"
-                      className="local-library-group__toggle"
-                      onClick={toggleUnsupportedModels}
-                      aria-expanded={effectiveUnsupportedOpen}
-                      disabled={Boolean(normalizedQuery)}
-                    >
+                  <div className="local-library-group local-library-group--unsupported">
+                    <div className="local-library-group__head">
                       <div><h3>Unavailable in this Hebrus build</h3><p>Saved in your library and rechecked after runtime updates.</p></div>
-                      <span>{unsupportedLocalModels.length}<ChevronDown size={14} /></span>
-                    </button>
-                    <AnimatePresence initial={false}>
-                      {effectiveUnsupportedOpen && (
-                        <motion.div className="local-results local-results--unsupported" initial={reduceMotion ? false : { opacity: 0, y: -2 }} animate={{ opacity: 1, y: 0 }} exit={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: -2 }} transition={reduceMotion ? { duration: 0 } : { duration: 0.14 }}>
-                          {unsupportedLocalModels.map(renderLocalModel)}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                      <span>{unsupportedLocalModels.length}</span>
+                    </div>
+                    <div className="local-results local-results--unsupported">
+                      <AnimatePresence initial={false}>{unsupportedLocalModels.map(renderLocalModel)}</AnimatePresence>
+                    </div>
                   </div>
                 )}
               </div>
@@ -616,7 +619,7 @@ export function ModelsView({ snapshot, controller, initialFilter = "library" }: 
 
         {activeView === "discover" && (
           <section className="catalog-section" aria-labelledby="catalog-title">
-            <div className="catalog-section__head"><div><span className="eyebrow">{catalogHeader.eyebrow}</span><h2 id="catalog-title">{catalogHeader.title}</h2><p>{catalogHeader.description}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
+            <div className="catalog-section__head"><div><h2 id="catalog-title">{catalogHeader.title}</h2><p>{catalogHeader.description}</p></div><Button variant="ghost" icon={<RefreshCw size={14} />} disabled={catalogLoading} onClick={() => void refreshCatalog(true)}>Refresh</Button></div>
 
             {catalogLoading ? (
               <div className="models-empty models-empty--panel"><RefreshCw className="spin" size={17} /><div><strong>Loading the Hebrus Studio catalog</strong><p>{downloadActive ? "Your current download continues while the catalog refreshes." : "No download has started."}</p></div></div>

@@ -1,5 +1,4 @@
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
@@ -55,8 +54,8 @@ export function resolveMonitorPresentation(
   if (!ready && !loading) {
     return {
       state: "offline",
-      title: "System resources. Hebrus Studio is off.",
-      description: "Memory, CPU, and disk values describe this Mac. Runtime metrics remain off until Hebrus Studio starts.",
+      title: "System resources. Hebrus Server is off.",
+      description: "Memory, CPU, and disk values describe this Mac. Runtime metrics remain off until Hebrus Server starts.",
       modelStatus: "Offline",
       responseSpeed: "Off",
       responseFoot: "Runtime inactive"
@@ -66,7 +65,7 @@ export function resolveMonitorPresentation(
   if (loading) {
     return {
       state: "loading",
-      title: "System resources while Hebrus Studio starts.",
+      title: "System resources while Hebrus Server starts.",
       description: "Host telemetry stays live while the selected model is prepared.",
       modelStatus: runtime.phase === "stopping" ? "Stopping" : "Loading",
       responseSpeed: runtime.phase === "stopping" ? "Stopping…" : "Loading…",
@@ -157,7 +156,6 @@ export function MonitorView({ snapshot }: Props) {
     <div className="monitor-page page-scroll">
       <section className="monitor-summary">
         <div>
-          <span className="eyebrow"><Activity size={13} /> System telemetry</span>
           <h2>{presentation.title}</h2>
           <p>{presentation.description}</p>
         </div>
@@ -192,64 +190,71 @@ export function MonitorView({ snapshot }: Props) {
         </article>
       </section>
 
-      <details className="monitor-technical panel">
-        <summary><span><Wrench size={17} /><span><strong>Technical details</strong><small>Swap, cache, Metal, and diagnostic logs</small></span></span><ChevronDown size={16} /></summary>
-        <div className="monitor-technical__content">
-      <section className="monitor-detail-grid">
-        <article className="panel memory-breakdown">
-          <div className="panel-heading"><div><span className="eyebrow">macOS memory</span><h3>Pressure and swap</h3></div><Database size={17} /></div>
-          <div className="memory-bars">
-            <div>
-              <span><i className="legend-dot legend-dot--ram" />Committed memory <strong>{formatPercent(memoryPercent)}</strong></span>
-              <div className="progress-bar"><i style={{ width: `${Math.min(100, memoryPercent)}%` }} /></div>
-              <small>{latest ? `${formatBytes(latest.memoryUsedBytes)} of ${formatBytes(latest.memoryTotalBytes)}` : "No samples"}</small>
-            </div>
-            <div>
-              <span><i className="legend-dot legend-dot--process" />Runtime process <strong>{latest && runtime.pid ? formatBytes(latest.processRssBytes) : "—"}</strong></span>
-              <div className="progress-bar progress-bar--process"><i style={{ width: `${latest && latest.memoryTotalBytes ? Math.min(100, latest.processRssBytes / latest.memoryTotalBytes * 100) : 0}%` }} /></div>
-              <small>Child process RSS, not allocated Metal memory</small>
-            </div>
-            <div>
-              <span><i className="legend-dot legend-dot--swap" />Swap macOS <strong>{latest ? formatBytes(latest.swapUsedBytes) : "—"}</strong></span>
-              <div className="progress-bar progress-bar--swap"><i style={{ width: `${latest?.swapTotalBytes ? Math.min(100, latest.swapUsedBytes / latest.swapTotalBytes * 100) : 0}%` }} /></div>
-              <small>{latest?.swapTotalBytes ? `${formatBytes(latest.swapUsedBytes)} of ${formatBytes(latest.swapTotalBytes)}` : "No swap allocated"}</small>
-            </div>
-            <div>
-              <span><i className="legend-dot legend-dot--cache" />Reclaimable file cache <strong>{latest ? formatBytes(latest.memoryFileCacheBytes) : "—"}</strong></span>
-              <div className="progress-bar progress-bar--cache"><i style={{ width: `${Math.min(100, fileCachePercent)}%` }} /></div>
-              <small>May include files and mmap weights; macOS reclaims it when needed.</small>
-            </div>
+      <section className="monitor-technical" aria-labelledby="monitor-technical-title">
+        <div className="monitor-technical__head">
+          <span><Wrench size={17} /></span>
+          <div>
+            <h3 id="monitor-technical-title">Technical details</h3>
+            <p>Swap, cache, Metal, and diagnostic logs are always visible below.</p>
           </div>
-          <div className={`health-callout ${memoryWarning ? "health-callout--warn" : ""}`}>
-            {memoryWarning ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
-            <p>{memoryWarning ? "High memory pressure: shorten the conversation or reduce the model cache before restarting." : "Memory pressure is normal. Reclaimable macOS cache is not counted as occupied memory."}</p>
-          </div>
-        </article>
+        </div>
 
-        <article className="panel io-panel">
-          <div className="panel-heading"><div><span className="eyebrow">Storage</span><h3>SSD and context</h3></div><HardDrive size={17} /></div>
-          <div className="disk-donut" style={{ "--disk": `${diskUsedPercent * 3.6}deg` } as React.CSSProperties}>
-            <div><strong>{latest ? formatBytes(latest.diskFreeBytes, 0) : "—"}</strong><span>free</span></div>
-          </div>
-          <div className="io-facts">
-            <div><span>Volume</span><strong>{latest ? formatBytes(latest.diskTotalBytes, 0) : "—"}</strong></div>
-            <div><span>Model cache</span><strong>{modelCacheLabel}</strong></div>
-            <div><span>On-disk context</span><strong>{qwenSelected ? "Unavailable" : config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
-            <div><span>Mode</span><strong>{expertMajorManaged ? "Hebrus AUTO" : (runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
-          </div>
-          <p className="metric-disclaimer"><Info size={13} /> macOS does not reliably expose per-process SSD throughput without internal instrumentation.</p>
-        </article>
+        <section className="monitor-detail-grid" aria-label="Resource detail panels">
+          <article className="panel memory-breakdown">
+            <div className="panel-heading"><div><span className="eyebrow">macOS memory</span><h3>Pressure and swap</h3></div><Database size={17} /></div>
+            <div className="memory-bars">
+              <div>
+                <span><i className="legend-dot legend-dot--ram" />Committed memory <strong>{formatPercent(memoryPercent)}</strong></span>
+                <div className="progress-bar"><i style={{ width: `${Math.min(100, memoryPercent)}%` }} /></div>
+                <small>{latest ? `${formatBytes(latest.memoryUsedBytes)} of ${formatBytes(latest.memoryTotalBytes)}` : "No samples"}</small>
+              </div>
+              <div>
+                <span><i className="legend-dot legend-dot--process" />Runtime process <strong>{latest && runtime.pid ? formatBytes(latest.processRssBytes) : "—"}</strong></span>
+                <div className="progress-bar progress-bar--process"><i style={{ width: `${latest && latest.memoryTotalBytes ? Math.min(100, latest.processRssBytes / latest.memoryTotalBytes * 100) : 0}%` }} /></div>
+                <small>Child process RSS, not allocated Metal memory</small>
+              </div>
+              <div>
+                <span><i className="legend-dot legend-dot--swap" />Swap macOS <strong>{latest ? formatBytes(latest.swapUsedBytes) : "—"}</strong></span>
+                <div className="progress-bar progress-bar--swap"><i style={{ width: `${latest?.swapTotalBytes ? Math.min(100, latest.swapUsedBytes / latest.swapTotalBytes * 100) : 0}%` }} /></div>
+                <small>{latest?.swapTotalBytes ? `${formatBytes(latest.swapUsedBytes)} of ${formatBytes(latest.swapTotalBytes)}` : "No swap allocated"}</small>
+              </div>
+              <div>
+                <span><i className="legend-dot legend-dot--cache" />Reclaimable file cache <strong>{latest ? formatBytes(latest.memoryFileCacheBytes) : "—"}</strong></span>
+                <div className="progress-bar progress-bar--cache"><i style={{ width: `${Math.min(100, fileCachePercent)}%` }} /></div>
+                <small>May include files and mmap weights; macOS reclaims it when needed.</small>
+              </div>
+            </div>
+            <div className={`health-callout ${memoryWarning ? "health-callout--warn" : ""}`}>
+              {memoryWarning ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+              <p>{memoryWarning ? "High memory pressure: shorten the conversation or reduce the model cache before restarting." : "Memory pressure is normal. Reclaimable macOS cache is not counted as occupied memory."}</p>
+            </div>
+          </article>
 
-        <article className="panel metal-panel">
-          <div className="panel-heading"><div><span className="eyebrow">Apple GPU</span><h3>Metal</h3></div><Server size={17} /></div>
-          <div className="na-metric"><span>N/A</span><p>GPU usage</p></div>
-          <div className="metal-facts">
-            <div><Circle size={8} fill="currentColor" /><span>Engine</span><strong>Metal</strong></div>
-            <div><Circle size={8} fill="currentColor" /><span>Architecture</span><strong>{snapshot.system.arch}</strong></div>
-            <div><Circle size={8} fill="currentColor" /><span>Memory</span><strong>Unified</strong></div>
-          </div>
-          <div className="metal-note"><Info size={14} /><p><code>powermetrics</code> requires elevated privileges. Hebrus Studio does not request sudo access or display fabricated percentages.</p></div>
-        </article>
+          <article className="panel io-panel">
+            <div className="panel-heading"><div><span className="eyebrow">Storage</span><h3>SSD and context</h3></div><HardDrive size={17} /></div>
+            <div className="disk-donut" style={{ "--disk": `${diskUsedPercent * 3.6}deg` } as React.CSSProperties}>
+              <div><strong>{latest ? formatBytes(latest.diskFreeBytes, 0) : "—"}</strong><span>free</span></div>
+            </div>
+            <div className="io-facts">
+              <div><span>Volume</span><strong>{latest ? formatBytes(latest.diskTotalBytes, 0) : "—"}</strong></div>
+              <div><span>Model cache</span><strong>{modelCacheLabel}</strong></div>
+              <div><span>On-disk context</span><strong>{qwenSelected ? "Unavailable" : config.kvCache.enabled ? formatBytes(config.kvCache.spaceMb * 1024 ** 2, 0) : "Off"}</strong></div>
+              <div><span>Mode</span><strong>{expertMajorManaged ? "Hebrus AUTO" : (runtimeActive ? runtimeStreaming : config.streaming.enabled) ? "SSD streaming" : "In memory"}</strong></div>
+            </div>
+            <p className="metric-disclaimer"><Info size={13} /> macOS does not reliably expose per-process SSD throughput without internal instrumentation.</p>
+          </article>
+
+          <article className="panel metal-panel">
+            <div className="panel-heading"><div><span className="eyebrow">Apple GPU</span><h3>Metal</h3></div><Server size={17} /></div>
+            <div className="na-metric"><span>N/A</span><p>GPU usage</p></div>
+            <div className="metal-facts">
+              <div><Circle size={8} fill="currentColor" /><span>Engine</span><strong>Metal</strong></div>
+              <div><Circle size={8} fill="currentColor" /><span>Architecture</span><strong>{snapshot.system.arch}</strong></div>
+              <div><Circle size={8} fill="currentColor" /><span>Memory</span><strong>Unified</strong></div>
+            </div>
+            <div className="metal-note"><Info size={14} /><p><code>powermetrics</code> requires elevated privileges. Hebrus Studio does not request sudo access or display fabricated percentages.</p></div>
+          </article>
+        </section>
       </section>
 
       <section className="panel logs-panel">
@@ -272,8 +277,6 @@ export function MonitorView({ snapshot }: Props) {
         </div>
         {config.observability.traceEnabled && <div className="trace-warning"><AlertTriangle size={14} /><p>Tracing enabled: ds4 may save prompts, outputs, and tool calls as plain text.</p></div>}
       </section>
-        </div>
-      </details>
     </div>
   );
 }

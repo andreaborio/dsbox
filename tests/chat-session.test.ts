@@ -38,6 +38,37 @@ describe("persistent chat session", () => {
     expect(restored.getSnapshot().webSearchEnabled).toBe(false);
   });
 
+  it("persists reasoning effort and sends the selected mode to chat", async () => {
+    const storage = new MemoryStorage();
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const fetcher = vi.fn(async (input: string, init: RequestInit) => {
+      if (input !== "/api/chat") throw new Error(`Unexpected request: ${input}`);
+      requestBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return new Response([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "Done." } }] })}\n\n`,
+        "data: [DONE]\n\n"
+      ].join(""), { status: 200, headers: { "content-type": "text/event-stream" } });
+    });
+    const first = new ChatSessionStore({ fetcher, storage, createId: ids() });
+    expect(first.getSnapshot()).toMatchObject({ thinking: true, reasoningEffort: "medium" });
+
+    first.setReasoningEffort("high");
+    const restored = new ChatSessionStore({ fetcher, storage, createId: ids() });
+    expect(restored.getSnapshot()).toMatchObject({ thinking: true, reasoningEffort: "high" });
+
+    await restored.send({ content: "Think this through", model: "local-model", maxTokens: 32 });
+    restored.setReasoningEffort("off");
+    await restored.send({ content: "Answer quickly", model: "local-model", maxTokens: 32 });
+
+    expect(requestBodies[0]).toMatchObject({ reasoning_effort: "high" });
+    expect(requestBodies[0]).not.toHaveProperty("thinking");
+    expect(requestBodies[0]).not.toHaveProperty("reasoning");
+    expect(requestBodies[1]).toMatchObject({ thinking: { type: "disabled" } });
+    expect(requestBodies[1]).not.toHaveProperty("reasoning_effort");
+    expect(restored.getSnapshot()).toMatchObject({ thinking: false, reasoningEffort: "off" });
+    expect(restored.getSnapshot().messages.at(-1)?.reasoningEffort).toBe("off");
+  });
+
   it("reduces canonical Qwen/DeepSeek agent events into model-neutral tool activity", () => {
     let state: AgentStreamState = { content: "", reasoning: "", blocks: [] };
     state = reduceAgentStreamEvent(state, { type: "reasoning.delta", text: "checking" }, 1_000);
@@ -182,12 +213,12 @@ describe("persistent chat session", () => {
     await store.refreshCapabilities();
 
     store.setWebSearchEnabled(true);
-    await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32, allowWebSearch: false });
+    await store.send({ content: "Check the local runtime", model: "qwen3.6", maxTokens: 32, allowWebSearch: false });
     store.newThread();
     store.setWebSearchEnabled(false);
-    await store.send({ content: "Check the local runtime", model: "local-model", maxTokens: 32, allowWebSearch: true });
+    await store.send({ content: "Check the local runtime", model: "qwen3.6", maxTokens: 32, allowWebSearch: true });
     store.setWebSearchEnabled(true);
-    await store.send({ content: "cerca su web", model: "local-model", maxTokens: 32 });
+    await store.send({ content: "cerca su web", model: "qwen3.6", maxTokens: 32 });
 
     expect(requestBodies.map((body) => body.allow_web_search)).toEqual([true, false, true]);
   });
@@ -211,8 +242,8 @@ describe("persistent chat session", () => {
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
     await store.refreshCapabilities();
 
-    await store.send({ content: "Broken request", model: "local-model", maxTokens: 32, allowWebSearch: true });
-    await store.send({ content: "Retry cleanly", model: "local-model", maxTokens: 32, allowWebSearch: true });
+    await store.send({ content: "Broken request", model: "qwen3.6", maxTokens: 32, allowWebSearch: true });
+    await store.send({ content: "Retry cleanly", model: "qwen3.6", maxTokens: 32, allowWebSearch: true });
 
     expect(requestBodies[1].messages).toEqual([{ role: "user", content: "Retry cleanly" }]);
   });
@@ -304,9 +335,9 @@ describe("persistent chat session", () => {
     await store.refreshCapabilities();
 
     store.setWebSearchEnabled(false);
-    await store.send({ content: "Tell me the latest runtime state", model: "local-model", maxTokens: 128 });
+    await store.send({ content: "Tell me the latest runtime state", model: "qwen3.6", maxTokens: 128 });
     store.setWebSearchEnabled(true);
-    await store.send({ content: "Search the web and continue", model: "local-model", maxTokens: 128 });
+    await store.send({ content: "Search the web and continue", model: "qwen3.6", maxTokens: 128 });
 
     expect(requestBodies[0].allow_web_search).toBe(false);
     expect(requestBodies[1].allow_web_search).toBe(true);
@@ -478,12 +509,12 @@ describe("persistent chat session", () => {
     const storage = new MemoryStorage();
     const store = new ChatSessionStore({ fetcher, storage, createId: ids() });
     await store.refreshCapabilities();
-    await store.send({ content: "Search the web for Hebrus Studio", model: "local-model", maxTokens: 64 });
+    await store.send({ content: "Search the web for Hebrus Studio", model: "qwen3.6", maxTokens: 64 });
 
     expect(store.getSnapshot().messages.at(-1)?.sources).toEqual(webResult.results);
     expect(new ChatSessionStore({ fetcher, storage, createId: ids() }).getSnapshot().messages.at(-1)?.sources).toEqual(webResult.results);
 
-    await store.send({ content: "Summarize that result", model: "local-model", maxTokens: 64 });
+    await store.send({ content: "Summarize that result", model: "qwen3.6", maxTokens: 64 });
 
     const messages = bodies[1].messages as Array<Record<string, unknown>>;
     const toolMessage = messages.find((message) => message.role === "tool");
@@ -508,7 +539,7 @@ describe("persistent chat session", () => {
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
     await store.refreshCapabilities();
 
-    await store.send({ content: "Run locally", model: "local-model", maxTokens: 32 });
+    await store.send({ content: "Run locally", model: "qwen3.6", maxTokens: 32 });
 
     expect(store.getSnapshot().messages.at(-1)).toMatchObject({ pending: false, error: true });
     expect(store.getSnapshot().messages.at(-1)?.content).toMatch(expectedError);
@@ -545,7 +576,7 @@ describe("persistent chat session", () => {
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
 
     await store.refreshCapabilities();
-    await store.send({ content: "What is the latest release?", model: "unsupported", maxTokens: 32 });
+    await store.send({ content: "What is the latest release?", model: "qwen3.6", maxTokens: 32 });
 
     expect(store.getSnapshot().capabilities).toMatchObject({ status: "ready", chatTools: false, reason: "model_not_supported" });
     expect(requests).toEqual(["/api/capabilities", "/api/skills/web-search", "/api/chat"]);
@@ -615,7 +646,7 @@ describe("persistent chat session", () => {
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), now: () => currentTime, createId: ids() });
     await store.refreshCapabilities();
 
-    const completion = store.send({ content: "Open the documentation", model: "deepseek-flash", maxTokens: 128 });
+    const completion = store.send({ content: "Open the documentation", model: "qwen3.6", maxTokens: 128 });
     await vi.waitFor(() => expect(store.getSnapshot().streaming).toBe(true));
     streamController.enqueue(new TextEncoder().encode([
       `event: agent\ndata: ${JSON.stringify({ type: "tool_call.created", callId: "call-stop", name: "open_url" })}\n\n`,
@@ -652,7 +683,7 @@ describe("persistent chat session", () => {
     });
     const store = new ChatSessionStore({ fetcher, storage, now: () => currentTime, createId: ids() });
     await store.refreshCapabilities();
-    const completion = store.send({ content: "Inspect runtime", model: "local-model", maxTokens: 32 });
+    const completion = store.send({ content: "Inspect runtime", model: "qwen3.6", maxTokens: 32 });
     await vi.waitFor(() => expect(store.getSnapshot().streaming).toBe(true));
     streamController.enqueue(new TextEncoder().encode([
       `event: agent\ndata: ${JSON.stringify({ type: "tool_call.created", callId: "call-save", name: "runtime_status" })}\n\n`,
@@ -922,9 +953,9 @@ describe("persistent chat session", () => {
       return new Response(`data: ${JSON.stringify({ choices: [{ delta: { content: "Answer [1]" } }], usage: { prompt_tokens: 20, completion_tokens: 3, total_tokens: 23 } })}\n\ndata: [DONE]\n\n`, { status: 200 });
     });
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), now: () => currentTime, createId: ids() });
-    await store.send({ content: "Keep this earlier turn local", model: "test", maxTokens: 128 });
+    await store.send({ content: "Keep this earlier turn local", model: "qwen3.6", maxTokens: 128 });
     requests.length = 0;
-    await store.send({ content: "Search the web for what changed", model: "test", maxTokens: 128 });
+    await store.send({ content: "Search the web for what changed", model: "qwen3.6", maxTokens: 128 });
 
     const assistant = store.getSnapshot().messages.at(-1)!;
     expect(requests.map((request) => request.input)).toEqual(["/api/skills/web-search", "/api/chat"]);
@@ -947,16 +978,16 @@ describe("persistent chat session", () => {
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
 
     store.setWebSearchEnabled(false);
-    await store.send({ content: "What is the latest release?", model: "test", maxTokens: 32 });
+    await store.send({ content: "What is the latest release?", model: "qwen3.6", maxTokens: 32 });
     expect(requests).toEqual(["/api/chat"]);
 
     requests.length = 0;
     store.setWebSearchEnabled(true);
-    await store.send({ content: "What is the latest release now?", model: "test", maxTokens: 32 });
+    await store.send({ content: "What is the latest release now?", model: "qwen3.6", maxTokens: 32 });
     expect(requests).toEqual(["/api/skills/web-search", "/api/chat"]);
 
     requests.length = 0;
-    await store.send({ content: "Explain this local function", model: "test", maxTokens: 32 });
+    await store.send({ content: "Explain this local function", model: "qwen3.6", maxTokens: 32 });
     expect(requests).toEqual(["/api/chat"]);
   });
 
@@ -969,7 +1000,7 @@ describe("persistent chat session", () => {
     });
     const store = new ChatSessionStore({ fetcher, storage: new MemoryStorage(), createId: ids() });
 
-    await store.send({ content: "What is the latest release?", model: "test", maxTokens: 32 });
+    await store.send({ content: "What is the latest release?", model: "qwen3.6", maxTokens: 32 });
 
     expect(requests).toEqual(["/api/skills/web-search", "/api/chat"]);
     expect(store.getSnapshot().messages.at(-1)).toMatchObject({

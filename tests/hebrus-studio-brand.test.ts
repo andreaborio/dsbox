@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,18 +9,17 @@ async function text(relativePath: string): Promise<string> {
 }
 
 describe("Hebrus Studio public identity", () => {
-  it("uses the unmodified project-supplied logo and adds depth only in CSS", async () => {
-    const [logo, component, styles] = await Promise.all([
-      readFile(path.join(root, "src/assets/hebrus-logo.png")),
+  it("uses the temporary H mark instead of the old logo asset", async () => {
+    const [component, styles] = await Promise.all([
       text("src/components/ui.tsx"),
       text("src/styles.css")
     ]);
 
-    expect(createHash("sha256").update(logo).digest("hex"))
-      .toBe("4be8949c73bd52e7abef58396dcd57f636165a8bb6cd6d536a600bcbf880594c");
-    expect(component).toContain('import hebrusLogo from "../assets/hebrus-logo.png"');
-    expect(component).toContain('className="brand-mark__image"');
-    expect(styles).toMatch(/\.brand-mark__image\s*\{[\s\S]*drop-shadow\(/);
+    expect(component).not.toContain("hebrus-logo.png");
+    expect(component).toContain('className="brand-mark__glyph"');
+    expect(component).toContain(">H<");
+    expect(styles).toContain(".brand-mark__glyph");
+    expect(styles).not.toContain(".brand-mark__image");
   });
 
   it("uses the new name across the browser and desktop entry points", async () => {

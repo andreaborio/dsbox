@@ -1,13 +1,10 @@
-import { AnimatePresence, motion } from "framer-motion";
 import {
   Bot,
-  ChevronRight,
   CircleAlert,
   CircleCheck,
   Code2,
   Command,
   KeyRound,
-  Link2,
   MessagesSquare,
   Network,
   Play,
@@ -21,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppSnapshot, RuntimeState, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
 import { Button, CopyButton, StatusPill } from "../components/ui";
-import { getQwenAdapterCompatibility, resolveQwenAdapter, type AgentAdapterId } from "../lib/agent-adapters";
+import { getQwenAdapterCompatibility, type AgentAdapterId } from "../lib/agent-adapters";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -75,7 +72,7 @@ export function resolveAgentConnectionPresentation(
       state,
       capabilityTitle: `${runtimeName} · Starting`,
       capabilityBadge: "Loading",
-      capabilityDescription: "Hebrus Studio is preparing the selected model. Agent connections become available when startup completes.",
+      capabilityDescription: "Hebrus Server is preparing the selected model. Agent connections become available when startup completes.",
       actionLabel: "Starting…"
     };
   }
@@ -84,7 +81,7 @@ export function resolveAgentConnectionPresentation(
     state,
     capabilityTitle: `${runtimeName} · Configured`,
     capabilityBadge: "Offline",
-    capabilityDescription: "The connection details are ready. Turn on Hebrus Studio before an agent can use the local model.",
+    capabilityDescription: "The connection details are ready. Turn on Hebrus Server before an agent can use the local model.",
     actionLabel: "Open server"
   };
 }
@@ -92,28 +89,13 @@ export function resolveAgentConnectionPresentation(
 export function AgentsView({ snapshot, onNavigate }: Props) {
   const { config, runtime, system } = snapshot;
   const isQwen = config.model.id === "qwen3.6-35b-a3b";
-  const [adapter, setAdapter] = useState<AgentAdapterId>(() => isQwen ? "generic" : "codex");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"ok" | "error" | null>(null);
   const testSequence = useRef(0);
-  const adapterBeforeQwen = useRef<AgentAdapterId>("codex");
-  const wasQwen = useRef(isQwen);
   const base = system.openAiBaseUrl;
   const root = system.anthropicBaseUrl;
   const model = config.model.id;
   const connection = resolveAgentConnectionPresentation(runtime, isQwen);
-
-  useEffect(() => {
-    if (isQwen && !wasQwen.current) {
-      setAdapter((current) => {
-        adapterBeforeQwen.current = current;
-        return resolveQwenAdapter(current);
-      });
-    } else if (!isQwen && wasQwen.current) {
-      setAdapter(adapterBeforeQwen.current);
-    }
-    wasQwen.current = isQwen;
-  }, [isQwen]);
 
   useEffect(() => {
     testSequence.current += 1;
@@ -193,11 +175,17 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     }
   }), [base, config.gateway.apiKey, config.server.contextTokens, config.server.maxOutputTokens, isQwen, model, root]);
 
-  const activeAdapter = isQwen ? resolveQwenAdapter(adapter) : adapter;
-  const current = snippets[activeAdapter];
-  const activeAdapterName = isQwen && activeAdapter === "generic"
-    ? "Chat Completions"
-    : adapterMeta.find((item) => item.id === activeAdapter)?.name;
+  const connectors = adapterMeta.map((item) => {
+    const compatibility = isQwen ? getQwenAdapterCompatibility(item.id) : { available: true, unavailableReason: null };
+    return {
+      ...item,
+      compatibility,
+      displayName: isQwen && item.id === "generic" ? "Chat Completions" : item.name,
+      snippet: snippets[item.id]
+    };
+  });
+  const availableConnectors = connectors.filter((item) => item.compatibility.available);
+  const unavailableConnectors = connectors.filter((item) => !item.compatibility.available);
 
   const testConnection = async () => {
     if (connection.state !== "ready") return;
@@ -234,7 +222,6 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
     <div className="agents-page page-scroll">
       <section className="agents-intro">
         <div>
-          <span className="eyebrow"><Link2 size={13} /> {isQwen ? "Local API" : "Local connection"}</span>
           <h2>{isQwen ? "Connect through Chat Completions." : "Connect your preferred coding agent."}</h2>
           <p>{isQwen ? "Use Hebrus Studio Chat or connect compatible apps and coding agents through OpenAI Chat Completions with streaming, tools, and multiple tool calls." : "Choose your tool and copy the ready-to-use configuration. Hebrus Studio handles the address, model, and security."}</p>
         </div>
@@ -271,7 +258,7 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         <div className="connection-error" role="alert">
           <Unplug size={17} />
           <div>
-            <strong>{runtime.phase === "running" ? "Gateway unavailable" : "Hebrus Studio is off"}</strong>
+            <strong>{runtime.phase === "running" ? "Gateway unavailable" : "Hebrus Server is off"}</strong>
             <p>{runtime.phase === "running" ? "Check the server status and try again." : "Turn on the server, then test the connection again."}</p>
           </div>
           <Button variant="secondary" onClick={() => onNavigate("runtime")}>Open server</Button>
@@ -301,54 +288,70 @@ export function AgentsView({ snapshot, onNavigate }: Props) {
         })}
       </section>
 
-      <section className="connector-workbench panel">
-        <aside className="connector-list">
-          <div className="connector-list__heading">Choose an agent</div>
-          {adapterMeta.map((item) => {
+      <section className="agent-configs" aria-labelledby="agent-configs-title">
+        <div className="agent-configs__head">
+          <div>
+            <h3 id="agent-configs-title">Agent configurations</h3>
+            <p>Copy the block for the tool you use. Every available connector is shown here, ordered by protocol fit.</p>
+          </div>
+          <div className="connector-list__note"><ShieldCheck size={15} /><p>{isQwen ? "Protocol limits come from the selected Hebrus model runtime." : "The internal server is never exposed to the network."}</p></div>
+        </div>
+
+        <div className="agent-config-grid">
+          {availableConnectors.map((item) => {
             const Icon = item.icon;
-            const compatibility = isQwen ? getQwenAdapterCompatibility(item.id) : { available: true, unavailableReason: null };
-            const unavailable = !compatibility.available;
-            const displayName = isQwen && item.id === "generic" ? "Chat Completions" : item.name;
+            const current = item.snippet;
             return (
-              <button
-                className={`${activeAdapter === item.id ? "active" : ""} ${unavailable ? "connector-list__item--unavailable" : ""}`}
-                onClick={() => setAdapter(item.id)}
+              <article
+                className="agent-config-card panel"
                 key={item.id}
-                aria-label={unavailable ? `${item.name} is unavailable for Qwen3.6: ${compatibility.unavailableReason}` : displayName}
-                aria-pressed={activeAdapter === item.id}
-                title={unavailable ? `${item.name}: ${compatibility.unavailableReason}` : displayName}
-                disabled={unavailable}
               >
-                <span><Icon size={17} /></span>
-                <div><strong>{displayName}</strong><small>{compatibility.unavailableReason ?? item.detail}</small></div>
-                {unavailable ? <em>Unavailable</em> : <ChevronRight size={14} />}
-              </button>
+                <div className="agent-config-card__head">
+                  <span className="agent-config-card__icon"><Icon size={18} /></span>
+                  <div className="agent-config-card__copy">
+                    <span className="connector-file">{current.file}</span>
+                    <h4>{item.displayName}</h4>
+                    <p>{current.description}</p>
+                  </div>
+                  <div className="agent-config-card__actions">
+                    <span>{item.detail}</span>
+                    <CopyButton value={current.code} label={`Copy ${item.displayName} configuration`} />
+                  </div>
+                </div>
+                <div className="code-window">
+                  <div className="code-window__bar"><i /><i /><i /><span>{current.file}</span></div>
+                  <pre><code>{current.code}</code></pre>
+                </div>
+                {current.run && (
+                  <div className="run-command"><TerminalSquare size={15} /><code>{current.run}</code><CopyButton value={current.run} label="Copy command" /></div>
+                )}
+              </article>
             );
           })}
-          <div className="connector-list__note"><ShieldCheck size={15} /><p>{isQwen ? "Protocol limits come from the selected Hebrus model runtime." : "The internal server is never exposed to the network."}</p></div>
-        </aside>
-
-        <div className="connector-detail">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div key={activeAdapter} initial={{ opacity: 0, x: 5 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -5 }} transition={{ duration: 0.14, ease: [0.2, 0.8, 0.2, 1] }}>
-              <div className="connector-detail__head">
-                <div>
-                  <span className="connector-file">{current.file}</span>
-                  <h3>{activeAdapterName}</h3>
-                  <p>{current.description}</p>
-                </div>
-                <CopyButton value={current.code} label="Copy configuration" />
-              </div>
-              <div className="code-window">
-                <div className="code-window__bar"><i /><i /><i /><span>{current.file}</span></div>
-                <pre><code>{current.code}</code></pre>
-              </div>
-              {current.run && (
-                <div className="run-command"><TerminalSquare size={15} /><code>{current.run}</code><CopyButton value={current.run} label="Copy command" /></div>
-              )}
-            </motion.div>
-          </AnimatePresence>
         </div>
+
+        {unavailableConnectors.length > 0 && (
+          <div className="agent-unavailable" aria-label="Unavailable agent protocols">
+            <div className="agent-unavailable__head">
+              <strong>Unavailable for this runtime</strong>
+              <span>{unavailableConnectors.length}</span>
+            </div>
+            <div className="agent-unavailable__grid">
+              {unavailableConnectors.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <article key={item.id} className="agent-unavailable-card">
+                    <span><Icon size={16} /></span>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <p>{item.compatibility.unavailableReason}</p>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="agent-notes">

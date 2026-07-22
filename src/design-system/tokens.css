@@ -1,3 +1,35 @@
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/hebrus/inter-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/hebrus/geist-mono-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/hebrus/instrument-serif-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/hebrus/instrument-serif-italic-latin.woff2") format("woff2");
+}
+
 @layer dsbox.tokens {
   :root,
   [data-ds-color-scheme="light"] {
@@ -5,48 +37,48 @@
 
     /* Raw palette: component code should use the semantic aliases below. */
     --ds-neutral-0: #ffffff;
-    --ds-neutral-25: #fcfcfb;
-    --ds-neutral-50: #f7f7f5;
-    --ds-neutral-75: #f2f2ef;
-    --ds-neutral-100: #ecece8;
-    --ds-neutral-150: #e4e4de;
-    --ds-neutral-200: #d8d8d1;
-    --ds-neutral-300: #c1c1b8;
-    --ds-neutral-400: #96968e;
-    --ds-neutral-500: #73736c;
-    --ds-neutral-600: #5b5b55;
-    --ds-neutral-700: #444440;
-    --ds-neutral-800: #2d2d2a;
-    --ds-neutral-900: #1a1a18;
-    --ds-neutral-950: #10100f;
+    --ds-neutral-25: #f5f7fb;
+    --ds-neutral-50: #f7f9fd;
+    --ds-neutral-75: #edf2fa;
+    --ds-neutral-100: #e7edf6;
+    --ds-neutral-150: #d8e1ee;
+    --ds-neutral-200: #c6d2e1;
+    --ds-neutral-300: #aebbd0;
+    --ds-neutral-400: #8d96a6;
+    --ds-neutral-500: #707a8a;
+    --ds-neutral-600: #5f6978;
+    --ds-neutral-700: #384252;
+    --ds-neutral-800: #1f2736;
+    --ds-neutral-900: #080b14;
+    --ds-neutral-950: #040711;
 
-    --ds-accent-50: #f0effc;
-    --ds-accent-100: #e5e2f9;
-    --ds-accent-500: #6559c7;
-    --ds-accent-600: #574bb7;
-    --ds-accent-700: #493e9f;
-    --ds-green-50: #eaf5ef;
-    --ds-green-600: #167253;
-    --ds-green-700: #115c43;
-    --ds-amber-50: #f8f3e7;
-    --ds-amber-600: #806021;
-    --ds-amber-700: #674c18;
+    --ds-accent-50: #eaf0ff;
+    --ds-accent-100: #dbe6ff;
+    --ds-accent-500: #1557ff;
+    --ds-accent-600: #1557ff;
+    --ds-accent-700: #0b36bd;
+    --ds-green-50: #e8f7f2;
+    --ds-green-600: #087356;
+    --ds-green-700: #006b51;
+    --ds-amber-50: #fff6e4;
+    --ds-amber-600: #8a5a00;
+    --ds-amber-700: #6f4700;
     --ds-red-50: #faeeee;
     --ds-red-600: #ae4747;
     --ds-red-700: #913838;
-    --ds-blue-50: #edf3f9;
-    --ds-blue-600: #3a6f9f;
-    --ds-blue-700: #2f5b83;
+    --ds-blue-50: #eaf0ff;
+    --ds-blue-600: #1557ff;
+    --ds-blue-700: #0b36bd;
 
     /* Semantic color roles. */
     --ds-color-bg-canvas: var(--ds-neutral-25);
-    --ds-color-bg-sidebar: #f4f4f2;
+    --ds-color-bg-sidebar: #edf2fa;
     --ds-color-bg-surface: var(--ds-neutral-0);
     --ds-color-bg-raised: var(--ds-neutral-0);
     --ds-color-bg-subtle: var(--ds-neutral-75);
-    --ds-color-bg-hover: rgba(16, 16, 15, 0.045);
-    --ds-color-bg-pressed: rgba(16, 16, 15, 0.075);
-    --ds-color-bg-selected: rgba(87, 75, 183, 0.085);
+    --ds-color-bg-hover: rgba(8, 11, 20, 0.05);
+    --ds-color-bg-pressed: rgba(8, 11, 20, 0.08);
+    --ds-color-bg-selected: rgba(21, 87, 255, 0.12);
     --ds-color-bg-inverse: var(--ds-neutral-900);
 
     --ds-color-text-primary: var(--ds-neutral-900);
@@ -59,10 +91,10 @@
     --ds-color-text-advisory: var(--ds-amber-700);
     --ds-color-text-danger: var(--ds-red-700);
 
-    --ds-color-border-subtle: rgba(16, 16, 15, 0.075);
+    --ds-color-border-subtle: rgba(8, 11, 20, 0.075);
     --ds-color-border-default: var(--ds-neutral-150);
     --ds-color-border-strong: var(--ds-neutral-300);
-    --ds-color-border-focus: #456f61;
+    --ds-color-border-focus: #1557ff;
 
     --ds-color-accent-solid: var(--ds-accent-600);
     --ds-color-accent-hover: var(--ds-accent-700);
@@ -76,28 +108,29 @@
     --ds-color-status-danger-soft: var(--ds-red-50);
     --ds-color-status-info: var(--ds-blue-600);
     --ds-color-status-info-soft: var(--ds-blue-50);
-    --ds-color-selection: #dcd7ff;
-    --ds-color-scrollbar: #b9b9b2;
-    --ds-color-overlay: rgba(16, 16, 15, 0.28);
+    --ds-color-selection: #cfdcff;
+    --ds-color-scrollbar: #aebbd0;
+    --ds-color-overlay: rgba(8, 11, 20, 0.28);
     --ds-color-highlight: rgba(255, 255, 255, 0.82);
-    --ds-color-shadow: #141412;
-    --ds-color-code-bg: #f6f6f4;
-    --ds-color-code-raised: #fbfbfa;
-    --ds-color-code-border: #deded9;
-    --ds-color-code-text: #2d2d2a;
-    --ds-color-code-muted: #707069;
-    --ds-color-terminal-bg: #242423;
-    --ds-color-terminal-raised: #2c2c2a;
-    --ds-color-terminal-text: #dfdfdb;
-    --ds-color-terminal-muted: #999994;
-    --ds-color-data-1: #6658d3;
-    --ds-color-data-2: #16825d;
-    --ds-color-data-3: #3374b9;
-    --ds-color-data-4: #98501f;
+    --ds-color-shadow: #172136;
+    --ds-color-code-bg: #f5f7fb;
+    --ds-color-code-raised: #ffffff;
+    --ds-color-code-border: #d8e1ee;
+    --ds-color-code-text: #1f2736;
+    --ds-color-code-muted: #5f6978;
+    --ds-color-terminal-bg: #0b1020;
+    --ds-color-terminal-raised: #151c2e;
+    --ds-color-terminal-text: #f7f9fd;
+    --ds-color-terminal-muted: #b4bdca;
+    --ds-color-data-1: #1557ff;
+    --ds-color-data-2: #087356;
+    --ds-color-data-3: #18a77d;
+    --ds-color-data-4: #8a5a00;
 
-    /* Type roles favor native system fonts and readable desktop sizes. */
-    --ds-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-    --ds-font-mono: "SFMono-Regular", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    /* Type roles mirror the Hebrus landing: Inter UI, Instrument Serif display, Geist Mono labels. */
+    --ds-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    --ds-font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+    --ds-font-mono: "Geist Mono", "SFMono-Regular", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
     --ds-font-size-caption: 11px;
     --ds-font-size-metadata: 12px;
     --ds-font-size-chrome: 13px;
@@ -140,11 +173,11 @@
     --ds-radius-xl: 18px;
     --ds-radius-full: 999px;
 
-    --ds-shadow-xs: 0 1px 2px rgba(20, 20, 18, 0.045);
-    --ds-shadow-sm: 0 1px 2px rgba(20, 20, 18, 0.035), 0 7px 22px rgba(20, 20, 18, 0.04);
-    --ds-shadow-md: 0 2px 7px rgba(20, 20, 18, 0.055), 0 18px 48px rgba(20, 20, 18, 0.085);
-    --ds-shadow-overlay: 0 3px 10px rgba(20, 20, 18, 0.075), 0 24px 70px rgba(20, 20, 18, 0.13);
-    --ds-shadow-focus: 0 0 0 3px rgba(69, 111, 97, 0.18);
+    --ds-shadow-xs: 0 1px 2px rgba(23, 33, 54, 0.045);
+    --ds-shadow-sm: 0 1px 2px rgba(23, 33, 54, 0.035), 0 7px 22px rgba(23, 33, 54, 0.055);
+    --ds-shadow-md: 0 2px 7px rgba(23, 33, 54, 0.06), 0 18px 48px rgba(23, 33, 54, 0.11);
+    --ds-shadow-overlay: 0 3px 10px rgba(23, 33, 54, 0.08), 0 24px 70px rgba(23, 33, 54, 0.16);
+    --ds-shadow-focus: 0 0 0 3px rgba(21, 87, 255, 0.18);
 
     --ds-duration-instant: 0ms;
     --ds-duration-fast: 120ms;
@@ -165,63 +198,63 @@
 
   [data-ds-color-scheme="dark"] {
     color-scheme: dark;
-    --ds-color-bg-canvas: #171716;
-    --ds-color-bg-sidebar: #1d1d1b;
-    --ds-color-bg-surface: #222220;
-    --ds-color-bg-raised: #292927;
-    --ds-color-bg-subtle: #292927;
-    --ds-color-bg-hover: rgba(255, 255, 255, 0.06);
-    --ds-color-bg-pressed: rgba(255, 255, 255, 0.095);
-    --ds-color-bg-selected: rgba(149, 137, 235, 0.14);
-    --ds-color-bg-inverse: #f3f3ef;
-    --ds-color-text-primary: #f2f2ef;
-    --ds-color-text-secondary: #b8b8b0;
-    --ds-color-text-tertiary: #92928b;
-    --ds-color-text-disabled: #686863;
-    --ds-color-text-inverse: #181817;
-    --ds-color-text-accent: #b2aaf3;
-    --ds-color-text-success: #86c7aa;
-    --ds-color-text-advisory: #cfb477;
-    --ds-color-text-danger: #e59a9a;
-    --ds-color-border-subtle: rgba(255, 255, 255, 0.075);
-    --ds-color-border-default: #393936;
-    --ds-color-border-strong: #4c4c48;
-    --ds-color-border-focus: #76ab98;
-    --ds-color-accent-solid: #7569d1;
-    --ds-color-accent-hover: #8377de;
-    --ds-color-accent-soft: rgba(117, 105, 209, 0.18);
-    --ds-color-accent-soft-hover: rgba(117, 105, 209, 0.25);
-    --ds-color-status-success: #76b89d;
-    --ds-color-status-success-soft: rgba(68, 139, 108, 0.18);
-    --ds-color-status-advisory: #c2a766;
-    --ds-color-status-advisory-soft: rgba(160, 125, 49, 0.18);
-    --ds-color-status-danger: #d98181;
-    --ds-color-status-danger-soft: rgba(170, 68, 68, 0.2);
-    --ds-color-status-info: #82acd2;
-    --ds-color-status-info-soft: rgba(65, 116, 164, 0.2);
-    --ds-color-selection: rgba(131, 119, 222, 0.42);
-    --ds-color-scrollbar: #666661;
-    --ds-color-overlay: rgba(0, 0, 0, 0.52);
+    --ds-color-bg-canvas: #0b1020;
+    --ds-color-bg-sidebar: #0f1627;
+    --ds-color-bg-surface: #151c2e;
+    --ds-color-bg-raised: #1b2438;
+    --ds-color-bg-subtle: #10182a;
+    --ds-color-bg-hover: rgba(247, 249, 253, 0.065);
+    --ds-color-bg-pressed: rgba(247, 249, 253, 0.105);
+    --ds-color-bg-selected: rgba(126, 162, 255, 0.18);
+    --ds-color-bg-inverse: #f7f9fd;
+    --ds-color-text-primary: #f7f9fd;
+    --ds-color-text-secondary: #b4bdca;
+    --ds-color-text-tertiary: #8d96a6;
+    --ds-color-text-disabled: #687386;
+    --ds-color-text-inverse: #080b14;
+    --ds-color-text-accent: #8aa6ff;
+    --ds-color-text-success: #5ee0b7;
+    --ds-color-text-advisory: #ffd178;
+    --ds-color-text-danger: #ff9aa7;
+    --ds-color-border-subtle: rgba(247, 249, 253, 0.075);
+    --ds-color-border-default: #26314a;
+    --ds-color-border-strong: #35425f;
+    --ds-color-border-focus: #8aa6ff;
+    --ds-color-accent-solid: #7ea2ff;
+    --ds-color-accent-hover: #8aa6ff;
+    --ds-color-accent-soft: rgba(21, 87, 255, 0.22);
+    --ds-color-accent-soft-hover: rgba(21, 87, 255, 0.3);
+    --ds-color-status-success: #5ee0b7;
+    --ds-color-status-success-soft: rgba(24, 167, 125, 0.18);
+    --ds-color-status-advisory: #ffd178;
+    --ds-color-status-advisory-soft: rgba(255, 209, 120, 0.18);
+    --ds-color-status-danger: #ff9aa7;
+    --ds-color-status-danger-soft: rgba(255, 154, 167, 0.18);
+    --ds-color-status-info: #8aa6ff;
+    --ds-color-status-info-soft: rgba(138, 166, 255, 0.2);
+    --ds-color-selection: rgba(126, 162, 255, 0.42);
+    --ds-color-scrollbar: #465474;
+    --ds-color-overlay: rgba(2, 5, 17, 0.58);
     --ds-color-highlight: rgba(255, 255, 255, 0.08);
-    --ds-color-shadow: #000000;
-    --ds-color-code-bg: #1d1d1c;
-    --ds-color-code-raised: #242423;
-    --ds-color-code-border: #3c3c39;
-    --ds-color-code-text: #e5e5df;
-    --ds-color-code-muted: #a4a49d;
-    --ds-color-terminal-bg: #111110;
-    --ds-color-terminal-raised: #191918;
-    --ds-color-terminal-text: #e5e5df;
-    --ds-color-terminal-muted: #96968e;
-    --ds-color-data-1: #9b91e7;
-    --ds-color-data-2: #76b89d;
-    --ds-color-data-3: #82acd2;
-    --ds-color-data-4: #cfb477;
-    --ds-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
-    --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22), 0 8px 24px rgba(0, 0, 0, 0.18);
-    --ds-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.25), 0 18px 48px rgba(0, 0, 0, 0.28);
-    --ds-shadow-overlay: 0 3px 12px rgba(0, 0, 0, 0.3), 0 24px 70px rgba(0, 0, 0, 0.4);
-    --ds-shadow-focus: 0 0 0 3px rgba(118, 171, 152, 0.22);
+    --ds-color-shadow: #020511;
+    --ds-color-code-bg: #10182a;
+    --ds-color-code-raised: #151c2e;
+    --ds-color-code-border: #26314a;
+    --ds-color-code-text: #eef4ff;
+    --ds-color-code-muted: #b4bdca;
+    --ds-color-terminal-bg: #060a14;
+    --ds-color-terminal-raised: #0f1627;
+    --ds-color-terminal-text: #f7f9fd;
+    --ds-color-terminal-muted: #8d96a6;
+    --ds-color-data-1: #8aa6ff;
+    --ds-color-data-2: #5ee0b7;
+    --ds-color-data-3: #18a77d;
+    --ds-color-data-4: #ffd178;
+    --ds-shadow-xs: 0 1px 2px rgba(2, 5, 17, 0.24);
+    --ds-shadow-sm: 0 1px 2px rgba(2, 5, 17, 0.28), 0 8px 24px rgba(2, 5, 17, 0.22);
+    --ds-shadow-md: 0 2px 8px rgba(2, 5, 17, 0.32), 0 18px 48px rgba(2, 5, 17, 0.36);
+    --ds-shadow-overlay: 0 3px 12px rgba(2, 5, 17, 0.36), 0 24px 70px rgba(2, 5, 17, 0.5);
+    --ds-shadow-focus: 0 0 0 3px rgba(138, 166, 255, 0.24);
   }
 
   @media (prefers-reduced-motion: reduce) {

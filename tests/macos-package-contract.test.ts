@@ -23,11 +23,12 @@ describe("macOS package contract", () => {
       bundleIdentifier: "com.dsbox.desktop",
       executableName: "Hebrus Studio",
       iconFile: "icon.icns",
-      brandLogo: {
-        source: "src/assets/hebrus-logo.png",
+      brandMark: {
+        glyph: "H",
+        component: "src/components/ui.tsx",
+        stylesheet: "src/styles.css",
         appIcon: "build/icon.icns",
-        archivePrefix: "/dist/assets/hebrus-logo-",
-        sha256: "4be8949c73bd52e7abef58396dcd57f636165a8bb6cd6d536a600bcbf880594c"
+        status: "temporary-placeholder"
       },
       architecture: "arm64",
       engineDelivery: "external",
@@ -57,6 +58,7 @@ describe("macOS package contract", () => {
     expect(packageJson.scripts["dist:mac"]).toMatch(/^npm run build:icon && /);
     expect(packageJson.name).toBe("hebrus-studio");
     expect(verifier).toContain('cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON"');
+    expect(verifier).not.toContain("Expected exactly one packaged Hebrus logo");
   });
 
   it("pins Electron to the legacy user-data directory before setting the new name", async () => {

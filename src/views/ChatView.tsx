@@ -1,11 +1,12 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowUp,
-  Brain,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleAlert,
+  CirclePower,
   CircleStop,
   Code2,
   Cpu,
@@ -24,20 +25,20 @@ import {
   Wrench,
   Zap
 } from "lucide-react";
-import { Children, isValidElement, memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Children, isValidElement, memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { AppSnapshot, ChatMessage, ChatSource, ChatToolActivity, LocalModelCandidate, LocalModelSwitchResult, ViewId } from "../types";
 import type { DsboxController } from "../hooks/useDsbox";
 import { useChatSession } from "../hooks/useChatSession";
-import { BrandMark, Button, CopyButton, Modal } from "../components/ui";
-import { DsboxOrb, type DsboxOrbState } from "../components/DsboxOrb";
+import { Button, CopyButton, Modal } from "../components/ui";
 import { ModelIdentityIcon } from "../components/ModelIdentityIcon";
 import { apiRequest } from "../lib/api";
 import { formatBytes, formatModelName } from "../lib/format";
 import { identifyModel } from "../lib/model-identity";
 import { localModelIsRunnable, normalizeLocalModelCandidates } from "../lib/local-models";
+import type { ReasoningEffort } from "../lib/chat-session";
 
 interface Props {
   snapshot: AppSnapshot;
@@ -46,6 +47,7 @@ interface Props {
 }
 
 interface WebSearchControlOptions {
+  modelSupportsTools: boolean;
   agentAvailable: boolean;
   agentActive: boolean;
   tools: readonly string[];
@@ -64,20 +66,20 @@ export interface WebSearchControlState {
 }
 
 export function resolveWebSearchControl(options: WebSearchControlOptions): WebSearchControlState {
-  // The bundled standard-chat fallback can search even when capability
-  // discovery is loading or the active model cannot call tools. Keep the
-  // network permission visible at all times so egress is never implicit.
-  const available = true;
-  const state = options.preference ? "on" : "off";
-  const action = options.preference ? "off" : "on";
+  const available = options.modelSupportsTools;
+  const pressed = available && options.preference;
+  const state = pressed ? "on" : "off";
+  const action = pressed ? "off" : "on";
   return {
-    visible: available,
-    requestEnabled: available && options.preference,
-    pressed: options.preference,
-    disabled: options.streaming,
-    label: options.preference ? "Web on" : "Web off",
+    visible: true,
+    requestEnabled: pressed,
+    pressed,
+    disabled: !available || options.streaming,
+    label: pressed ? "Web on" : "Web off",
     ariaLabel: `Turn web search ${action}`,
-    title: options.preference
+    title: !available
+      ? "Web search is currently available only when Qwen tools are supported."
+      : pressed
       ? `Web search is ${state}. Hebrus Studio may use the network when a prompt needs current information.`
       : `Web search is ${state}. Click to turn it ${action}.`
   };
@@ -89,24 +91,21 @@ const suggestions = [
   { icon: Cpu, title: "Optimize a hot path", prompt: "Analyze this workload's bottlenecks and propose measurable experiments." }
 ];
 
-type LiveInferenceStage = DsboxOrbState;
-type MessageStageState = LiveInferenceStage | "error" | "off" | "ready" | "preparing" | "tool";
+const reasoningEffortOptions: Array<{ value: ReasoningEffort; label: string; description: string; title: string }> = [
+  { value: "off", label: "Off", description: "Fastest replies for simple prompts.", title: "Skip model thinking for the next response" },
+  { value: "low", label: "Low", description: "Quick thinking for everyday questions.", title: "Faster thinking for simple prompts" },
+  { value: "medium", label: "Medium", description: "Balanced thinking for most work.", title: "Balanced thinking for everyday work" },
+  { value: "high", label: "High", description: "Deeper reasoning for hard tasks.", title: "Deeper thinking for difficult work" }
+];
 
-function liveInferenceStage(message: ChatMessage, skillStage: "idle" | "searching"): LiveInferenceStage | null {
-  if (!message.pending || message.error || message.interrupted || skillStage === "searching") return null;
-  if (message.blocks?.some((block) => block.type === "tool_call" && ["proposed", "running"].includes(block.activity.state))) return "thinking";
-  if (message.content) return "decode";
-  if (message.reasoning) return "thinking";
-  return "prefill";
+function reasoningEffortLabel(effort: ReasoningEffort | undefined): string {
+  if (effort === "off") return "Off";
+  if (effort === "low") return "Low";
+  if (effort === "high") return "High";
+  return "Medium";
 }
 
-function AssistantAvatar({ state }: { state: LiveInferenceStage | null }) {
-  return (
-    <div className="message__avatar">
-      {state ? <DsboxOrb state={state} decorative /> : <BrandMark small />}
-    </div>
-  );
-}
+type MessageStageState = "prefill" | "thinking" | "decode" | "error" | "off" | "ready" | "preparing" | "tool";
 
 function formatDuration(milliseconds: number | null): string {
   if (milliseconds === null || !Number.isFinite(milliseconds)) return "—";
@@ -412,6 +411,33 @@ export function defaultReasoningExpanded(
   return Boolean(message.error || (message.pending && (hasActiveTool || !message.content.trim())));
 }
 
+const localThinkingPhrases = [
+  "Making Sam Altman a tiny bit poorer",
+  "Keeping these tokens off the cloud bill",
+  "Letting Metal do the expensive part",
+  "Burning local watts, not API credits",
+  "Asking this Mac to think in private",
+  "Turning unified memory into opinions",
+  "Spending zero dollars per token",
+  "Giving the GPU a tiny existential task",
+  "Keeping inference close to home",
+  "No meter running, just local silicon",
+  "Heating the room with useful math",
+  "Teaching the cache some patience",
+  "Making Cupertino silicon earn it",
+  "Compressing cloud anxiety locally",
+  "Saving the invoice for never"
+];
+
+export function localThinkingPhrase(seed: string, now: number): string {
+  const bucket = Math.floor(now / 2_400);
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  return localThinkingPhrases[(hash + bucket) % localThinkingPhrases.length];
+}
+
 function ReasoningTrace({
   message,
   now,
@@ -448,6 +474,11 @@ function ReasoningTrace({
           ? isWebActivity(activeTool) ? "Searching the web" : `Using ${toolLabel(activeTool.name)}`
           : hasAnswer ? "Reasoning complete" : "Thinking live"
         : "Complete";
+  const visibleStatus = traceLive && !open ? localThinkingPhrase(message.id, now) : status;
+  const reasoningComponents = useMemo(
+    () => messageMarkdownComponents(emptyMessageSources, traceId, traceLive),
+    [traceId, traceLive]
+  );
   useEffect(() => {
     if (!open || !message.pending || !followsTimelineEndRef.current) return;
     const frame = window.requestAnimationFrame(() => {
@@ -459,7 +490,7 @@ function ReasoningTrace({
   }, [message.blocks, message.pending, message.reasoning, open]);
 
   return (
-    <section className={`reasoning-trace ${open ? "reasoning-trace--open" : ""} ${traceLive ? "reasoning-trace--live" : ""} ${message.error ? "reasoning-trace--error" : message.interrupted ? "reasoning-trace--interrupted" : ""}`} aria-label="Reasoning trace">
+    <section className={`reasoning-trace ${open ? "reasoning-trace--open" : ""} ${traceLive ? "reasoning-trace--live" : ""} ${message.error ? "reasoning-trace--error" : message.interrupted ? "reasoning-trace--interrupted" : ""}`} aria-label="Thinking trace">
       <button
         id={triggerId}
         type="button"
@@ -467,13 +498,14 @@ function ReasoningTrace({
         onClick={onToggle}
         aria-expanded={open}
         aria-controls={traceId}
-        aria-label={`${open ? "Collapse" : "Expand"} reasoning trace. ${status}. ${items.length} ${items.length === 1 ? "step" : "steps"}.`}
+        aria-label={`${open ? "Collapse" : "Expand"} thinking trace. ${visibleStatus}. ${items.length} ${items.length === 1 ? "step" : "steps"}.`}
       >
         <span className="reasoning-trace__heading">
-          <strong>Reasoning</strong>
-          <small>{status}</small>
+          <strong>Thinking</strong>
+          <small>{visibleStatus}</small>
         </span>
         <span className="reasoning-trace__meta">
+          {message.reasoningEffort && <span>{reasoningEffortLabel(message.reasoningEffort)}</span>}
           <span>{items.length} {items.length === 1 ? "step" : "steps"}</span>
           {duration !== null && <time>{formatDuration(duration)}</time>}
         </span>
@@ -495,7 +527,7 @@ function ReasoningTrace({
               className="reasoning-trace__timeline"
               ref={timelineRef}
               tabIndex={0}
-              aria-label="Reasoning and tool activity timeline"
+              aria-label="Thinking and tool activity timeline"
               onFocusCapture={onPinOpen}
               onPointerDown={onPinOpen}
               onWheel={onPinOpen}
@@ -512,7 +544,7 @@ function ReasoningTrace({
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
                           rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
-                          components={markdownComponents}
+                          components={reasoningComponents}
                         >
                           {item.text}
                         </ReactMarkdown>
@@ -560,6 +592,23 @@ function formatRate(rate: number | null): string {
   return `${rate.toFixed(rate < 10 ? 2 : 1)} t/s`;
 }
 
+function estimateContextTokens(messages: ChatMessage[], input: string): number {
+  const contentLength = messages.reduce((total, message) => {
+    const blockText = message.blocks?.reduce((sum, block) => {
+      if (block.type === "text" || block.type === "reasoning") return sum + block.text.length;
+      return sum + block.activity.name.length + block.activity.argumentsText.length + (block.activity.summary?.length ?? 0);
+    }, 0) ?? 0;
+    return total + message.content.length + (message.reasoning?.length ?? 0) + blockText + 12;
+  }, input.length);
+  return Math.max(0, Math.ceil(contentLength / 4));
+}
+
+function formatCompactTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(tokens >= 10_000_000 ? 0 : 1)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(tokens >= 10_000 ? 0 : 1)}k`;
+  return String(tokens);
+}
+
 function relativeTime(timestamp: number, now: number): string {
   const delta = Math.max(0, now - timestamp);
   if (delta < 60_000) return "Just now";
@@ -583,15 +632,40 @@ function sourceHost(url: string): string {
   return safe ? new URL(safe).hostname.replace(/^www\./, "") : "Source";
 }
 
+export function sourceFaviconUrl(url: string): string | null {
+  const safe = safeSourceUrl(url);
+  if (!safe) return null;
+  return `${new URL(safe).origin}/favicon.ico`;
+}
+
+export function sourcePreviewImageUrl(url: string): string | null {
+  const safe = safeSourceUrl(url);
+  if (!safe) return null;
+  const parameters = new URLSearchParams({
+    url: safe,
+    screenshot: "true",
+    embed: "screenshot.url"
+  });
+  return `https://api.microlink.io/?${parameters.toString()}`;
+}
+
 function sourceAnchorId(messageId: string, sourceNumber: number): string {
   return `source-${messageId.replace(/[^a-zA-Z0-9_-]/g, "-")}-${sourceNumber}`;
 }
 
 const revealMessageSourceEvent = "dsbox:reveal-message-source";
-const sourceAutoExpandLimit = 3;
+const sourceInlineLimit = 3;
 
-export function defaultSourcesExpanded(sourceCount: number): boolean {
-  return sourceCount > 0 && sourceCount <= sourceAutoExpandLimit;
+export function defaultSourcesExpanded(_sourceCount: number): boolean {
+  return false;
+}
+
+export function visibleSourceCount(sourceCount: number): number {
+  return Math.max(0, Math.min(sourceCount, sourceInlineLimit));
+}
+
+export function hiddenSourceCount(sourceCount: number): number {
+  return Math.max(0, sourceCount - sourceInlineLimit);
 }
 
 export function sourceIndexForCitation(sources: ChatSource[], label: string): number {
@@ -609,7 +683,8 @@ export function sourceIndexForCitation(sources: ChatSource[], label: string): nu
 function enhanceTextChildren(
   children: ReactNode,
   sources: ChatSource[],
-  messageId: string
+  messageId: string,
+  animateText = false
 ): ReactNode {
   return Children.map(children, (child, childIndex) => {
     if (typeof child !== "string") return child;
@@ -635,9 +710,105 @@ function enhanceTextChildren(
           >{citationLabel}</a>;
         }
       }
-      return part;
+      return animateText ? streamingTextPieces(part, `${messageId}-${childIndex}-${partIndex}`) : part;
     });
   });
+}
+
+function SourceFavicon({ url, label }: { url: string; label: string }) {
+  const faviconUrl = sourceFaviconUrl(url);
+  const fallback = sourceHost(url).replace(/^[^a-z0-9]+/i, "").charAt(0).toUpperCase() || "S";
+
+  return (
+    <span className="source-favicon" aria-hidden="true" title={label}>
+      <span>{fallback}</span>
+      {faviconUrl && (
+        <img
+          src={faviconUrl}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
+function SourcePreviewCard({
+  source,
+  href,
+  messageId,
+  sourceNumber
+}: {
+  source: ChatSource;
+  href: string;
+  messageId: string;
+  sourceNumber: number;
+}) {
+  const host = sourceHost(href);
+  const title = source.title.trim() || host;
+  const snippet = source.snippet.trim();
+  const sourceLabel = source.citationId ?? sourceNumber;
+  const previewImageUrl = sourcePreviewImageUrl(href);
+  const [previewRequested, setPreviewRequested] = useState(false);
+
+  return (
+    <a
+      id={sourceAnchorId(messageId, sourceNumber)}
+      className="source-preview-card"
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      title={snippet || title}
+      aria-label={`Open source ${sourceLabel}: ${title}`}
+      onPointerEnter={() => setPreviewRequested(true)}
+      onFocus={() => setPreviewRequested(true)}
+    >
+      <span className="source-preview-card__identity">
+        <SourceFavicon url={href} label={host} />
+        <i>{sourceLabel}</i>
+      </span>
+      <span className="source-preview-card__copy">
+        <strong>{title}</strong>
+        {snippet && <span className="source-preview-card__snippet">{snippet}</span>}
+        <small>{host}</small>
+      </span>
+      <ExternalLink className="source-preview-card__open" size={13} aria-hidden="true" />
+      <span className="source-preview-card__preview" aria-hidden="true">
+        <span className="source-preview-card__preview-shell">
+          <span className="source-preview-card__preview-visual">
+            <span className="source-preview-card__preview-fallback">
+              <SourceFavicon url={href} label={host} />
+              <small>Site preview</small>
+            </span>
+            {previewRequested && previewImageUrl && (
+              <img
+                src={previewImageUrl}
+                alt=""
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
+              />
+            )}
+          </span>
+          <span className="source-preview-card__preview-head">
+            <SourceFavicon url={href} label={host} />
+            <span>
+              <strong>{host}</strong>
+              <small>{href}</small>
+            </span>
+          </span>
+          <span className="source-preview-card__preview-title">{title}</span>
+          {snippet && <span className="source-preview-card__preview-snippet">{snippet}</span>}
+        </span>
+      </span>
+    </a>
+  );
 }
 
 function MessageSources({ sources, messageId }: { sources: ChatSource[]; messageId: string }) {
@@ -646,15 +817,19 @@ function MessageSources({ sources, messageId }: { sources: ChatSource[]; message
     return href ? [{ source, href, sourceNumber: index + 1 }] : [];
   });
   const sourceCount = validSources.length;
-  const [open, setOpen] = useState(() => defaultSourcesExpanded(sourceCount));
+  const primarySources = validSources.slice(0, visibleSourceCount(sourceCount));
+  const extraSources = validSources.slice(visibleSourceCount(sourceCount));
+  const extraCount = hiddenSourceCount(sourceCount);
+  const [extraOpen, setExtraOpen] = useState(() => defaultSourcesExpanded(sourceCount));
   const manuallyToggled = useRef(false);
   const previousSourceCount = useRef(sourceCount);
   const contentId = `message-sources-${messageId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const previewWarmupKey = validSources.slice(0, extraOpen ? 6 : sourceInlineLimit).map(({ href }) => href).join("\n");
 
   useEffect(() => {
     if (previousSourceCount.current === sourceCount) return;
     previousSourceCount.current = sourceCount;
-    if (!manuallyToggled.current) setOpen(defaultSourcesExpanded(sourceCount));
+    if (!manuallyToggled.current) setExtraOpen(defaultSourcesExpanded(sourceCount));
   }, [sourceCount]);
 
   useEffect(() => {
@@ -662,9 +837,9 @@ function MessageSources({ sources, messageId }: { sources: ChatSource[]; message
       const detail = (event as CustomEvent<{ messageId?: string; sourceNumber?: number }>).detail;
       if (detail?.messageId !== messageId || !detail.sourceNumber) return;
       manuallyToggled.current = true;
-      setOpen(true);
+      if (detail.sourceNumber > sourceInlineLimit) setExtraOpen(true);
       const anchorId = sourceAnchorId(messageId, detail.sourceNumber);
-      window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
         const target = document.getElementById(anchorId);
         if (!target) return;
         try {
@@ -674,57 +849,102 @@ function MessageSources({ sources, messageId }: { sources: ChatSource[]; message
         }
         target.scrollIntoView({ block: "nearest", behavior: "auto" });
         target.focus({ preventScroll: true });
-      });
+      }));
     };
     window.addEventListener(revealMessageSourceEvent, revealSource);
     return () => window.removeEventListener(revealMessageSourceEvent, revealSource);
   }, [messageId]);
 
+  useEffect(() => {
+    if (!previewWarmupKey) return;
+    const previewUrls = previewWarmupKey.split("\n").flatMap((href) => {
+      const previewUrl = sourcePreviewImageUrl(href);
+      return previewUrl ? [previewUrl] : [];
+    });
+    if (!previewUrls.length) return;
+
+    const preload = () => {
+      for (const previewUrl of previewUrls) {
+        const image = new Image();
+        image.decoding = "async";
+        image.referrerPolicy = "no-referrer";
+        image.src = previewUrl;
+      }
+    };
+
+    const requestIdleCallback = window.requestIdleCallback;
+    const cancelIdleCallback = window.cancelIdleCallback;
+    if (typeof requestIdleCallback === "function" && typeof cancelIdleCallback === "function") {
+      const idleId = requestIdleCallback(preload, { timeout: 1_200 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timeoutId = window.setTimeout(preload, 320);
+    return () => window.clearTimeout(timeoutId);
+  }, [previewWarmupKey]);
+
   if (!validSources.length) return null;
 
   return (
-    <section className={`message-sources ${open ? "message-sources--open" : ""}`} aria-label={`Web sources, ${sourceCount}`}>
-      <button
-        type="button"
-        className="message-sources__head"
-        aria-expanded={open}
-        aria-controls={contentId}
-        aria-label={`${open ? "Hide" : "Show"} ${sourceCount} web ${sourceCount === 1 ? "source" : "sources"}`}
-        onClick={() => {
-          manuallyToggled.current = true;
-          setOpen((current) => !current);
-        }}
-      >
+    <section className={`message-sources ${extraOpen ? "message-sources--open" : ""}`} aria-label={`Web sources, ${sourceCount}`}>
+      <div className="message-sources__head">
         <span className="message-sources__title"><Globe2 size={13} /><strong>Sources</strong><i>{validSources.length}</i></span>
         <span className="message-sources__actions">
           <ScopeBadge scope="network" />
-          <ChevronDown className="message-sources__chevron" size={14} aria-hidden="true" />
         </span>
-      </button>
-      <div className="message-sources__content" id={contentId} hidden={!open}>
-        <p className="message-sources__note">External results used for this answer. Verify important details.</p>
-        <div className="message-sources__grid">
-          {validSources.map(({ source, href, sourceNumber }) => (
-            <a
-              id={sourceAnchorId(messageId, sourceNumber)}
-              key={`${source.url}-${sourceNumber}`}
-              href={href}
-              target="_blank"
-              rel="noreferrer noopener"
-              title={source.snippet || source.title}
-              aria-label={`Open source ${source.citationId ?? sourceNumber}: ${source.title}`}
-            >
-              <i>{source.citationId ?? sourceNumber}</i>
-              <span>
-                <strong>{source.title || sourceHost(source.url)}</strong>
-                {source.snippet && <span className="message-sources__snippet">{source.snippet}</span>}
-                <small>{sourceHost(source.url)}</small>
-              </span>
-              <ExternalLink size={12} />
-            </a>
-          ))}
-        </div>
       </div>
+      <div className="message-sources__rail" aria-label="Top web sources">
+        {primarySources.map(({ source, href, sourceNumber }) => (
+          <SourcePreviewCard
+            key={`${source.url}-${sourceNumber}`}
+            source={source}
+            href={href}
+            messageId={messageId}
+            sourceNumber={sourceNumber}
+          />
+        ))}
+      </div>
+      {extraCount > 0 && (
+        <div className="message-sources__more-wrap">
+          <button
+            type="button"
+            className="message-sources__more"
+            aria-expanded={extraOpen}
+            aria-controls={contentId}
+            onClick={() => {
+              manuallyToggled.current = true;
+              setExtraOpen((current) => !current);
+            }}
+          >
+            <span>{extraOpen ? "Hide" : "Show"} {extraCount} more</span>
+            <ChevronDown className="message-sources__chevron" size={14} aria-hidden="true" />
+          </button>
+          <AnimatePresence initial={false}>
+            {extraOpen && (
+              <motion.div
+                className="message-sources__extra"
+                id={contentId}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <div className="message-sources__grid">
+                  {extraSources.map(({ source, href, sourceNumber }) => (
+                    <SourcePreviewCard
+                      key={`${source.url}-${sourceNumber}`}
+                      source={source}
+                      href={href}
+                      messageId={messageId}
+                      sourceNumber={sourceNumber}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </section>
   );
 }
@@ -735,6 +955,14 @@ function nodeText(children: ReactNode): string {
     if (!isValidElement<{ children?: ReactNode }>(child)) return "";
     return nodeText(child.props.children);
   }).join("");
+}
+
+function streamingTextPieces(text: string, keyPrefix: string): ReactNode[] {
+  return text.split(/(\s+)/).map((part, index) => {
+    if (!part) return null;
+    if (/^\s+$/.test(part)) return part;
+    return <span className="stream-word" key={`${keyPrefix}-${index}-${part}`}>{part}</span>;
+  });
 }
 
 const CodeBlock: NonNullable<Components["pre"]> = ({ children, node: _node, ...props }) => {
@@ -755,8 +983,8 @@ const CodeBlock: NonNullable<Components["pre"]> = ({ children, node: _node, ...p
 
 const markdownComponents: Components = { pre: CodeBlock };
 
-function messageMarkdownComponents(sources: ChatSource[], messageId: string): Components {
-  const enhance = (children: ReactNode) => enhanceTextChildren(children, sources, messageId);
+function messageMarkdownComponents(sources: ChatSource[], messageId: string, animateText = false): Components {
+  const enhance = (children: ReactNode) => enhanceTextChildren(children, sources, messageId, animateText);
   return {
     ...markdownComponents,
     p: ({ children, node: _node, ...props }) => <p {...props}>{enhance(children)}</p>,
@@ -775,16 +1003,18 @@ const emptyMessageSources: ChatSource[] = [];
 const MessageMarkdown = memo(function MessageMarkdown({
   content,
   sources,
-  messageId
+  messageId,
+  animateText = false
 }: {
   content: string;
   sources?: ChatSource[];
   messageId: string;
+  animateText?: boolean;
 }) {
   const sourceList = sources ?? emptyMessageSources;
   const components = useMemo(
-    () => messageMarkdownComponents(sourceList, messageId),
-    [messageId, sourceList]
+    () => messageMarkdownComponents(sourceList, messageId, animateText),
+    [animateText, messageId, sourceList]
   );
 
   return (
@@ -851,23 +1081,22 @@ function AgentErrorCard({
 
 export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const chat = useChatSession();
-  const { messages, input, thinking, streaming, capabilities, agentMode, webSearchEnabled } = chat;
+  const { messages, input, reasoningEffort, streaming, capabilities, agentMode, webSearchEnabled } = chat;
   const [reasoningOpen, setReasoningOpen] = useState<Record<string, boolean>>({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [showJump, setShowJump] = useState(false);
   const [now, setNow] = useState(Date.now);
   const [localModels, setLocalModels] = useState<LocalModelCandidate[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
-  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  const [runMenuOpen, setRunMenuOpen] = useState(false);
+  const [runMenuPanel, setRunMenuPanel] = useState<"root" | "models" | "reasoning" | "tools">("root");
   const [switchingPath, setSwitchingPath] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoScrollRef = useRef(true);
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
-  const modelMenuRef = useRef<HTMLDivElement | null>(null);
-  const toolsMenuRef = useRef<HTMLDivElement | null>(null);
-  const toolsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const runMenuRef = useRef<HTMLDivElement | null>(null);
+  const runTriggerRef = useRef<HTMLButtonElement | null>(null);
   const wasStreamingRef = useRef(streaming);
   const capabilityRetryRef = useRef(0);
   const reduceMotion = useReducedMotion();
@@ -914,33 +1143,20 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   }, [loadLocalModels, snapshot.config.model.path]);
 
   useEffect(() => {
-    if (!modelMenuOpen) return;
+    if (!runMenuOpen) return;
     const dismiss = (event: PointerEvent) => {
-      if (modelMenuRef.current?.contains(event.target as Node)) return;
-      setModelMenuOpen(false);
+      if (runMenuRef.current?.contains(event.target as Node)) return;
+      setRunMenuOpen(false);
+      setRunMenuPanel("root");
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setModelMenuOpen(false);
-    };
-    window.addEventListener("pointerdown", dismiss);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", dismiss);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [modelMenuOpen]);
-
-  useEffect(() => {
-    if (!toolsMenuOpen) return;
-    const dismiss = (event: PointerEvent) => {
-      if (toolsMenuRef.current?.contains(event.target as Node)) return;
-      setToolsMenuOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setToolsMenuOpen(false);
-        window.requestAnimationFrame(() => toolsTriggerRef.current?.focus());
+      if (event.key !== "Escape") return;
+      if (runMenuPanel !== "root") {
+        setRunMenuPanel("root");
+        return;
       }
+      setRunMenuOpen(false);
+      window.requestAnimationFrame(() => runTriggerRef.current?.focus());
     };
     window.addEventListener("pointerdown", dismiss);
     window.addEventListener("keydown", onKeyDown);
@@ -948,7 +1164,7 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
       window.removeEventListener("pointerdown", dismiss);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [toolsMenuOpen]);
+  }, [runMenuOpen, runMenuPanel]);
 
   useEffect(() => {
     if (!streaming) return;
@@ -973,17 +1189,30 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   }, [chat.activeThreadId, latestAssistantContent?.content, latestAssistantContent?.reasoning, latestAssistantContent?.blocks, latestAssistantContent?.pending, latestAssistantContent?.sources?.length]);
 
   const ready = snapshot.runtime.readiness === "ready";
-  const agentAvailable = capabilities.status === "ready" && capabilities.chatTools;
+  const selectedLocalModel = localModels.find((model) => model.selected || model.path === snapshot.config.model.path);
+  const selectedModelIdentity = identifyModel(snapshot.config.model.id, snapshot.config.model.path, selectedLocalModel?.modelId, selectedLocalModel?.name);
+  const qwenToolModel = selectedModelIdentity === "qwen";
+  const agentAvailable = qwenToolModel && capabilities.status === "ready" && capabilities.chatTools;
   const agentActive = agentAvailable && agentMode;
   const webSearchControl = resolveWebSearchControl({
+    modelSupportsTools: qwenToolModel,
     agentAvailable,
     agentActive,
     tools: capabilities.tools,
     preference: webSearchEnabled,
     streaming
   });
-  const activeToolSettings = Number(agentActive) + Number(webSearchControl.visible && webSearchEnabled);
-  const agentCapabilityMessage = capabilities.status === "error" || capabilities.status === "unknown"
+  const activeToolSettings = Number(agentActive) + Number(webSearchControl.pressed);
+  const toolsSummaryLabel = !qwenToolModel
+    ? "Qwen only"
+    : capabilities.status === "loading"
+      ? "Checking"
+      : activeToolSettings > 0
+        ? `${activeToolSettings} on`
+        : "Off";
+  const agentCapabilityMessage = !ready || !qwenToolModel
+    ? null
+    : capabilities.status === "error" || capabilities.status === "unknown"
     ? "Tool capability could not be verified. Hebrus Studio will use standard chat."
     : capabilities.status === "ready" && !capabilities.chatTools
       ? "This model does not expose tool calling yet. Hebrus Studio will use standard chat."
@@ -992,15 +1221,13 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
   const stopping = snapshot.runtime.phase === "stopping";
   const runtimeError = snapshot.runtime.phase === "error";
   const empty = messages.length === 0;
-  const selectedLocalModel = localModels.find((model) => model.selected || model.path === snapshot.config.model.path);
   const currentModelLabel = formatModelName(selectedLocalModel?.modelId || snapshot.config.model.id);
-  const currentModelIdentity = identifyModel(
-    selectedLocalModel?.modelId,
-    selectedLocalModel?.name,
-    selectedLocalModel?.path,
-    snapshot.config.model.id,
-    snapshot.config.model.path
-  );
+  const contextLimitTokens = Math.max(1, snapshot.config.server.contextTokens);
+  const contextUsedTokens = estimateContextTokens(messages, input);
+  const contextRatio = Math.min(1, contextUsedTokens / contextLimitTokens);
+  const contextPercent = Math.round(contextRatio * 100);
+  const contextRingStyle = { "--context-progress": `${Math.round(contextRatio * 360)}deg` } as CSSProperties;
+  const contextTitle = `About ${formatCompactTokens(contextUsedTokens)} of ${formatCompactTokens(contextLimitTokens)} context tokens used`;
   const modelSwitching = switchingPath !== null;
   const modelSwitchBlocked = streaming
     || modelSwitching
@@ -1019,49 +1246,62 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
         description: webSearchEnabled
           ? "The model runs on your Mac. Web search is on; only search queries may leave this Mac."
           : "The model, prompts, cache, and code stay on your Mac.",
-        notice: "Hebrus Studio is ready",
+        notice: "Hebrus Server is ready",
         detail: "you can start typing",
         placeholder: "Message Hebrus Studio…"
       }
     : runtimeError
       ? {
-          description: "Hebrus Studio needs your attention. Open Server to see what happened and try again.",
-          notice: "Hebrus Studio needs attention",
+          description: "Hebrus Server needs your attention. Open Server to see what happened and try again.",
+          notice: "Hebrus Server needs attention",
           detail: "open Server to resolve it",
           placeholder: "Check the server status…"
         }
       : stopping
         ? {
-            description: "Hebrus Studio is safely closing the local session.",
-            notice: "Turning off Hebrus Studio",
+            description: "Hebrus Server is safely closing the local session.",
+            notice: "Turning off Hebrus Server",
             detail: "this will only take a moment",
-            placeholder: "Hebrus Studio is shutting down…"
+            placeholder: "Hebrus Server is shutting down…"
           }
         : preparing
           ? {
               description: "Preparing the model on your Mac. Your prompts, cache, and code will stay local.",
-              notice: "Preparing Hebrus Studio",
+              notice: "Starting Hebrus Server",
               detail: "follow the progress in Server",
-              placeholder: "Hebrus Studio is getting ready…"
+              placeholder: "Hebrus Server is getting ready…"
             }
           : {
-              description: "When you turn on Hebrus Studio, the model, prompts, cache, and code stay on your Mac.",
-              notice: "Hebrus Studio is off",
-              detail: "turn it on to get started",
-              placeholder: "Turn on Hebrus Studio to chat…"
+              description: "Start the local server when you are ready. The model, prompts, cache, and code stay on this Mac.",
+              notice: "Hebrus Server is off",
+              detail: snapshot.runtime.modelPresent ? "paused" : "choose a model first",
+              placeholder: "Start Hebrus Server to chat…"
             };
+  const canStartServerFromComposer = !ready && !preparing && !stopping && snapshot.runtime.modelPresent && !controller.busyAction;
+  const serverStatusActionLabel = snapshot.runtime.modelPresent
+    ? canStartServerFromComposer ? "Start" : "Open Server"
+    : "Choose model";
+  const handleServerStatusAction = () => {
+    if (canStartServerFromComposer) {
+      void controller.action("Starting Hebrus Server", "/api/runtime/power").catch(() => undefined);
+      return;
+    }
+    onNavigate(snapshot.runtime.modelPresent ? "runtime" : "models");
+  };
 
   const sortedThreads = useMemo(() => [...chat.threads].sort((left, right) => right.updatedAt - left.updatedAt), [chat.threads]);
   const activeThread = chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? chat.threads[0];
 
   const switchInstalledModel = async (model: LocalModelCandidate) => {
     if (modelSwitchBlocked || model.selected || model.path === snapshot.config.model.path) {
-      setModelMenuOpen(false);
+      setRunMenuOpen(false);
+      setRunMenuPanel("root");
       return;
     }
     setSwitchingPath(model.path);
     setModelError(null);
-    setModelMenuOpen(false);
+    setRunMenuOpen(false);
+    setRunMenuPanel("root");
     try {
       const result = await apiRequest<LocalModelSwitchResult>("/api/models/local/switch", {
         method: "POST",
@@ -1074,7 +1314,8 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
       await controller.refresh();
     } catch (reason) {
       setModelError(reason instanceof Error ? reason.message : "The model could not be switched");
-      setModelMenuOpen(true);
+      setRunMenuPanel("models");
+      setRunMenuOpen(true);
     } finally {
       setSwitchingPath(null);
     }
@@ -1178,7 +1419,6 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.24 }}
             >
-              <BrandMark />
               <h2>What do you want to build?</h2>
               <p>{runtimePresentation.description}</p>
               <div className="suggestion-grid">
@@ -1219,9 +1459,6 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={reduceMotion ? { duration: 0 } : { duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
                 >
-                  {message.role === "assistant" && (
-                    <AssistantAvatar state={liveInferenceStage(message, chat.skillStage)} />
-                  )}
                   <div className="message__body">
                     {message.role === "assistant" && message.pending && !hasReasoningTrace && (
                       <div className={`message-stage message-stage--${messageStage(message).state}`}>
@@ -1264,8 +1501,13 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                         onOpenServer={() => onNavigate("runtime")}
                       />
                     ) : message.content ? (
-                      <div className="markdown-body">
-                        <MessageMarkdown content={message.content} sources={message.sources} messageId={message.id} />
+                      <div className={`markdown-body ${message.pending && message.role === "assistant" && !message.error ? "markdown-body--streaming" : ""}`}>
+                        <MessageMarkdown
+                          content={message.content}
+                          sources={message.sources}
+                          messageId={message.id}
+                          animateText={message.pending && message.role === "assistant" && !message.error}
+                        />
                       </div>
                     ) : message.interrupted ? (
                       <div className="generation-stopped-copy">Generation stopped before output began.</div>
@@ -1304,7 +1546,8 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                           {message.stats.cachedPromptTokens !== null && <div><dt>Cached prompt</dt><dd>{message.stats.cachedPromptTokens.toLocaleString("en-US")} tokens</dd></div>}
                           {message.stats.completionTokens !== null && <div><dt>Generated</dt><dd>{message.stats.completionTokens.toLocaleString("en-US")} tokens</dd></div>}
                           {message.stats.prefillMs !== null && <div><dt>Prefill latency</dt><dd>{formatDuration(message.stats.prefillMs)}</dd></div>}
-                          {message.stats.thinkingMs !== null && <div><dt>{toolActivities.length ? "Reasoning + tools" : "Thinking"}</dt><dd>{formatDuration(message.stats.thinkingMs)}{message.stats.reasoningTokens !== null ? ` · ${message.stats.reasoningTokens.toLocaleString("en-US")} tokens` : ""}</dd></div>}
+                          {message.reasoningEffort && <div><dt>Reasoning effort</dt><dd>{reasoningEffortLabel(message.reasoningEffort)}</dd></div>}
+                          {message.stats.thinkingMs !== null && <div><dt>{toolActivities.length ? "Thinking + tools" : "Thinking"}</dt><dd>{formatDuration(message.stats.thinkingMs)}{message.stats.reasoningTokens !== null ? ` · ${message.stats.reasoningTokens.toLocaleString("en-US")} tokens` : ""}</dd></div>}
                           {message.stats.decodeMs !== null && <div><dt>Generation</dt><dd>{formatDuration(message.stats.decodeMs)}</dd></div>}
                           {message.stats.webSearchMs !== null && <div><dt>Web search</dt><dd>{formatDuration(message.stats.webSearchMs)}</dd></div>}
                           <div><dt>Timing</dt><dd>{message.stats.timingSource === "server" ? "Reported by Hebrus" : "Measured end to end"}</dd></div>
@@ -1337,11 +1580,23 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
 
       <div className="composer-wrap">
         {!ready && (
-          <button className={`runtime-notice ${runtimeError ? "runtime-notice--error" : ""}`} onClick={() => onNavigate("runtime")}>
-            <span className="runtime-notice__dot" />
-            <span><strong>{runtimePresentation.notice}</strong> · {runtimePresentation.detail}</span>
-            <ChevronRight size={14} />
-          </button>
+          <div className={`server-status ${runtimeError ? "server-status--error" : preparing ? "server-status--starting" : ""}`} role="status" aria-live="polite">
+            <span className="server-status__icon" aria-hidden="true"><CirclePower size={13} /></span>
+            <span className="server-status__copy">
+              <strong>{runtimePresentation.notice}</strong>
+              <small>{runtimePresentation.detail}</small>
+            </span>
+            <button
+              type="button"
+              className="server-status__action"
+              onClick={handleServerStatusAction}
+              disabled={Boolean(controller.busyAction) || stopping || preparing}
+              aria-label={serverStatusActionLabel === "Start" ? "Start Hebrus Server" : serverStatusActionLabel}
+            >
+              {serverStatusActionLabel === "Start" ? <CirclePower size={13} /> : <ChevronRight size={13} />}
+              <span>{serverStatusActionLabel}</span>
+            </button>
+          </div>
         )}
         <form className={`composer ${streaming ? "composer--streaming" : ""}`} onSubmit={(event) => void send(event)}>
           <textarea
@@ -1367,163 +1622,230 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
             </div>
           )}
           <div className="composer__footer">
-            <div className="composer__tool-group">
-              <div className="model-picker" ref={modelMenuRef}>
+            <div className="composer__run-group">
+              <div className="run-settings" ref={runMenuRef}>
                 <button
+                  ref={runTriggerRef}
                   type="button"
-                  className="model-picker__trigger"
+                  className="run-settings__trigger"
                   onClick={() => {
-                    const opening = !modelMenuOpen;
-                    setToolsMenuOpen(false);
-                    setModelMenuOpen(opening);
+                    const opening = !runMenuOpen;
+                    setRunMenuPanel("root");
+                    setRunMenuOpen(opening);
                     if (opening) void loadLocalModels();
                   }}
-                  disabled={modelSwitchBlocked}
-                  aria-haspopup="menu"
-                  aria-expanded={modelMenuOpen}
-                  title={streaming ? "Stop the active generation before switching models" : "Switch installed model"}
+                  disabled={streaming && modelSwitching}
+                  aria-expanded={runMenuOpen}
+                  aria-controls="run-settings-popover"
+                  aria-haspopup="dialog"
+                  aria-label={`Run settings. Model ${currentModelLabel}. Reasoning effort ${reasoningEffortLabel(reasoningEffort)}. Context ${contextPercent}% used.`}
+                  title={contextTitle}
                 >
-                  <span className={`model-picker__trigger-icon model-picker__trigger-icon--${currentModelIdentity}`}>
-                    {modelSwitching ? <LoaderCircle className="spin" size={13} /> : <ModelIdentityIcon identity={currentModelIdentity} fallback={<HardDrive size={13} />} />}
-                  </span>
-                  <span>{modelSwitching ? "Switching model…" : currentModelLabel}</span>
+                  {modelSwitching ? <LoaderCircle className="spin" size={13} /> : <Zap size={13} />}
+                  <span className="run-settings__model">{modelSwitching ? "Switching…" : currentModelLabel}</span>
+                  <span className="run-settings__effort">{reasoningEffortLabel(reasoningEffort)}</span>
+                  <span className="context-ring" style={contextRingStyle} aria-hidden="true"><span /></span>
                   <ChevronDown size={12} />
                 </button>
                 <AnimatePresence>
-                  {modelMenuOpen && (
+                  {runMenuOpen && (
                     <motion.div
-                      className="model-picker__menu"
-                      role="group"
-                      aria-label="Installed models"
-                      initial={reduceMotion ? false : { opacity: 0, y: 5, scale: 0.985 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 3, scale: 0.99 }}
-                      transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
-                    >
-                      <div className="model-picker__head">
-                        <span><Brain size={13} /> Installed models</span>
-                        <button type="button" onClick={() => void loadLocalModels()} disabled={modelsLoading} aria-label="Refresh installed models" title="Refresh installed models">
-                          <RefreshCw className={modelsLoading ? "spin" : ""} size={13} />
-                        </button>
-                      </div>
-                      {modelError && <div className="model-picker__error" role="alert">{modelError}</div>}
-                      <div className="model-picker__list" role="radiogroup" aria-label="Choose an installed model">
-                        {modelsLoading && localModels.length === 0 ? (
-                          <div className="model-picker__empty"><LoaderCircle className="spin" size={14} /> Checking this Mac…</div>
-                        ) : localModels.length === 0 ? (
-                          <div className="model-picker__empty">No installed GGUF models found.</div>
-                        ) : localModels.map((model) => {
-                          const selected = model.selected || model.path === snapshot.config.model.path;
-                          const identity = identifyModel(model.modelId, model.name, model.path);
-                          return (
-                            <button
-                              type="button"
-                              role="radio"
-                              aria-checked={selected}
-                              className={`model-picker__item ${selected ? "model-picker__item--active" : ""}`}
-                              key={model.path}
-                              onClick={() => void switchInstalledModel(model)}
-                              disabled={modelSwitching}
-                              title={model.path}
-                            >
-                              <span className={`model-picker__item-icon model-picker__item-icon--${identity}`}><ModelIdentityIcon identity={identity} fallback={<HardDrive size={14} />} /></span>
-                              <span className="model-picker__item-copy">
-                                <strong>{formatModelName(model.modelId)}</strong>
-                                <small>{model.name} · {formatBytes(model.sizeBytes, 1)}</small>
-                              </span>
-                              {selected && <Check size={14} />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="model-picker__foot">
-                        <span>Switching restarts Hebrus when it is on.</span>
-                        <button type="button" onClick={() => { setModelMenuOpen(false); onNavigate("models"); }}>Manage models</button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-              <div className="tools-control" ref={toolsMenuRef}>
-                <button
-                  ref={toolsTriggerRef}
-                  type="button"
-                  className={`tools-trigger ${activeToolSettings > 0 ? "tools-trigger--on" : ""}`}
-                  onClick={() => {
-                    setModelMenuOpen(false);
-                    setToolsMenuOpen((open) => !open);
-                  }}
-                  aria-expanded={toolsMenuOpen}
-                  aria-controls="chat-tools-popover"
-                  aria-label={`Tool settings, ${activeToolSettings} enabled`}
-                  title="Configure local tools and network access"
-                >
-                  {capabilities.status === "loading" ? <LoaderCircle className="spin" size={13} /> : <Wrench size={13} />}
-                  <span>Tools</span>
-                  <small>{capabilities.status === "loading" ? "…" : activeToolSettings || "Off"}</small>
-                  <ChevronDown size={11} />
-                </button>
-                <AnimatePresence>
-                  {toolsMenuOpen && (
-                    <motion.div
-                      id="chat-tools-popover"
-                      className="tools-menu"
+                      id="run-settings-popover"
+                      className={`run-settings__menu run-settings__menu--${runMenuPanel}`}
                       role="dialog"
-                      aria-label="Tool settings"
+                      aria-label="Run settings"
                       initial={reduceMotion ? false : { opacity: 0, y: 5, scale: 0.985 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 3, scale: 0.99 }}
                       transition={{ duration: 0.14, ease: [0.16, 1, 0.3, 1] }}
                     >
-                      <div className="tools-menu__head">
-                        <div><strong>Tools</strong><span>Choose what Hebrus Studio can use in this chat.</span></div>
-                        <span>{activeToolSettings} on</span>
-                      </div>
-                      <div className="tools-menu__list">
-                        <div className={`tools-menu__row ${!agentAvailable ? "tools-menu__row--disabled" : ""}`}>
-                          <span className="tools-menu__icon"><Wrench size={15} /></span>
-                          <span className="tools-menu__copy">
-                            <span><strong>Agent mode</strong><ScopeBadge scope="local" /></span>
-                            <small>{agentAvailable ? `Let the model call tools step by step · ${capabilities.maxSteps ?? 8} steps max.` : capabilities.reason ?? "Not supported by this model."}</small>
-                          </span>
-                          <button
-                            type="button"
-                            className={`tools-menu__toggle ${agentActive ? "tools-menu__toggle--on" : ""}`}
-                            role="switch"
-                            aria-checked={agentActive}
-                            aria-label="Agent mode"
-                            onClick={() => chat.setAgentMode(!agentMode)}
-                            disabled={!agentAvailable || streaming}
-                          ><span><i /></span></button>
-                        </div>
-                        {(webSearchControl.visible || capabilities.status === "loading") && (
-                          <div className={`tools-menu__row ${!webSearchControl.visible ? "tools-menu__row--disabled" : ""}`}>
-                            <span className="tools-menu__icon tools-menu__icon--network"><Globe2 size={15} /></span>
-                            <span className="tools-menu__copy">
-                              <span><strong>Web search</strong><ScopeBadge scope="network" /></span>
-                              <small>Search queries leave this Mac. Results are external and may be inaccurate.</small>
-                            </span>
-                            <button
-                              type="button"
-                              className={`tools-menu__toggle ${webSearchControl.pressed ? "tools-menu__toggle--on" : ""}`}
-                              role="switch"
-                              aria-checked={webSearchControl.pressed}
-                              aria-label={webSearchControl.ariaLabel}
-                              title={webSearchControl.title}
-                              onClick={() => chat.setWebSearchEnabled(!webSearchEnabled)}
-                              disabled={!webSearchControl.visible || webSearchControl.disabled}
-                            ><span><i /></span></button>
+                      <AnimatePresence initial={false} mode="wait">
+                      {runMenuPanel === "root" && (
+                        <motion.div
+                          key="root"
+                          className="run-settings__root run-settings__panel"
+                          initial={reduceMotion ? false : { opacity: 0, x: -4 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={reduceMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -5 }}
+                          transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                          <button type="button" className="run-settings__row" onClick={() => { setRunMenuPanel("models"); void loadLocalModels(); }}>
+                            <span>Model</span>
+                            <strong>{currentModelLabel}</strong>
+                            <ChevronRight size={15} />
+                          </button>
+                          <button type="button" className="run-settings__row" onClick={() => setRunMenuPanel("reasoning")}>
+                            <span>Effort</span>
+                            <strong>{reasoningEffortLabel(reasoningEffort)}</strong>
+                            <ChevronRight size={15} />
+                          </button>
+                          <button type="button" className="run-settings__row" onClick={() => setRunMenuPanel("tools")}>
+                            <span>Tools</span>
+                            <strong>{toolsSummaryLabel}</strong>
+                            <ChevronRight size={15} />
+                          </button>
+                          <div className="run-settings__context">
+                            <span className="context-ring context-ring--large" style={contextRingStyle} aria-hidden="true"><span /></span>
+                            <div><strong>Context</strong><small>{formatCompactTokens(contextUsedTokens)} / {formatCompactTokens(contextLimitTokens)} tokens · approx.</small></div>
+                            <b>{contextPercent}%</b>
                           </div>
-                        )}
-                      </div>
-                      <div className="tools-menu__privacy"><ShieldCheck size={13} /><span>Prompts and files stay local unless an enabled network tool sends a query.</span></div>
+                        </motion.div>
+                      )}
+                      {runMenuPanel === "models" && (
+                        <motion.div
+                          key="models"
+                          className="run-settings__panel"
+                          initial={reduceMotion ? false : { opacity: 0, x: 6 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={reduceMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: 5 }}
+                          transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                          <div className="run-settings__panel-head">
+                            <button type="button" onClick={() => setRunMenuPanel("root")} aria-label="Back to run settings"><ChevronLeft size={15} /></button>
+                            <strong>Model</strong>
+                            <button type="button" onClick={() => void loadLocalModels()} disabled={modelsLoading} aria-label="Refresh installed models" title="Refresh installed models">
+                              <RefreshCw className={modelsLoading ? "spin" : ""} size={13} />
+                            </button>
+                          </div>
+                          {modelError && <div className="model-picker__error" role="alert">{modelError}</div>}
+                          <div className="model-picker__list" role="radiogroup" aria-label="Choose an installed model">
+                            {modelsLoading && localModels.length === 0 ? (
+                              <div className="model-picker__empty"><LoaderCircle className="spin" size={14} /> Checking this Mac…</div>
+                            ) : localModels.length === 0 ? (
+                              <div className="model-picker__empty">No installed GGUF models found.</div>
+                            ) : localModels.map((model) => {
+                              const selected = model.selected || model.path === snapshot.config.model.path;
+                              const identity = identifyModel(model.modelId, model.name, model.path);
+                              return (
+                                <button
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={selected}
+                                  className={`model-picker__item ${selected ? "model-picker__item--active" : ""}`}
+                                  key={model.path}
+                                  onClick={() => void switchInstalledModel(model)}
+                                  disabled={modelSwitching}
+                                  title={model.path}
+                                >
+                                  <span className={`model-picker__item-icon model-picker__item-icon--${identity}`}><ModelIdentityIcon identity={identity} fallback={<HardDrive size={14} />} /></span>
+                                  <span className="model-picker__item-copy">
+                                    <strong>{formatModelName(model.modelId)}</strong>
+                                    <small>{model.name} · {formatBytes(model.sizeBytes, 1)}</small>
+                                  </span>
+                                  {selected && <Check size={14} />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="model-picker__foot">
+                            <span>Switching restarts Hebrus Server when it is on.</span>
+                            <button type="button" onClick={() => { setRunMenuOpen(false); setRunMenuPanel("root"); onNavigate("models"); }}>Manage models</button>
+                          </div>
+                        </motion.div>
+                      )}
+                      {runMenuPanel === "reasoning" && (
+                        <motion.div
+                          key="reasoning"
+                          className="run-settings__panel"
+                          initial={reduceMotion ? false : { opacity: 0, x: 6 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={reduceMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: 5 }}
+                          transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                          <div className="run-settings__panel-head">
+                            <button type="button" onClick={() => setRunMenuPanel("root")} aria-label="Back to run settings"><ChevronLeft size={15} /></button>
+                            <strong>Effort</strong>
+                            <span />
+                          </div>
+                          <div className="reasoning-menu__list" role="radiogroup" aria-label="Reasoning effort options">
+                            {reasoningEffortOptions.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={reasoningEffort === option.value}
+                                className={`reasoning-menu__item ${reasoningEffort === option.value ? "reasoning-menu__item--active" : ""}`}
+                                onClick={() => {
+                                  chat.setReasoningEffort(option.value);
+                                  setRunMenuOpen(false);
+                                  setRunMenuPanel("root");
+                                  window.requestAnimationFrame(() => runTriggerRef.current?.focus());
+                                }}
+                                title={option.title}
+                              >
+                                <span className="reasoning-menu__copy">
+                                  <strong>{option.label}</strong>
+                                  <small>{option.description}</small>
+                                </span>
+                                {reasoningEffort === option.value && <Check size={14} />}
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                      {runMenuPanel === "tools" && (
+                        <motion.div
+                          key="tools"
+                          className="run-settings__panel"
+                          initial={reduceMotion ? false : { opacity: 0, x: 6 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={reduceMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: 5 }}
+                          transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                          <div className="run-settings__panel-head">
+                            <button type="button" onClick={() => setRunMenuPanel("root")} aria-label="Back to run settings"><ChevronLeft size={15} /></button>
+                            <strong>Tools</strong>
+                            <span />
+                          </div>
+                          <div className="tools-menu__list tools-menu__list--embedded">
+                            <div className={`tools-menu__row ${!agentAvailable ? "tools-menu__row--disabled" : ""}`}>
+                              <span className="tools-menu__icon"><Wrench size={14} /></span>
+                              <span className="tools-menu__copy">
+                                <span><strong>Agent mode</strong><ScopeBadge scope="local" /></span>
+                                <small>{qwenToolModel
+                                  ? agentAvailable
+                                    ? `Enabled by default for Qwen · ${capabilities.maxSteps ?? 8} steps max.`
+                                    : capabilities.status === "loading"
+                                      ? "Checking Qwen tool support."
+                                      : capabilities.reason ?? "Qwen tools are not available yet."
+                                  : "Tool calling is currently available only with Qwen."}</small>
+                              </span>
+                              <button
+                                type="button"
+                                className={`tools-menu__toggle ${agentActive ? "tools-menu__toggle--on" : ""}`}
+                                role="switch"
+                                aria-checked={agentActive}
+                                aria-label="Agent mode"
+                                onClick={() => chat.setAgentMode(!agentMode)}
+                                disabled={!agentAvailable || streaming}
+                              ><span><i /></span></button>
+                            </div>
+                            <div className={`tools-menu__row ${webSearchControl.disabled ? "tools-menu__row--disabled" : ""}`}>
+                              <span className="tools-menu__icon tools-menu__icon--network"><Globe2 size={14} /></span>
+                              <span className="tools-menu__copy">
+                                <span><strong>Web search</strong><ScopeBadge scope="network" /></span>
+                                <small>{qwenToolModel ? "Enabled by default for Qwen. Search queries may leave this Mac." : "Network tools are locked until a Qwen model is selected."}</small>
+                              </span>
+                              <button
+                                type="button"
+                                className={`tools-menu__toggle ${webSearchControl.pressed ? "tools-menu__toggle--on" : ""}`}
+                                role="switch"
+                                aria-checked={webSearchControl.pressed}
+                                aria-label={webSearchControl.ariaLabel}
+                                title={webSearchControl.title}
+                                onClick={() => chat.setWebSearchEnabled(!webSearchEnabled)}
+                                disabled={webSearchControl.disabled}
+                              ><span><i /></span></button>
+                            </div>
+                          </div>
+                          <div className="tools-menu__privacy"><ShieldCheck size={12} /><span>{qwenToolModel ? "Prompts and files stay local unless Web search sends a query." : "Select Qwen to enable tool calling and network gates."}</span></div>
+                        </motion.div>
+                      )}
+                      </AnimatePresence>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
-              <button type="button" className={`thinking-toggle ${thinking ? "thinking-toggle--on" : ""}`} onClick={() => chat.setThinking(!thinking)} aria-pressed={thinking} aria-label={`Thinking is ${thinking ? "on" : "off"}. Turn it ${thinking ? "off" : "on"} for the next response.`} title={`Thinking ${thinking ? "on" : "off"} for the next response`}>
-                <span>Thinking</span><small aria-hidden="true">{thinking ? "On" : "Off"}</small>
-              </button>
             </div>
             {streaming ? (
               <Button type="button" variant="primary" className="send-button send-button--stop" icon={<CircleStop size={16} />} onClick={chat.stop}>Stop</Button>

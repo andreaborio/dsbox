@@ -1,14 +1,13 @@
 import { Check, ChevronDown, Copy, LoaderCircle, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
-import hebrusLogo from "../assets/hebrus-logo.png";
 import type { EnginePhase } from "../types";
 
 export function BrandMark({ small = false, size }: { small?: boolean; size?: "md" | "hero" }) {
   const sizeClass = small ? "brand-mark--small" : size === "hero" ? "brand-mark--hero" : "";
   return (
     <span className={`brand-mark ${sizeClass}`} aria-hidden="true">
-      <img className="brand-mark__image" src={hebrusLogo} alt="" draggable={false} />
+      <span className="brand-mark__glyph">H</span>
     </span>
   );
 }

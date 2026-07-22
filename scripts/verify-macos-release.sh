@@ -9,7 +9,7 @@ PRODUCT_NAME=$(node -p "require('$CONTRACT').productName")
 BUNDLE_IDENTIFIER=$(node -p "require('$CONTRACT').bundleIdentifier")
 EXPECTED_EXECUTABLE=$(node -p "require('$CONTRACT').executableName")
 EXPECTED_ICON=$(node -p "require('$CONTRACT').iconFile")
-CANONICAL_ICON="$ROOT_DIR/$(node -p "require('$CONTRACT').brandLogo.appIcon")"
+CANONICAL_ICON="$ROOT_DIR/$(node -p "require('$CONTRACT').brandMark.appIcon")"
 EXPECTED_ARCHITECTURE=$(node -p "require('$CONTRACT').architecture")
 ARTIFACT_BASE_NAME=$(node -p "require('$CONTRACT').artifactBaseName")
 EXPECTED_DMG_NAME="${ARTIFACT_BASE_NAME}-${VERSION}-macOS-${EXPECTED_ARCHITECTURE}.dmg"
@@ -118,7 +118,7 @@ EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
   exit 1
 }
 cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON" || {
-  echo "Packaged application icon differs from the Hebrus master-derived icon." >&2
+  echo "Packaged application icon differs from the current Hebrus Studio app icon." >&2
   exit 1
 }
 [[ -x "$EXECUTABLE" ]] || {
@@ -157,16 +157,6 @@ const embeddedEngine = archiveEntries.find((entry) =>
   contract.forbiddenEmbeddedEngineExecutables.includes(path.posix.basename(entry))
 );
 if (embeddedEngine) throw new Error(`Engine executable embedded in app.asar: ${embeddedEngine}`);
-
-const brandLogos = archiveEntries.filter((entry) => entry.startsWith(contract.brandLogo.archivePrefix));
-if (brandLogos.length !== 1) {
-  throw new Error(`Expected exactly one packaged Hebrus logo, found ${brandLogos.length}`);
-}
-const brandLogo = asar.extractFile(archivePath, brandLogos[0].replace(/^\/+/, ""));
-const brandLogoHash = createHash("sha256").update(brandLogo).digest("hex");
-if (brandLogoHash !== contract.brandLogo.sha256) {
-  throw new Error(`Packaged Hebrus logo was modified: expected ${contract.brandLogo.sha256}, got ${brandLogoHash}`);
-}
 
 const { headerString } = asar.getRawHeader(archivePath);
 const actualIntegrity = createHash("sha256").update(headerString).digest("hex");

@@ -391,6 +391,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt?: number;
+  reasoningEffort?: "off" | "low" | "medium" | "high";
   reasoning?: string;
   pending?: boolean;
   error?: boolean;

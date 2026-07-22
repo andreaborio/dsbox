@@ -223,7 +223,6 @@ export default function App() {
     <div className={`app-shell ${sidebarCollapsed ? "app-shell--collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar__brand">
-          <BrandMark small />
           <AnimatePresence initial={false}>
             {!sidebarCollapsed && (
               <motion.div
@@ -233,7 +232,6 @@ export default function App() {
                 exit={{ opacity: 0, x: -6 }}
               >
                 <strong>Hebrus Studio</strong>
-                <span>Powered by Hebrus</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -300,7 +298,7 @@ export default function App() {
             </span>
             <div>
               <strong>{snapshot.runtime.modelPresent ? formatModelName(snapshot.config.model.id) : "Choose a model"}</strong>
-              <span>{activeDownload ? downloadStageLabel(activeDownload.stage) : interruptedDownload ? downloadStageLabel(interruptedDownload.stage) : snapshot.runtime.phase === "running" ? "Ready" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "Hebrus Studio is off" : "Choose a local file or catalog model")}</span>
+              <span>{activeDownload ? downloadStageLabel(activeDownload.stage) : interruptedDownload ? downloadStageLabel(interruptedDownload.stage) : snapshot.runtime.phase === "running" ? "Ready" : snapshot.runtime.currentTask ?? (snapshot.runtime.modelPresent ? "Hebrus Server is off" : "Choose a local file or catalog model")}</span>
             </div>
           </div>
           <ChevronRight size={15} />

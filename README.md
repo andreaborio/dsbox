@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="src/assets/hebrus-logo.png" width="320" alt="Hebrus Studio logo">
-</p>
-
 <h1 align="center">Hebrus Studio</h1>
 
 <p align="center"><strong>Your Mac. Your model. One switch.</strong></p>
@@ -10,6 +6,8 @@
   The open desktop studio for <strong>Hebrus</strong>: Metal-first local inference,
   SSD streaming, private chat, coding-agent endpoints, and honest macOS telemetry.
 </p>
+
+<p align="center"><sub>The final Hebrus Studio logo is being replaced; current builds use a temporary H mark.</sub></p>
 
 > **Rename compatibility.** Hebrus Studio is the new public name of DSBox. The
 > bundle identifier (`com.dsbox.desktop`), state root (`~/.dsbox`), `DSBOX_*`
@@ -49,7 +47,7 @@
 ## Three steps
 
 1. **Choose a model.** Use a validated GGUF already on the Mac or explicitly confirm an in-app catalog download.
-2. **Turn on Hebrus Studio.** The Server screen prepares and launches Hebrus with Metal and guarded automatic memory planning.
+2. **Turn on Hebrus Server.** The Server screen prepares and launches Hebrus with Metal and guarded automatic memory planning.
 3. **Chat or connect an agent.** Use the built-in interface, or choose a client the active runtime actually supports; the Agents screen shows the available protocols.
 
 ![Hebrus Studio model catalog](docs/media/02-models.png)

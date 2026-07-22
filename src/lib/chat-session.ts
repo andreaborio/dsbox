@@ -6,6 +6,7 @@ import type {
   ChatThread,
   ChatToolActivity
 } from "../types.js";
+import { identifyModel } from "./model-identity.js";
 
 const THREADS_STORAGE_KEY = "dsbox:chat-threads:v1";
 const LEGACY_CHAT_STORAGE_KEY = "dsbox:chat";
@@ -14,6 +15,9 @@ const MAX_MESSAGES_PER_THREAD = 100;
 const MAX_AGENT_WIRE_HISTORY = 199;
 const MAX_MESSAGE_SOURCES = 24;
 export const DEFAULT_WEB_SEARCH_ENABLED = true;
+export const REASONING_EFFORTS = ["off", "low", "medium", "high"] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "medium";
 
 export interface ChatStorage {
   getItem(key: string): string | null;
@@ -42,6 +46,7 @@ export interface ChatSessionSnapshot {
   messages: ChatMessage[];
   input: string;
   thinking: boolean;
+  reasoningEffort: ReasoningEffort;
   skillStage: "idle" | "searching";
   streaming: boolean;
   agentMode: boolean;
@@ -105,6 +110,7 @@ interface PersistedThreads {
   threads: ChatThread[];
   preferences?: {
     webSearchEnabled?: boolean;
+    reasoningEffort?: ReasoningEffort;
   };
 }
 
@@ -182,6 +188,12 @@ function parseJson(text: string): unknown {
 
 function boundedText(value: unknown, limit: number): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, limit) : "";
+}
+
+function parseReasoningEffort(value: unknown): ReasoningEffort {
+  return typeof value === "string" && (REASONING_EFFORTS as readonly string[]).includes(value)
+    ? value as ReasoningEffort
+    : DEFAULT_REASONING_EFFORT;
 }
 
 /**
@@ -483,6 +495,7 @@ function isChatMessage(value: unknown): value is ChatMessage {
   return typeof message.id === "string"
     && (message.role === "user" || message.role === "assistant")
     && typeof message.content === "string"
+    && (message.reasoningEffort === undefined || REASONING_EFFORTS.includes(message.reasoningEffort))
     && (message.reasoning === undefined || typeof message.reasoning === "string")
     && (message.skillNotice === undefined || typeof message.skillNotice === "string")
     && (message.pending === undefined || typeof message.pending === "boolean")
@@ -813,7 +826,16 @@ export class ChatSessionStore {
   };
 
   setThinking = (thinking: boolean): void => {
-    this.commit({ ...this.snapshot, thinking });
+    this.commit({
+      ...this.snapshot,
+      thinking,
+      reasoningEffort: thinking ? (this.snapshot.reasoningEffort === "off" ? DEFAULT_REASONING_EFFORT : this.snapshot.reasoningEffort) : "off"
+    }, true);
+  };
+
+  setReasoningEffort = (reasoningEffort: ReasoningEffort): void => {
+    const next = parseReasoningEffort(reasoningEffort);
+    this.commit({ ...this.snapshot, thinking: next !== "off", reasoningEffort: next }, true);
   };
 
   setAgentMode = (agentMode: boolean): void => {
@@ -922,15 +944,18 @@ export class ChatSessionStore {
     const thread = this.activeThread();
     const threadId = thread.id;
     const startedAt = this.now();
+    const modelSupportsTools = identifyModel(model, this.snapshot.capabilities.model) === "qwen";
     const agentActive = this.snapshot.agentMode
+      && modelSupportsTools
       && this.snapshot.capabilities.status === "ready"
       && this.snapshot.capabilities.chatTools;
-    const webSearchEnabled = this.snapshot.webSearchEnabled;
+    const webSearchEnabled = modelSupportsTools && this.snapshot.webSearchEnabled;
     const user: ChatMessage = { id: this.createId(), role: "user", content: prompt, createdAt: startedAt };
     const assistant: ChatMessage = {
       id: this.createId(),
       role: "assistant",
       content: "",
+      reasoningEffort: this.snapshot.reasoningEffort,
       reasoning: "",
       blocks: [],
       pending: true,
@@ -1004,7 +1029,11 @@ export class ChatSessionStore {
         stream_options: { include_usage: true }
       };
       if (agentActive) body.allow_web_search = webSearchEnabled;
-      if (!this.snapshot.thinking) body.thinking = { type: "disabled" };
+      if (!this.snapshot.thinking || this.snapshot.reasoningEffort === "off") {
+        body.thinking = { type: "disabled" };
+      } else {
+        body.reasoning_effort = this.snapshot.reasoningEffort;
+      }
       const response = await this.fetcher(agentActive ? "/api/agent/chat" : "/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json", "x-dsbox-control": "1" },
@@ -1149,6 +1178,7 @@ export class ChatSessionStore {
     let threads: ChatThread[] = [];
     let activeThreadId = "";
     let webSearchEnabled = DEFAULT_WEB_SEARCH_ENABLED;
+    let reasoningEffort = DEFAULT_REASONING_EFFORT;
     try {
       const raw = this.storage?.getItem(THREADS_STORAGE_KEY);
       if (raw) {
@@ -1162,6 +1192,7 @@ export class ChatSessionStore {
           if (typeof parsed.preferences?.webSearchEnabled === "boolean") {
             webSearchEnabled = parsed.preferences.webSearchEnabled;
           }
+          reasoningEffort = parseReasoningEffort(parsed.preferences?.reasoningEffort);
         }
       }
       if (!threads.length) {
@@ -1187,7 +1218,8 @@ export class ChatSessionStore {
       activeThreadId: active.id,
       messages: active.messages,
       input: "",
-      thinking: true,
+      thinking: reasoningEffort !== "off",
+      reasoningEffort,
       skillStage: "idle",
       streaming: false,
       agentMode: true,
@@ -1232,7 +1264,10 @@ export class ChatSessionStore {
       version: 1,
       activeThreadId: this.snapshot.activeThreadId,
       threads,
-      preferences: { webSearchEnabled: this.snapshot.webSearchEnabled }
+      preferences: {
+        webSearchEnabled: this.snapshot.webSearchEnabled,
+        reasoningEffort: this.snapshot.reasoningEffort
+      }
     };
     try {
       this.storage.setItem(THREADS_STORAGE_KEY, JSON.stringify(payload));

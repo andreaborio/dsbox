@@ -46,22 +46,22 @@ const busyPhases: EnginePhase[] = ["preparing", "installing", "updating", "build
 
 const copyByPhase: Record<EnginePhase, { title: string; description: string; action: string }> = {
   uninstalled: {
-    title: "Hebrus Studio is off",
+    title: "Hebrus Server is off",
     description: "Turn it on and I'll automatically prepare everything this Mac needs.",
-    action: "Turn on Hebrus Studio"
+    action: "Turn on Hebrus Server"
   },
   idle: {
-    title: "Hebrus Studio is off",
+    title: "Hebrus Server is off",
     description: "Your model and settings stay ready. Turn it on whenever you want to use it.",
-    action: "Turn on Hebrus Studio"
+    action: "Turn on Hebrus Server"
   },
   preparing: {
-    title: "Preparing Hebrus Studio",
+    title: "Preparing Hebrus Server",
     description: "Choosing the right model and settings for this Mac.",
     action: "Preparing"
   },
   installing: {
-    title: "Preparing Hebrus Studio",
+    title: "Preparing Hebrus Server",
     description: "Setting up the engine for this Mac. This is only required the first time.",
     action: "Preparing"
   },
@@ -91,7 +91,7 @@ const copyByPhase: Record<EnginePhase, { title: string; description: string; act
     action: "Turn off"
   },
   stopping: {
-    title: "Turning off Hebrus Studio",
+    title: "Turning off Hebrus Server",
     description: "Waiting for the context to be saved before shutting down.",
     action: "Shutting down"
   },
@@ -183,7 +183,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
       onNavigate("models");
       return;
     }
-    void controller.action(runtime.phase === "running" ? "Turning off Hebrus Studio" : "Turning on Hebrus Studio", "/api/runtime/power").catch(() => undefined);
+    void controller.action(runtime.phase === "running" ? "Turning off Hebrus Server" : "Turning on Hebrus Server", "/api/runtime/power").catch(() => undefined);
   };
 
   const useCheckout = async (checkout: DiscoveredCheckout) => {
@@ -293,7 +293,7 @@ export function RuntimeView({ snapshot, controller, onNavigate }: Props) {
 
       <section className="simple-metrics">
         <article className="panel"><span><MemoryStick size={16} /> Memory pressure</span><strong>{latest?.memoryPressurePercent === null || latest?.memoryPressurePercent === undefined ? "N/A" : `${Math.round(latest.memoryPressurePercent)}%`}</strong><small>{latest ? `${latest.memoryPressureLevel === "critical" ? "Critical" : latest.memoryPressureLevel === "warning" ? "Warning" : "Normal"} · ${formatBytes(latest.memoryUsedBytes)} committed` : "macOS cache tracked separately"}</small></article>
-        <article className="panel"><span><Gauge size={16} /> Speed</span><strong>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(2)} t/s` : "—"}</strong><small>{runtime.phase === "running" ? "waiting for a response" : "Hebrus Studio is off"}</small></article>
+        <article className="panel"><span><Gauge size={16} /> Speed</span><strong>{latest?.tokensPerSecond ? `${latest.tokensPerSecond.toFixed(2)} t/s` : "—"}</strong><small>{runtime.phase === "running" ? "waiting for a response" : "Hebrus Server is off"}</small></article>
         <article className="panel"><span><HardDrive size={16} /> Free space</span><strong>{latest ? formatBytes(latest.diskFreeBytes) : "—"}</strong><small>on the model drive</small></article>
         <article className="panel"><span><Clock3 size={16} /> Uptime</span><strong>{formatDuration(runtime.startedAt)}</strong><small>{runtime.phase === "running" ? "current session" : "—"}</small></article>
       </section>
