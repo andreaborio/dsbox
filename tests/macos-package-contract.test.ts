@@ -183,6 +183,7 @@ describe("macOS package contract", () => {
 
   it("keeps normal macOS CI on explicit development provenance", async () => {
     const ci = await text(".github/workflows/ci.yml");
+    expect(ci).toContain('CSC_FOR_PULL_REQUEST: "true"');
     expect(ci).toContain("npm run pack:mac");
     expect(ci).toContain("npm run verify:mac:dev -- \"release/mac-arm64/Hebrus Studio.app\"");
     expect(ci).toContain("npm run verify:upgrade-rollback:e2e -- --source");
