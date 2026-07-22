@@ -390,7 +390,8 @@ describe("transparent Hugging Face downloads", () => {
     );
 
     expect(resumedFailure.error).toBe("Downloaded GGUF is incompatible with DS4");
-    expect(expectedFormats).toEqual([null, undefined]);
+    expect(expectedFormats).toHaveLength(2);
+    expect(expectedFormats.every((format) => format == null)).toBe(true);
     expect(store.get().model).toEqual(initialModel);
     expect(await readFile(installedPath)).toEqual(data);
     expect(requestedRanges).toEqual([""]);

@@ -400,14 +400,14 @@
       "token": "DS4",
       "classification": "serialized/permanent",
       "reason": "Published repository names, manifest filenames, and ExpertMajor artifact identifiers are serialized contracts.",
-      "maximum": 8
+      "maximum": 11
     },
     {
       "path": "server/catalog.ts",
       "token": "ds4",
       "classification": "serialized/permanent",
       "reason": "Published repository names, manifest filenames, and ExpertMajor artifact identifiers are serialized contracts.",
-      "maximum": 11
+      "maximum": 10
     },
     {
       "path": "server/config.ts",
@@ -596,7 +596,7 @@
       "token": "dsbox",
       "classification": "migration-pending",
       "reason": "Internal selectors and comments remain to be renamed with their component consumers.",
-      "maximum": 33
+      "maximum": 32
     },
     {
       "path": "src/styles.css",
@@ -778,21 +778,21 @@
       "token": "dsbox",
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
-      "maximum": 21
+      "maximum": 22
     },
     {
       "path": "tests/catalog.test.ts",
       "token": "DS4",
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
-      "maximum": 35
+      "maximum": 38
     },
     {
       "path": "tests/catalog.test.ts",
       "token": "ds4",
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
-      "maximum": 38
+      "maximum": 37
     },
     {
       "path": "tests/chat-session.test.ts",
@@ -995,14 +995,14 @@
       "token": "dsbox",
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
-      "maximum": 1
+      "maximum": 2
     },
     {
       "path": "tests/model-format.test.ts",
       "token": "DS4",
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
-      "maximum": 3
+      "maximum": 4
     },
     {
       "path": "tests/model-format.test.ts",

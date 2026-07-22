@@ -137,6 +137,8 @@ describe("macOS package contract", () => {
     expect(packageJson.name).toBe("hebrus-studio");
     expect(verifier).toContain('cmp -s "$CANONICAL_ICON" "$APP_PATH/Contents/Resources/$EXPECTED_ICON"');
     expect(verifier).not.toContain("Expected exactly one packaged Hebrus logo");
+    expect(verifier).toContain('asar.statFile(archivePath, entry.replace(/^\\/+/, ""))');
+    expect(verifier).toContain('return !("files" in archiveEntry)');
     expect(verifier).toContain("requiredLegalNotices.join('\\n')");
     expect(verifier).toContain('Required legal notice is missing: $REQUIRED_NOTICE');
     expect(verifier).toContain("validateReleaseProvenance");

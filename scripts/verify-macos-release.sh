@@ -283,9 +283,11 @@ if (packaged.name !== contract.packageName || packaged.version !== expectedVersi
 }
 
 const archiveEntries = asar.listPackage(archivePath);
-const embeddedEngine = archiveEntries.find((entry) =>
-  contract.forbiddenEmbeddedEngineExecutables.includes(path.posix.basename(entry))
-);
+const embeddedEngine = archiveEntries.find((entry) => {
+  if (!contract.forbiddenEmbeddedEngineExecutables.includes(path.posix.basename(entry))) return false;
+  const archiveEntry = asar.statFile(archivePath, entry.replace(/^\/+/, ""));
+  return !("files" in archiveEntry);
+});
 if (embeddedEngine) throw new Error(`Engine executable embedded in app.asar: ${embeddedEngine}`);
 
 const { headerString } = asar.getRawHeader(archivePath);
