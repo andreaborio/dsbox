@@ -29,7 +29,7 @@ describe("macOS package contract", () => {
         component: "src/components/ui.tsx",
         stylesheet: "src/styles.css",
         appIcon: "build/icon.icns",
-        status: "temporary-placeholder"
+        status: "compact-ui-mark"
       },
       architecture: "arm64",
       engineDelivery: "external",

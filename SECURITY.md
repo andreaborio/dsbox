@@ -27,7 +27,7 @@ ds4 traces can contain requests, rendered prompts, outputs, and tool calls. KV c
 The project intends to receive reports through GitHub private vulnerability
 reporting:
 
-<https://github.com/andreaborio/dsbox/security/advisories/new>
+<https://github.com/andreaborio/hebrus-studio/security/advisories/new>
 
 Private vulnerability reporting is not asserted as enabled yet. Enabling and
 testing it is an administrative launch gate. Until it is available, open only

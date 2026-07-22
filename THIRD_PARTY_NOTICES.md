@@ -36,9 +36,9 @@ Hebrus Studio ASAR. Hebrus began as a fork of
 code and history. The engine also retains or adapts narrowly scoped code and
 techniques from GGML/llama.cpp and bundled utilities under their respective
 licenses. Refer to the engine's
-[`ACKNOWLEDGMENTS.md`](https://github.com/andreaborio/ds4/blob/main/ACKNOWLEDGMENTS.md)
+[`ACKNOWLEDGMENTS.md`](https://github.com/andreaborio/hebrus/blob/main/ACKNOWLEDGMENTS.md)
 and
-[`THIRD_PARTY_NOTICES.md`](https://github.com/andreaborio/ds4/blob/main/THIRD_PARTY_NOTICES.md)
+[`THIRD_PARTY_NOTICES.md`](https://github.com/andreaborio/hebrus/blob/main/THIRD_PARTY_NOTICES.md)
 for the authoritative source-level notices.
 
 ## External content and services

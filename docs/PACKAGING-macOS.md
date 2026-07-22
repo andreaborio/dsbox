@@ -12,8 +12,8 @@ The local development package is:
 - `Hebrus Studio.app`, bundle identifier `com.dsbox.desktop`;
 - versioned from `package.json`, with executable `Contents/MacOS/Hebrus Studio`;
 - Apple Silicon (`arm64`) and ad-hoc signed;
-- branded with the temporary H mark recorded in
-  `scripts/macos-package-contract.json` while the final logo is replaced;
+- branded with the compact H mark recorded in
+  `scripts/macos-package-contract.json`, complementing the typographic banner;
 - an ASAR-packaged Electron UI and control plane;
 - bundled project, third-party, Electron, and Chromium legal notices;
 - independent of engine delivery: no Hebrus or legacy DS4 executable is
@@ -191,8 +191,8 @@ and evidence outside `release/development-evidence/`. These files are excluded
 from the SBOM, `SHA256SUMS.txt`, the release workflow, and publication.
 
 `npm run build:icon` reproducibly derives the macOS ICNS variants from the
-temporary H mark without requiring a source logo asset. The web UI renders the
-same placeholder through the shared `BrandMark` component and theme-aware CSS.
+compact H mark without requiring a source logo asset. The web UI renders the
+same compact mark through the shared `BrandMark` component and theme-aware CSS.
 
 The release verifier checks the disk image when present, application and executable
 names, canonical DMG filename, the current generated icon byte for byte, bundle

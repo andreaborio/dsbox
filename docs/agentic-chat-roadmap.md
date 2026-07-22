@@ -160,7 +160,7 @@ Deliverables:
 
 Exit gate: complete unit tests, typecheck/build, engine sanitizer, and a real
 tool -> result -> final-answer round trip on both models. The original engine
-patch was published in [draft PR #2](https://github.com/andreaborio/ds4/pull/2)
+patch was published in [draft PR #2](https://github.com/andreaborio/hebrus/pull/2)
 under the historical repository name. The release runtime is now the unified
 `main` channel, with ExpertMajor v2 and minimum pin
 `57acfd408a3154851a0c59be432904300abb3b6c`.

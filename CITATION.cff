@@ -6,8 +6,8 @@ version: 0.4.0
 authors:
   - family-names: Borio
     given-names: Andrea
-repository-code: "https://github.com/andreaborio/dsbox"
-url: "https://github.com/andreaborio/dsbox"
+repository-code: "https://github.com/andreaborio/hebrus-studio"
+url: "https://github.com/andreaborio/hebrus-studio"
 license: MIT
 keywords:
   - local inference
