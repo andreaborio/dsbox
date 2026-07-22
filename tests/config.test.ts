@@ -51,7 +51,7 @@ describe("default config", () => {
 
   it("selects a safe 32K profile on a 64 GB Mac", () => {
     const config = createDefaultConfig(64 * 1024 ** 3);
-    expect(config.repository.url).toBe("https://github.com/andreaborio/ds4.git");
+    expect(config.repository.url).toBe("https://github.com/andreaborio/hebrus.git");
     expect(config.repository.branch).toBe("main");
     expect(config.server.contextTokens).toBe(32_768);
     expect(config.streaming.enabled).toBe(true);

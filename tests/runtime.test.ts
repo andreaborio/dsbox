@@ -105,7 +105,7 @@ describe("published model runtime compatibility", () => {
 
     await internal.ensureCatalogRuntime(model);
 
-    expect(publishedQwenManifest.artifact.format.requiresRuntime).toBe("andreaborio/ds4");
+    expect(publishedQwenManifest.artifact.format.requiresRuntime).toBe("andreaborio/hebrus");
     expect(runtimeIncludesCommit).toHaveBeenCalledOnce();
     expect(runtimeIncludesCommit).toHaveBeenCalledWith(
       config.repository.directory,
@@ -682,11 +682,11 @@ describe("ExpertMajor v2 one-click preparation", () => {
         modelIdentity: string
       ): Promise<DsboxConfig>;
     };
-    const managedDirectory = "/home/alice/.dsbox/runtime/andreaborio-ds4";
+    const managedDirectory = "/home/alice/.dsbox/runtime/andreaborio-hebrus";
     vi.spyOn(internal, "managedCheckoutIdentity").mockResolvedValue({
       exists: true,
       branch: "main",
-      remote: "https://github.com/andreaborio/ds4.git",
+      remote: "https://github.com/andreaborio/hebrus.git",
       clean: true
     });
     vi.spyOn(internal, "checkoutHasExpertMajorV2Source").mockImplementation(async (directory) => directory === managedDirectory);
@@ -705,7 +705,7 @@ describe("ExpertMajor v2 one-click preparation", () => {
 
     expect(EXPERT_MAJOR_RUNTIME_COMMIT).toBe("57acfd408a3154851a0c59be432904300abb3b6c");
     expect(selected.repository).toMatchObject({
-      url: "https://github.com/andreaborio/ds4.git",
+      url: "https://github.com/andreaborio/hebrus.git",
       directory: managedDirectory,
       branch: EXPERT_MAJOR_RUNTIME_BRANCH
     });
@@ -789,20 +789,20 @@ describe("ExpertMajor v2 one-click preparation", () => {
       .mockResolvedValueOnce({
         exists: true,
         branch: "codex/qwen-tool-dialect",
-        remote: "git@github.com:andreaborio/ds4.git",
+        remote: "git@github.com:andreaborio/hebrus.git",
         clean: true
       })
       .mockResolvedValue({
         exists: true,
         branch: "main",
-        remote: "git@github.com:andreaborio/ds4.git",
+        remote: "git@github.com:andreaborio/hebrus.git",
         clean: true
       });
     vi.spyOn(internal, "checkoutHasExpertMajorV2Source")
-      .mockImplementation(async (directory) => directory === "/home/alice/.dsbox/runtime/andreaborio-ds4");
+      .mockImplementation(async (directory) => directory === "/home/alice/.dsbox/runtime/andreaborio-hebrus");
     vi.spyOn(internal, "runtimeIncludesCommit").mockImplementation(async (directory, commit) => {
       ancestryChecks.push(commit);
-      return directory === "/home/alice/.dsbox/runtime/andreaborio-ds4";
+      return directory === "/home/alice/.dsbox/runtime/andreaborio-hebrus";
     });
     vi.spyOn(internal, "binaryMatchesCheckoutHead").mockResolvedValue(true);
     vi.spyOn(internal, "binaryHasExpertMajorV2Runtime").mockResolvedValue(true);
@@ -818,9 +818,9 @@ describe("ExpertMajor v2 one-click preparation", () => {
     );
 
     expect(selected.repository).toMatchObject({
-      url: "https://github.com/andreaborio/ds4.git",
+      url: "https://github.com/andreaborio/hebrus.git",
       branch: "main",
-      directory: "/home/alice/.dsbox/runtime/andreaborio-ds4"
+      directory: "/home/alice/.dsbox/runtime/andreaborio-hebrus"
     });
     expect(ancestryChecks).not.toHaveLength(0);
     expect(ancestryChecks.every((commit) => commit === EXPERT_MAJOR_RUNTIME_COMMIT)).toBe(true);
@@ -831,12 +831,12 @@ describe("ExpertMajor v2 one-click preparation", () => {
   it.each([
     {
       name: "a dirty non-main checkout",
-      identity: { exists: true, branch: "experiment", remote: "https://github.com/andreaborio/ds4.git", clean: false },
+      identity: { exists: true, branch: "experiment", remote: "https://github.com/andreaborio/hebrus.git", clean: false },
       error: "has local changes"
     },
     {
       name: "a checkout from another origin",
-      identity: { exists: true, branch: "main", remote: "https://github.com/example/ds4.git", clean: true },
+      identity: { exists: true, branch: "main", remote: "https://github.com/example/hebrus.git", clean: true },
       error: "different origin remote"
     }
   ])("rejects $name instead of presenting it as unified main", async ({ identity, error }) => {
@@ -844,7 +844,8 @@ describe("ExpertMajor v2 one-click preparation", () => {
     config.repository.directory = "/home/alice/.dsbox/runtime/andreaborio-ds4";
     const store = {
       homeDirectory: "/home/alice/.dsbox",
-      get: vi.fn(() => structuredClone(config))
+      get: vi.fn(() => structuredClone(config)),
+      set: vi.fn(async (next: DsboxConfig) => structuredClone(next))
     } as unknown as ConfigStore;
     const runtime = new RuntimeManager(store, new EventBus());
     const internal = runtime as unknown as {

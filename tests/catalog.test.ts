@@ -55,8 +55,8 @@ describe("Hugging Face model catalog", () => {
 
     expect(publishedQwenManifest).toEqual({
       schemaVersion: 1,
-      name: "Qwen3.6-35B-A3B DS4 ExpertMajor v2 MLX Affine4 G64",
-      description: "Stable single-file DS4 ExpertMajor v2 MLX-affine Qwen3.6-35B-A3B artifact for resident or SSD-streamed Metal inference on Apple Silicon.",
+      name: "Qwen3.6-35B-A3B Hebrus ExpertMajor v2 MLX Affine4 G64",
+      description: "Stable single-file Hebrus ExpertMajor v2 MLX-affine Qwen3.6-35B-A3B artifact for resident or SSD-streamed Metal inference on Apple Silicon.",
       status: "stable",
       recommended: true,
       modelId: "qwen3.6-35b-a3b",
@@ -65,6 +65,9 @@ describe("Hugging Face model catalog", () => {
       file: modelFile,
       minimumMemoryGb: 16,
       architecture: "moe",
+      previousRepositories: [
+        "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-GGUF"
+      ],
       artifact: {
         output: modelFile,
         sizeBytes,
@@ -73,7 +76,7 @@ describe("Hugging Face model catalog", () => {
           id: "ds4-expert-major",
           version: 2,
           tensor: "ds4.expert_major.v2",
-          requiresRuntime: "andreaborio/ds4",
+          requiresRuntime: "andreaborio/hebrus",
           storage: "mlx-affine4",
           groupSize: 64
         }

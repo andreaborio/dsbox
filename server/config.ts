@@ -110,12 +110,12 @@ export function migrateVersion1Config(config: LegacyDsboxConfig, totalMemory: nu
 
 export function createDefaultConfig(totalMemory: number): DsboxConfig {
   const home = process.env.DSBOX_HOME || path.join(homedir(), ".dsbox");
-  const runtimeDirectory = path.join(home, "runtime", "andreaborio-ds4");
+  const runtimeDirectory = path.join(home, "runtime", "andreaborio-hebrus");
   const profile = hardwareProfile(totalMemory);
   return {
     version: 2,
     repository: {
-      url: "https://github.com/andreaborio/ds4.git",
+      url: "https://github.com/andreaborio/hebrus.git",
       branch: "main",
       directory: runtimeDirectory
     },
