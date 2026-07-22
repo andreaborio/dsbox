@@ -28,7 +28,7 @@ describe("Hebrus Studio API", () => {
   it("reports a local, uninstalled first-run snapshot", async () => {
     const response = await request(createApp(services)).get("/api/state").expect(200);
     expect(response.body.runtime.phase).toBe("uninstalled");
-    expect(response.body.config.repository.url).toBe("https://github.com/andreaborio/ds4.git");
+    expect(response.body.config.repository.url).toBe("https://github.com/andreaborio/hebrus.git");
     expect(response.body.system.openAiBaseUrl).toBe("http://127.0.0.1:4242/v1");
     expect(response.body.system.appleSilicon).toBe(process.platform === "darwin" && process.arch === "arm64");
   });

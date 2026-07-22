@@ -38,10 +38,6 @@
 > build or publish while any remain. The final launch commit will restore the
 > public release URL and download CTA only after strict readiness passes.
 
-![Hebrus Studio local chat](docs/media/01-chat.png)
-
-<p align="center"><sub>Private local chat with persistent threads, syntax-highlighted code, model controls, and timings measured by Hebrus.</sub></p>
-
 ## Why Hebrus Studio
 
 - **One power control.** Once a model is selected, Hebrus Studio can prepare the checkout, build `hebrus-server` (or the legacy `ds4-server` alias), validate flags, start it, and wait for real readiness.
@@ -59,14 +55,6 @@
 1. **Choose a model.** Use a validated GGUF already on the Mac or explicitly confirm an in-app catalog download.
 2. **Turn on Hebrus Server.** The Server screen prepares and launches Hebrus with Metal and guarded automatic memory planning.
 3. **Chat or connect an agent.** Use the built-in interface, or choose a client the active runtime actually supports; the Agents screen shows the available protocols.
-
-![Hebrus Studio model catalog](docs/media/02-models.png)
-
-<p align="center"><sub>Browse revision-pinned sources, compare hardware guidance, and keep unsupported layouts clearly separated.</sub></p>
-
-![Hebrus Studio server power screen](docs/media/03-server.png)
-
-<p align="center"><sub>One power surface prepares Metal, applies guarded automatic memory planning, and reports real readiness.</sub></p>
 
 ## Agentic chat and coding-agent connections
 
@@ -95,23 +83,11 @@ The model-neutral loop works with supported Qwen3.6 and DeepSeek V4 Flash runtim
 
 The **Agents** screen reads the selected runtime's actual protocol surface and disables incompatible clients. In the current Qwen3.6 path, OpenAI Chat Completions supports streaming, tools, `tool_choice`, and multiple tool calls; Responses and Anthropic Messages are not exposed, so Codex CLI and Claude Code are shown as unavailable while compatible clients such as OpenCode, Pi, and direct Chat Completions remain usable.
 
-![Hebrus Studio coding-agent connections](docs/media/05-agents.png)
-
-<p align="center"><sub>Connect compatible coding tools through a loopback gateway, with protocol limits shown for the active model instead of hidden.</sub></p>
-
 ## Themes and honest observability
 
 Activity keeps host telemetry separate from measured model activity. It reports committed memory, memory pressure, cache, system and runtime CPU, disk space, runtime phase, and response speed from Hebrus. It does not invent unsupported GPU-utilization figures.
 
-![Hebrus Studio live activity](docs/media/06-activity.png)
-
-<p align="center"><sub>Live macOS resources and measured model throughput, shown separately and without fabricated estimates.</sub></p>
-
 Appearance includes five instant choices: Follow system, Hebrus Light, Hebrus Dark, Nord, and Solarized Dark. They change the workspace without restarting the local model. These are curated built-in palettes inspired by editor themes, not a VS Code theme-file importer.
-
-![Hebrus Studio color palettes](docs/media/07-themes.png)
-
-<p align="center"><sub>Switch between the original Hebrus Studio workspace and editor-inspired dark palettes without interrupting the runtime.</sub></p>
 
 ## Models, made transparent
 
@@ -125,7 +101,13 @@ A generic GGUF container is not enough: Hebrus requires its own architecture met
 
 ### Download inside Hebrus Studio
 
-The catalog reads Hebrus-oriented sources from the Hugging Face `andreaborio` profile. Every installable Qwen, DeepSeek, or GLM model must have a revision-pinned `dsbox.json` declaring ExpertMajor v2, `ds4.expert_major.v2`, the required `andreaborio/ds4` `main` runtime, an exact runtime commit, and one complete GGUF whose byte size and SHA-256 match Hugging Face LFS metadata. Qwen manifests must additionally declare `storage: mlx-affine4` and `groupSize: 64`. Hebrus Studio enables download only when that complete contract is present, then verifies and builds the unified runtime before the download starts. Canonical, v1, Qwen Q4, chunked, and sidecar artifacts remain non-runnable history rather than fallback formats.
+The catalog reads Hebrus-oriented sources from the Hugging Face `andreaborio` profile. Every installable Qwen, DeepSeek, or GLM model must have a revision-pinned `dsbox.json` declaring ExpertMajor v2, `ds4.expert_major.v2`, the required `andreaborio/hebrus` `main` runtime, an exact runtime commit, and one complete GGUF whose byte size and SHA-256 match Hugging Face LFS metadata. Qwen manifests must additionally declare `storage: mlx-affine4` and `groupSize: 64`. Hebrus Studio enables download only when that complete contract is present, then verifies and builds the unified runtime before the download starts. Canonical, v1, Qwen Q4, chunked, and sidecar artifacts remain non-runnable history rather than fallback formats.
+
+> **Why some files retain legacy names.** Published GGUF filenames, the
+> `dsbox.json` manifest name, and `ds4.expert_major.v2` are immutable
+> compatibility identifiers. Hebrus Studio presents friendly model names in
+> its primary UI; the legacy strings appear only where users need the exact
+> artifact or serialized contract.
 
 A renamed model repository can declare `previousRepositories` in the same manifest. Hebrus Studio uses those ids only to recognize an already-installed bundle at its old local path; new downloads always use the current revision-pinned repository.
 
@@ -216,7 +198,7 @@ The **Agents** screen generates configurations using the currently selected mode
 When the Agents screen marks Codex CLI as available, an example provider is:
 
 ```toml
-[model_providers.ds4]
+[model_providers.hebrus]
 name = "Hebrus local"
 base_url = "http://127.0.0.1:4242/v1"
 wire_api = "responses"
@@ -226,7 +208,7 @@ stream_idle_timeout_ms = 1000000
 Then use the model ID shown by Hebrus Studio:
 
 ```sh
-codex --model <selected-model-id> -c model_provider=ds4
+codex --model <selected-model-id> -c model_provider=hebrus
 ```
 
 ## SSD streaming and safety
@@ -236,7 +218,7 @@ Hebrus Studio does not pretend that “fits on SSD” means “will be fast.” 
 Adaptive mode lets Hebrus calculate its expert-cache budget from live model geometry and available memory. Hebrus Studio independently watches macOS pressure and swap activity while the runtime is active, and performs a safety stop if pressure becomes unsafe or required signals repeatedly disappear. Manual cache, residency, and power controls remain available only for unmanaged/custom runtimes. DeepSeek and GLM retain disk-KV; DeepSeek also retains imatrix and directional steering. Qwen keeps live context reuse but cannot serialize its recurrent session payload yet, while GLM keeps its graph-selected prefill schedule. Context, trace, safe extra flags, and environment controls remain available in Settings.
 
 For Qwen3.6, DeepSeek V4 Flash, and GLM-5.2, Hebrus Studio requires the unified Hebrus
-[`57acfd4`](https://github.com/andreaborio/ds4/commit/57acfd408a3154851a0c59be432904300abb3b6c)
+[`57acfd4`](https://github.com/andreaborio/hebrus/commit/57acfd408a3154851a0c59be432904300abb3b6c)
 ExpertMajor v2 runtime or newer. On the normal managed path, all three families
 receive no backend, power, residency, streaming, cache, preload, or cold-start
 override from Hebrus Studio. Hebrus selects its validated AUTO plan from the model and live
@@ -257,19 +239,19 @@ At 32K the adaptive macro scheduler read 16.875 GiB once (1.000x amplification),
 IDs; resident decode was 57.43 t/s and the deliberately cold 321-expert SSD lane
 was 23.94 t/s. These are bounded machine-local measurements, not guarantees for
 arbitrary prompts or foreground GPU load. The full methodology lives in the
-[`andreaborio/ds4`](https://github.com/andreaborio/ds4) repository.
+[`andreaborio/hebrus`](https://github.com/andreaborio/hebrus) repository.
 
 </details>
 
 <details>
 <summary><strong>Recorded DeepSeek V4 Flash reference results</strong></summary>
 
-The table below uses the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF and the immutable reference [`andreaborio/ds4@91e0f5d`](https://github.com/andreaborio/ds4/commit/91e0f5dc4dbf26280207b2ae642a9ff835bf488f). Short runs are highly sensitive to prompt length and macOS page-cache state; these are measurements, not hardware guarantees.
+The table below uses the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF and the immutable reference [`andreaborio/hebrus@91e0f5d`](https://github.com/andreaborio/hebrus/commit/91e0f5dc4dbf26280207b2ae642a9ff835bf488f). Short runs are highly sensitive to prompt length and macOS page-cache state; these are measurements, not hardware guarantees.
 
 | Mac | Bounded workload | Generation throughput |
 | --- | --- | ---: |
 | M5 Pro, 64 GB | two Hebrus Studio API requests, 22–23 prompt + 64 output tokens | 9.88 / 12.86 t/s |
-| M5 Pro, 64 GB | `ds4-bench`, 128 prompt + 64 decode tokens | 13.05 / 13.59 t/s |
+| M5 Pro, 64 GB | `hebrus-bench`, 128 prompt + 64 decode tokens | 13.05 / 13.59 t/s |
 
 </details>
 
@@ -316,9 +298,9 @@ implementation and validation references. Hebrus Studio does not claim their
 endorsement and does not present them as runtime dependencies of the desktop
 application. Exact scopes, retained code notices, and further references live
 in the engine's
-[`ACKNOWLEDGMENTS.md`](https://github.com/andreaborio/ds4/blob/main/ACKNOWLEDGMENTS.md)
+[`ACKNOWLEDGMENTS.md`](https://github.com/andreaborio/hebrus/blob/main/ACKNOWLEDGMENTS.md)
 and
-[`THIRD_PARTY_NOTICES.md`](https://github.com/andreaborio/ds4/blob/main/THIRD_PARTY_NOTICES.md).
+[`THIRD_PARTY_NOTICES.md`](https://github.com/andreaborio/hebrus/blob/main/THIRD_PARTY_NOTICES.md).
 Application-specific credits and dependency guidance are recorded in
 [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

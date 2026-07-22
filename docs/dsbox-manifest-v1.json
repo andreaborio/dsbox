@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "DeepSeek V4 Flash DS4 ExpertMajor v2",
-  "description": "Current single-file DeepSeek V4 Flash release for the unified DS4 ExpertMajor v2 runtime.",
+  "name": "DeepSeek V4 Flash Hebrus ExpertMajor v2",
+  "description": "Current single-file DeepSeek V4 Flash release for the unified Hebrus ExpertMajor v2 runtime.",
   "status": "stable",
   "recommended": false,
   "modelId": "deepseek-v4-flash",
@@ -21,7 +21,7 @@
       "id": "ds4-expert-major",
       "version": 2,
       "tensor": "ds4.expert_major.v2",
-      "requiresRuntime": "andreaborio/ds4"
+      "requiresRuntime": "andreaborio/hebrus"
     }
   }
 }
