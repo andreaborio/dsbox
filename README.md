@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/andreaborio/hebrus-site/main/public/og.png" width="900" alt="Hebrus Studio — Metal first. SSD when memory ends.">
+</p>
+
 <h1 align="center">Hebrus Studio</h1>
 
 <p align="center"><strong>Your Mac. Your model. One switch.</strong></p>
@@ -7,8 +11,6 @@
   SSD streaming, private chat, coding-agent endpoints, and honest macOS telemetry.
 </p>
 
-<p align="center"><sub>The final Hebrus Studio logo is being replaced; current builds use a temporary H mark.</sub></p>
-
 > **Rename compatibility.** Hebrus Studio is the new public name of DSBox. The
 > bundle identifier (`com.dsbox.desktop`), state root (`~/.dsbox`), `DSBOX_*`
 > environment variables, local-storage keys, and legacy engine aliases remain
@@ -16,7 +18,7 @@
 
 <p align="center">
   <img alt="Hebrus Studio 0.4.0 release candidate" src="https://img.shields.io/badge/release%20candidate-0.4.0-7257d5?style=flat-square">
-  <a href="https://github.com/andreaborio/dsbox/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/andreaborio/dsbox/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/andreaborio/hebrus-studio/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/andreaborio/hebrus-studio/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <img alt="macOS 13 or later" src="https://img.shields.io/badge/macOS-13%2B-1b1b1b?style=flat-square&logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-1b1b1b?style=flat-square">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1b1b1b?style=flat-square"></a>
@@ -183,8 +185,8 @@ Requirements: Apple Silicon, macOS 13+, Node.js 22+, Xcode Command Line Tools, a
 
 ```sh
 xcode-select --install
-git clone https://github.com/andreaborio/dsbox.git
-cd dsbox
+git clone https://github.com/andreaborio/hebrus-studio.git
+cd hebrus-studio
 ./start.command
 ```
 
