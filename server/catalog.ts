@@ -30,6 +30,11 @@ const SUPPORTED_EXPERT_MAJOR_MODEL_IDS = new Set([
   "qwen3.6-35b-a3b"
 ]);
 const SUPPORTED_EXPERT_MAJOR_RUNTIMES = new Set(["andreaborio/ds4", "andreaborio/hebrus"]);
+const MODEL_REPOSITORY_PREDECESSORS = new Map([
+  ["andreaborio/DeepSeek-V4-Flash-Hebrus-GGUF", "andreaborio/DeepSeek-V4-Flash-DS4-GGUF"],
+  ["andreaborio/GLM-5.2-Hebrus-GGUF", "andreaborio/GLM-5.2-DS4-GGUF"],
+  ["andreaborio/Qwen3.6-35B-A3B-Hebrus-GGUF", "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF"]
+]);
 
 interface CatalogSourceDefinition extends CatalogSource {
   filter?: string;
@@ -41,7 +46,7 @@ const SOURCE_DEFINITIONS: CatalogSourceDefinition[] = [
     id: "andreaborio",
     label: "Hebrus Studio",
     url: "https://huggingface.co/andreaborio/models",
-    filter: "ds4"
+    filter: "gguf"
   },
   {
     id: "unsloth",
@@ -152,8 +157,9 @@ function parseArtifactFormat(manifest: DsboxManifest | null): ParsedArtifactForm
 }
 
 function previousRepositories(manifest: DsboxManifest | null, repository: string): string[] {
-  if (!Array.isArray(manifest?.previousRepositories)) return [];
-  return [...new Set(manifest.previousRepositories
+  const declared = Array.isArray(manifest?.previousRepositories) ? manifest.previousRepositories : [];
+  const predecessor = MODEL_REPOSITORY_PREDECESSORS.get(repository);
+  return [...new Set([predecessor, ...declared]
     .filter((candidate): candidate is string => typeof candidate === "string")
     .map((candidate) => candidate.trim())
     .filter((candidate) => REPOSITORY_ID.test(candidate) && candidate !== repository))];

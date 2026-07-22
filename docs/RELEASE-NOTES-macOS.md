@@ -1,14 +1,16 @@
 # Hebrus Studio 0.4.0
 
-This is the first public **Hebrus Studio** bridge release. It renames the DSBox
-desktop experience and presents the inference engine as **Hebrus**, while
-deliberately preserving every persistent and wire-level identifier needed by
-existing installations.
+This is the candidate for the first public **Hebrus Studio** bridge release. It
+renames the DSBox desktop experience and presents the inference engine as
+**Hebrus**, while deliberately preserving every persistent and wire-level
+identifier needed by existing installations. It is not published until the
+external release gates below are complete.
 
 ## Identity and upgrade safety
 
-- Publishes `Hebrus Studio.app` and
-  `Hebrus-Studio-0.4.0-macOS-arm64.dmg`.
+- Uses the candidate artifact names `Hebrus Studio.app` and
+  `Hebrus-Studio-0.4.0-macOS-arm64.dmg`; publication remains blocked by the
+  readiness interlock below.
 - Uses the project-supplied Hebrus PNG unchanged in the README and application;
   web depth is a CSS-only drop shadow, and the macOS icon is generated from the
   same hash-frozen master during packaging.
@@ -24,6 +26,8 @@ existing installations.
   using disposable state and profiles and no model inference. It verifies that
   legacy settings, model/download inventory, theme, onboarding, view, model
   disclosure, and conversation state remain readable in both directions.
+- Bundles the project license, project third-party notices, Electron license,
+  and Chromium notice set as verifier-enforced release contents.
 
 ## Runtime and model contract
 
@@ -37,9 +41,36 @@ existing installations.
 
 ## Packaging status
 
-The community build is arm64, ad-hoc signed, and not notarized. Developer ID
-signing, notarization, stapling, and clean-machine Gatekeeper verification are
-separate launch gates and are not claimed by this release candidate.
+Local development bundles are arm64 and ad-hoc signed. They carry explicit
+development provenance, are rejected by the release verifier, and are not the
+future public download. The public lane requires Developer ID signing,
+notarization, stapling, and clean-machine Gatekeeper verification before its
+strict gates can become ready; public instructions do not prescribe a
+Gatekeeper bypass.
+
+Public publication is mechanically blocked while
+`scripts/public-release-readiness.json` contains a pending gate. The release
+workflow runs strict readiness before building, so creating a `v0.4.0` tag today
+cannot publish this candidate. Normal CI uses status mode and continues to test
+the source while reporting the pending work.
+
+After every gate is evidenced, the release workflow will generate provenance
+from the clean exact tagged commit and embed it in both the app and the
+versioned `Hebrus-Studio-0.4.0-SBOM.cdx.json`. A protected `public-release`
+environment binds the exact certificate common name, SHA-1, and Apple team to
+provenance and both final signatures. The workflow records the current accepted
+notary submission in a persistent release attestation. SBOM normalization fills
+npm's missing license fields only from installed, lockfile-resolved package
+metadata and expands every lockfile path, including nested duplicate
+coordinates; the release fails if any component, edge, or identifiable license
+is missing and also publishes a path-aware third-party license inventory.
+
+The compatibility E2E then mounts the app from the final DMG instead of
+building a second Hebrus package, writes an atomic hash-bound JSON report and
+log, and validates them. Only after that gate passes does `SHA256SUMS.txt` cover
+the DMG, signing/notarization attestation, SBOM, license inventory, E2E report,
+and E2E log. No such asset or public binary is claimed as published while
+readiness remains blocked.
 
 ## Historical release notes
 
@@ -115,24 +146,9 @@ validated model and live Mac memory state.
   table-driven AUTO argument tests for all three model families.
 - Passed 298 automated tests, TypeScript checks, and the production build.
 
-### macOS community build
+### Historical community-build policy
 
-The attached application is built for Apple Silicon and requires macOS 13 or
-later.
-
-> [!IMPORTANT]
-> The app is ad-hoc signed for bundle integrity, but it is not signed with an
-> Apple Developer ID and is not notarized. macOS will require one explicit
-> approval on first launch. Read the attached installation guide before opening
-> the app.
-
-The release workflow verifies the DMG, validates the complete app bundle and
-checks the arm64 architecture before publishing. Compare your download against
-the attached `SHA256SUMS.txt` file.
-
-### Install
-
-1. Download the DMG, `SHA256SUMS.txt`, and `INSTALL-macOS.md`.
-2. Verify the checksum.
-3. Drag Hebrus Studio to Applications.
-4. Control-click Hebrus Studio and choose Open, or use Privacy & Security → Open Anyway.
+The preceding desktop release used an ad-hoc signed Apple Silicon package and
+manual first-launch approval. That historical policy does not apply to the
+future Hebrus Studio public download: its strict gate requires Developer ID,
+notarization, stapling, and Gatekeeper acceptance before publication.

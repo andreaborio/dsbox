@@ -83,7 +83,7 @@ describe("Hugging Face model catalog", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const url = requestedUrl(input);
       requested.push(url);
-      if (url === "https://huggingface.co/api/models?author=andreaborio&filter=ds4&sort=lastModified&direction=-1&limit=100&full=true") {
+      if (url === "https://huggingface.co/api/models?author=andreaborio&filter=gguf&sort=lastModified&direction=-1&limit=100&full=true") {
         return jsonResponse([{ id: repository, sha: revision }]);
       }
       if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
@@ -492,6 +492,50 @@ describe("Hugging Face model catalog", () => {
       expect.objectContaining({ outputFile: canonicalFile, installable: false })
     ]));
     expect(catalog.recommended).toBeNull();
+  });
+
+  it("keeps an installed DS4 bundle discoverable after its Hugging Face repository moves to Hebrus", async () => {
+    const repository = "andreaborio/DeepSeek-V4-Flash-Hebrus-GGUF";
+    const previousRepository = "andreaborio/DeepSeek-V4-Flash-DS4-GGUF";
+    const revision = "6".repeat(40);
+    const modelFile = "DeepSeek-V4-Flash-DS4-ExpertMajor-v2.gguf";
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = requestedUrl(input);
+      if (url.includes("/api/models?")) return jsonResponse([{ id: repository, sha: revision }]);
+      if (url === `https://huggingface.co/api/models/${repository}/revision/${revision}?blobs=true`) {
+        return jsonResponse({
+          id: repository,
+          sha: revision,
+          tags: ["hebrus", "gguf", "deepseek-v4", "expert-major"],
+          siblings: [{ rfilename: modelFile, lfs: { size: 86_720_114_272, sha256: "a".repeat(64) } }]
+        });
+      }
+      if (url === `https://huggingface.co/${repository}/resolve/${revision}/dsbox.json`) {
+        return jsonResponse({
+          schemaVersion: 1,
+          name: "DeepSeek V4 Flash Hebrus ExpertMajor v2",
+          status: "stable",
+          recommended: true,
+          modelId: "deepseek-v4-flash",
+          runtimeBranch: "main",
+          runtimeCommit: "fe0919b70571678408f2c8c52aec8d49525e715c",
+          file: modelFile,
+          minimumMemoryGb: 64,
+          architecture: "moe",
+          artifact: expertMajorArtifact(modelFile, 86_720_114_272, "a".repeat(64), undefined, "andreaborio/hebrus")
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    const catalog = await new ModelCatalog().list(64 * 1024 ** 3, true);
+
+    expect(catalog.models.find((model) => model.repository === repository)).toMatchObject({
+      repository,
+      previousRepositories: [previousRepository],
+      outputFile: modelFile,
+      installable: true
+    });
   });
 
   it("exposes the single-file GLM-5.2 ExpertMajor v2 artifact with a 64 GB floor", async () => {

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "productName": "Hebrus Studio",
   "packageName": "hebrus-studio",
   "artifactBaseName": "Hebrus-Studio",
@@ -15,6 +15,69 @@
   },
   "architecture": "arm64",
   "engineDelivery": "external",
+  "signing": {
+    "release": {
+      "identity": "Developer ID Application",
+      "hardenedRuntime": true,
+      "notarizedApp": true,
+      "notarizedAndStapledDmg": true,
+      "gatekeeperRequired": true
+    },
+    "development": {
+      "identity": "adhoc",
+      "hardenedRuntime": false,
+      "notarized": false
+    }
+  },
+  "sbom": {
+    "format": "CycloneDX",
+    "specVersion": "1.5",
+    "componentType": "application",
+    "source": "package-lock.json",
+    "fileNameTemplate": "Hebrus-Studio-{version}-SBOM.cdx.json",
+    "licenseInventoryFileNameTemplate": "Hebrus-Studio-{version}-THIRD-PARTY-LICENSES.md"
+  },
+  "provenance": {
+    "embeddedFile": "release-provenance.json",
+    "sourceFile": "build/release-provenance.json",
+    "schemaVersion": 2,
+    "developmentSchemaVersion": 1,
+    "workflow": "release-macos"
+  },
+  "releaseAttestation": {
+    "schemaVersion": 1,
+    "fileNameTemplate": "Hebrus-Studio-{version}-Release-Attestation.json"
+  },
+  "upgradeRollback": {
+    "schemaVersion": 2,
+    "legacyCommit": "595e9952c4fd1197de3aa3ccde66a5ddccddd397",
+    "reportFileNameTemplate": "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.json",
+    "logFileNameTemplate": "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.log"
+  },
+  "developmentEvidence": {
+    "schemaVersion": 1,
+    "qualification": "development",
+    "directory": "development-evidence",
+    "reportFileNameTemplate": "Hebrus-Studio-{version}-Development-Upgrade-Rollback-E2E.json",
+    "logFileNameTemplate": "Hebrus-Studio-{version}-Development-Upgrade-Rollback-E2E.log"
+  },
+  "checksums": {
+    "fileName": "SHA256SUMS.txt",
+    "requiredFileNameTemplates": [
+      "Hebrus-Studio-{version}-macOS-arm64.dmg",
+      "Hebrus-Studio-{version}-Release-Attestation.json",
+      "Hebrus-Studio-{version}-SBOM.cdx.json",
+      "Hebrus-Studio-{version}-THIRD-PARTY-LICENSES.md",
+      "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.json",
+      "Hebrus-Studio-{version}-Upgrade-Rollback-E2E.log"
+    ]
+  },
+  "requiredLegalNotices": [
+    "LICENSE.txt",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSE.electron.txt",
+    "LICENSES.chromium.html"
+  ],
   "compatibility": {
     "legacyProductName": "DSBox",
     "legacyUserDataDirectoryName": "DSBox",

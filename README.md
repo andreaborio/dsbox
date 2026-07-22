@@ -15,7 +15,7 @@
 > unchanged in the bridge release so existing installs can upgrade safely.
 
 <p align="center">
-  <a href="https://github.com/andreaborio/dsbox/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/andreaborio/dsbox?display_name=tag&sort=semver&style=flat-square"></a>
+  <img alt="Hebrus Studio 0.4.0 release candidate" src="https://img.shields.io/badge/release%20candidate-0.4.0-7257d5?style=flat-square">
   <a href="https://github.com/andreaborio/dsbox/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/andreaborio/dsbox/ci.yml?branch=main&style=flat-square&label=CI"></a>
   <img alt="macOS 13 or later" src="https://img.shields.io/badge/macOS-13%2B-1b1b1b?style=flat-square&logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-1b1b1b?style=flat-square">
@@ -23,10 +23,18 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/andreaborio/dsbox/releases/latest"><strong>Download for Apple Silicon</strong></a>
+  <strong>Hebrus Studio 0.4.0 release candidate</strong>
+  · <a href="docs/PACKAGING-macOS.md">Packaging status</a>
   · <a href="docs/INSTALL-macOS.md">Installation guide</a>
   · <a href="#run-from-source">Run from source</a>
 </p>
+
+> **Public release blocked by policy.** Version 0.4.0 is a release candidate,
+> not an announced binary release. The machine-readable
+> [`public-release-readiness.json`](scripts/public-release-readiness.json)
+> intentionally has pending external gates, and the tag workflow refuses to
+> build or publish while any remain. The final launch commit will restore the
+> public release URL and download CTA only after strict readiness passes.
 
 ![Hebrus Studio local chat](docs/media/01-chat.png)
 
@@ -134,21 +142,33 @@ Recommendations are made by **Hebrus Studio**, never presented as an endorsement
 
 Installed inventory models appear beside the Thinking control. If Hebrus is off, a selection applies to the next start. If it is running, Hebrus Studio validates the replacement first, restarts the server, and attempts to restore the previous model and runtime if the new launch fails. Switching is disabled while a generation, download, or conflicting runtime operation is active.
 
-## Install the macOS app
+## macOS release candidate
 
-Hebrus Studio ships as an arm64 Electron app for macOS 13 or later.
+Hebrus Studio 0.4.0 is being prepared as an arm64 Electron app for macOS 13 or
+later. This README intentionally does not link a public binary while release
+readiness is blocked; an older repository release may still carry the previous
+product identity and must not be presented as the Hebrus Studio launch.
 
-1. Download `Hebrus-Studio-<version>-macOS-arm64.dmg` and `SHA256SUMS.txt` from the [latest release](https://github.com/andreaborio/dsbox/releases/latest).
-2. Verify the download from the same folder:
+Release reviewers can inspect the local [packaging contract](docs/PACKAGING-macOS.md)
+and [installation procedure](docs/INSTALL-macOS.md). Once every public-release
+gate is evidenced and strict mode passes, the launch commit will add the exact
+release URL and these checksum-first installation steps:
+
+1. Obtain the approved `Hebrus-Studio-<version>-macOS-arm64.dmg` and
+   `SHA256SUMS.txt` from the same public release.
+2. Verify both from the same folder:
 
    ```sh
    shasum -a 256 -c SHA256SUMS.txt
    ```
 
 3. Open the DMG and drag **Hebrus Studio** to **Applications**.
-4. The community build is ad-hoc signed but not notarized. On first launch, Control-click **Hebrus Studio**, choose **Open**, then confirm **Open**.
+4. Confirm that macOS identifies the published app as Developer ID signed and
+   notarized. Public release readiness cannot pass without both checks.
 
-The checksum-first Gatekeeper and “app is damaged” recovery flow is documented in [`docs/INSTALL-macOS.md`](docs/INSTALL-macOS.md). Only bypass quarantine for an artifact whose checksum you have verified.
+The checksum-first verification flow is documented in
+[`docs/INSTALL-macOS.md`](docs/INSTALL-macOS.md). A Gatekeeper rejection is a
+release failure; the public instructions do not ask users to bypass it.
 
 There is no automatic app updater yet. When upgrading from DSBox, quit the old
 app first: Finder will not replace `DSBox.app` with the differently named
@@ -258,7 +278,9 @@ The table below uses the 86.72 GB DeepSeek V4 Flash IQ2XXS/SExpQ8 GGUF and the i
 - Hebrus Studio is currently text-only. Image, audio, video, and file parts are rejected before they can reach Hebrus.
 - Web search is not fully offline. In Agent mode **Web on** is the default persistent preference, so the model can choose `web_search` without a per-message authorization step; the visible control is an explicit opt-out. Turning it off blocks the executor before any network request, including when an older web call remains in thread history. Standard chat separately routes explicit or clearly time-sensitive requests through the local search classifier. When enabled, a normalized query of at most 400 characters is sent to DuckDuckGo Lite, and search failure falls back to local inference.
 - Metal utilization remains `N/A` because macOS does not expose a reliable per-process value without elevated tooling. Hebrus Studio does not use `sudo` or `powermetrics`.
-- The community DMG is ad-hoc signed and not notarized. A fully trusted first launch requires Apple Developer ID signing and notarization.
+- Local development DMGs are ad-hoc signed and never presented as public
+  releases. The public workflow remains blocked until Developer ID signing,
+  notarization, stapling, and Gatekeeper verification pass.
 
 ## Architecture
 
@@ -276,6 +298,29 @@ flowchart LR
 
 The gateway parses and validates incoming requests, rejects unsupported media, removes hop-by-hop headers, and relays response status, safe headers, and streaming bytes. It does not translate semantic text, tool, or reasoning fields.
 
+## Provenance and acknowledgments
+
+Hebrus Studio is the companion application for the Hebrus engine. Hebrus began
+as a fork of [`antirez/ds4`](https://github.com/antirez/ds4) and still retains
+substantial core implementation, architecture, utilities, and Git history from
+that project. Salvatore Sanfilippo (antirez) and the upstream contributors
+created the foundation from which the engine's Metal, ExpertMajor, and SSD
+streaming work evolved.
+
+[`llama.cpp`](https://github.com/ggml-org/llama.cpp),
+[`GGML`](https://github.com/ggml-org/ggml),
+[`MLX`](https://github.com/ml-explore/mlx), and MLX-LM are important engine
+implementation and validation references. Hebrus Studio does not claim their
+endorsement and does not present them as runtime dependencies of the desktop
+application. Exact scopes, retained code notices, and further references live
+in the engine's
+[`ACKNOWLEDGMENTS.md`](https://github.com/andreaborio/ds4/blob/main/ACKNOWLEDGMENTS.md)
+and
+[`THIRD_PARTY_NOTICES.md`](https://github.com/andreaborio/ds4/blob/main/THIRD_PARTY_NOTICES.md).
+Application-specific credits and dependency guidance are recorded in
+[ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Development and releases
 
 ```sh
@@ -284,27 +329,83 @@ npm test
 npm run build
 ```
 
-Build and verify the macOS artifacts:
+Create an explicitly non-release local development bundle:
 
 ```sh
 npm run pack:mac
-npm run verify:mac -- "release/mac-arm64/Hebrus Studio.app"
-npm run dist:mac
-npm run verify:mac
+npm run verify:mac:dev -- "release/mac-arm64/Hebrus Studio.app"
+npm run dist:mac:dev
+npm run verify:mac:dev -- "release/Hebrus-Studio-0.4.0-macOS-arm64.dmg"
+npm run verify:upgrade-rollback:e2e:dev-dmg
 ```
 
-The verifier freezes the current Hebrus Studio bundle identity and confirms that the
-Electron package does not embed a Hebrus or legacy DS4 engine. See the
-[macOS packaging contract](docs/PACKAGING-macOS.md) for the exact checks and
-the optional isolated launch smoke.
+This ad-hoc bundle is for local development only and must not be published. The
+release verifier intentionally rejects its development provenance. The tagged
+workflow creates the public candidate only after strict readiness, embeds
+clean-tree exact-commit provenance, and verifies identity, legal notices,
+architecture, icon, external engine delivery, and the final checksums. See the
+[macOS packaging contract](docs/PACKAGING-macOS.md) for the complete lane.
+`dist:mac:dev` first removes the exact current-version public evidence filenames
+and `SHA256SUMS.txt` from `release/`, so the development DMG cannot remain beside
+stale release evidence for a different DMG; development evidence in its own
+subdirectory and unrelated files are preserved.
+If Gatekeeper quarantines a locally built ad-hoc copy, first Control-click it in
+Finder and choose **Open**. The
+[installation guide](docs/INSTALL-macOS.md#local-development-build) records the
+single-app `xattr` exception. That exception is only for a bundle you built or
+received through a trusted development channel; it is never the public release
+path.
 
-A version tag matching `package.json` runs the same checks on GitHub Actions and publishes the DMG, SHA-256 file, and installation guide.
+The development final-DMG compatibility command builds only the frozen DSBox
+checkpoint, mounts the already-built development DMG read-only, and runs the
+real DSBox -> Hebrus Studio -> DSBox sequence. Its atomic JSON report and log
+live under `release/development-evidence/`, carry `qualification: development`,
+and cannot enter the public SBOM or checksum set. They are local compatibility
+evidence, never release authorization.
+
+State-compatibility changes must also pass the real packaged sequence:
+
+```sh
+npm run verify:upgrade-rollback:e2e -- --source
+```
+
+Normal CI builds the frozen DSBox checkpoint and the current Hebrus Studio
+commit, then launches DSBox -> Hebrus Studio -> DSBox against one disposable
+legacy profile. The release lane instead runs `--release` after the final DMG
+and SBOM exist, mounts the app from that DMG, and emits a hash-bound JSON report
+plus log. Neither mode starts model inference.
+
+Normal CI reports release readiness without failing on known external work:
+
+```sh
+npm run release:readiness
+```
+
+The tag workflow instead runs `npm run release:readiness:strict` before any
+application build. A matching version tag cannot currently build or publish a
+public release because every external gate remains explicitly pending. Once
+all gates carry reviewed evidence, the workflow requires a clean tagged commit,
+embeds its provenance in the app and SBOM, captures an exact-certificate and
+notary-submission attestation, expands every locked package path into the SBOM,
+publishes a license inventory, tests the app mounted from the final DMG, and
+hashes the DMG, attestation, SBOM, inventory, E2E report, and E2E log before
+publication. The public artifact must be Developer ID signed,
+notarized, stapled, and accepted by Gatekeeper; ad-hoc packaging remains a
+separate local-development lane.
 
 ## Security
 
 Follow the [security policy](SECURITY.md) for private reporting. Do not expose
 Hebrus Studio or its Hebrus/legacy DS4 engine server directly on `0.0.0.0`; use an
 authenticated tunnel for access from another machine.
+
+Project participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md),
+and release ownership is described in [GOVERNANCE.md](GOVERNANCE.md).
+
+## Changelog
+
+User-visible changes are tracked in [CHANGELOG.md](CHANGELOG.md). Detailed
+macOS bridge notes remain in [docs/RELEASE-NOTES-macOS.md](docs/RELEASE-NOTES-macOS.md).
 
 ## License
 

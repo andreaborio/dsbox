@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use Hebrus Studio in published work, cite this repository and the Hebrus engine sources appropriate to the model and runtime commit."
+title: "Hebrus Studio"
+type: software
+version: 0.4.0
+authors:
+  - family-names: Borio
+    given-names: Andrea
+repository-code: "https://github.com/andreaborio/dsbox"
+url: "https://github.com/andreaborio/dsbox"
+license: MIT
+keywords:
+  - local inference
+  - Apple Silicon
+  - Metal
+  - SSD streaming
+  - Electron

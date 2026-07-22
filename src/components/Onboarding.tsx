@@ -98,7 +98,7 @@ export function Onboarding({
                 <div><span>Chip</span><strong>{snapshot.system.cpuModel.replace(/^Apple\s*/i, "")}</strong></div>
                 <div><span>Unified memory</span><strong>{formatBytes(snapshot.system.totalMemoryBytes, 0)}</strong></div>
                 <div><span>Free SSD space</span><strong>{latest ? formatBytes(latest.diskFreeBytes, 0) : "Checking…"}</strong></div>
-                <div><span>Engine</span><strong>Metal · ds4</strong></div>
+                <div><span>Engine</span><strong>Metal · Hebrus</strong></div>
               </div>
             </div>
             <button className="onboarding__primary" onClick={() => setStep("model")}>Get started <ArrowRight size={16} /></button>

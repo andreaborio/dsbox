@@ -16,10 +16,17 @@ describe("Hebrus artifact formats", () => {
 
   it("recognizes an installed bundle after its Hugging Face repository was renamed", () => {
     const model = {
-      repository: "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF",
-      previousRepositories: ["andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-GGUF"]
+      repository: "andreaborio/Qwen3.6-35B-A3B-Hebrus-GGUF",
+      previousRepositories: [
+        "andreaborio/Qwen3.6-35B-A3B-DS4-GGUF",
+        "andreaborio/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-GGUF"
+      ]
     };
 
+    expect(catalogModelMatchesInstalledPath(
+      model,
+      "/Users/test/.dsbox/models/Qwen3.6-35B-A3B-DS4-GGUF/revision/bundle/model.gguf"
+    )).toBe(true);
     expect(catalogModelMatchesInstalledPath(
       model,
       "/Users/test/.dsbox/models/Qwen3.6-35B-A3B-DS4-ExpertMajor-v2-GGUF/revision/bundle/model.gguf"

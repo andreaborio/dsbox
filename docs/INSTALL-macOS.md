@@ -1,14 +1,16 @@
 # Install Hebrus Studio on macOS
 
-Hebrus Studio is distributed as an Apple Silicon DMG. The current community build is
-ad-hoc signed for bundle integrity, but it is not signed with an Apple Developer
-ID and is not notarized. macOS will therefore ask you to approve it once.
+Hebrus Studio's public Apple Silicon DMG is published only after strict release
+readiness confirms Developer ID signing, notarization, stapling, and a clean
+Gatekeeper assessment. Version 0.4.0 remains a release candidate while those
+gates are pending; this page describes the post-gate public installation.
 
-## Install
+## Install the public release
 
-1. Download `Hebrus-Studio-<version>-macOS-arm64.dmg` and `SHA256SUMS.txt` from the same
-   GitHub release.
-2. In Terminal, verify the download from the folder containing both files:
+1. Download `SHA256SUMS.txt` and every file it names from the same GitHub
+   release: the DMG, signing/notarization attestation, CycloneDX SBOM,
+   third-party license inventory, and the upgrade/rollback JSON report and log.
+2. In Terminal, verify the complete release set from that folder:
 
    ```sh
    shasum -a 256 -c SHA256SUMS.txt
@@ -16,25 +18,39 @@ ID and is not notarized. macOS will therefore ask you to approve it once.
 
 3. Open the DMG and drag **Hebrus Studio** to **Applications**.
 4. Eject the disk image. Run Hebrus Studio from **Applications**, not from the DMG.
-5. Control-click **Hebrus Studio**, choose **Open**, then confirm **Open**. This exception
-   applies only to this copy of Hebrus Studio.
+5. Optionally confirm Gatekeeper acceptance before launch:
 
-If macOS does not show the second **Open** button, first try launching Hebrus Studio once,
-then open **System Settings → Privacy & Security**, scroll to **Security**, and
-choose **Open Anyway**.
+   ```sh
+   spctl -a -vv -t exec "/Applications/Hebrus Studio.app"
+   ```
 
-## If macOS says the app is damaged
+## If Gatekeeper rejects the public app
 
-First verify the SHA-256 checksum as shown above. If it matches the release and
-you trust this repository, remove quarantine from this app only, then launch it:
+Do not remove quarantine or use **Open Anyway** for a public Hebrus Studio
+release. Recheck the complete checksum set, confirm that every file came from
+the same release, and report the rejection with the version and `spctl` output.
+A rejected public artifact has failed the release contract even if its checksum
+matches.
+
+## Local development build
+
+Contributors may create an ad-hoc signed bundle for local testing. It is clearly
+separate from the public release, carries development provenance, is rejected
+by the release verifier, and must not be redistributed.
+
+If Gatekeeper quarantines a local-development copy that you built yourself or
+received through a trusted development channel, first Control-click the app in
+Finder and choose **Open**. If macOS still blocks that same trusted app, remove
+quarantine from that app only, then open it:
 
 ```sh
 xattr -dr com.apple.quarantine "/Applications/Hebrus Studio.app"
 open "/Applications/Hebrus Studio.app"
 ```
 
-Do not run a broad `xattr` command against `/Applications`, and do not bypass
-Gatekeeper for an artifact whose checksum does not match.
+Never run a broad `xattr` command against `/Applications`. Never use this local
+exception for a purported public release: the public DMG must pass Developer ID,
+notarization, stapling, checksum, and Gatekeeper verification without a bypass.
 
 ## Upgrade from DSBox
 
