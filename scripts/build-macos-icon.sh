@@ -107,4 +107,4 @@ PY
 
 mkdir -p "$(dirname "$OUTPUT")"
 iconutil -c icns "$ICONSET" -o "$OUTPUT"
-echo "Built $OUTPUT from the temporary Hebrus Studio H mark."
+echo "Built $OUTPUT from the compact Hebrus Studio H mark."

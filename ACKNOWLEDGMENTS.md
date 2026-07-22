@@ -15,8 +15,8 @@ foundation on which the engine's Metal, embedded ExpertMajor, and SSD streaming
 paths continue to evolve.
 
 The engine repository is the authority for exact code provenance. Its
-[`ACKNOWLEDGMENTS.md`](https://github.com/andreaborio/ds4/blob/main/ACKNOWLEDGMENTS.md),
-[`THIRD_PARTY_NOTICES.md`](https://github.com/andreaborio/ds4/blob/main/THIRD_PARTY_NOTICES.md),
+[`ACKNOWLEDGMENTS.md`](https://github.com/andreaborio/hebrus/blob/main/ACKNOWLEDGMENTS.md),
+[`THIRD_PARTY_NOTICES.md`](https://github.com/andreaborio/hebrus/blob/main/THIRD_PARTY_NOTICES.md),
 and fork ledger identify retained code, engineering references, and the current
 boundary from upstream.
 
@@ -49,6 +49,7 @@ privacy boundaries.
 
 ## Visual identity
 
-The Hebrus logo is the maintainer-supplied canonical master. The checked-in PNG
-is preserved byte-for-byte; Hebrus Studio adds its web shadow only at render
-time with CSS and derives the macOS icon reproducibly from the same master.
+The checked-in typographic banner is the canonical documentation identity.
+Hebrus Studio uses a separate compact H mark in constrained UI and macOS icon
+surfaces; that mark is generated reproducibly and complements rather than
+replaces the typographic identity.

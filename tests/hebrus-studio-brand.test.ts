@@ -9,7 +9,7 @@ async function text(relativePath: string): Promise<string> {
 }
 
 describe("Hebrus Studio public identity", () => {
-  it("uses the temporary H mark instead of the old logo asset", async () => {
+  it("uses the compact H mark instead of the retired logo asset", async () => {
     const [component, styles] = await Promise.all([
       text("src/components/ui.tsx"),
       text("src/styles.css")
