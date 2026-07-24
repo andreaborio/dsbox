@@ -20,7 +20,7 @@ function agentEvents(text: string): Array<Record<string, unknown>> {
     .map((line) => JSON.parse(line.slice(5).trim()) as Record<string, unknown>);
 }
 
-describe("model-neutral agent API", () => {
+describe("Qwen-bound agent API", () => {
   let home: string;
   let services: AppServices;
 
@@ -28,11 +28,15 @@ describe("model-neutral agent API", () => {
     home = await mkdtemp(path.join(tmpdir(), "dsbox-agent-test-"));
     process.env.DSBOX_HOME = home;
     services = await createServices(4242);
+    const config = services.store.get();
+    config.model.id = "qwen3.6-35b-a3b";
+    await services.store.set(config);
     const state = services.runtime.getState();
     vi.spyOn(services.runtime, "getState").mockReturnValue({
       ...state,
       phase: "running",
       readiness: "ready",
+      loadedModelId: "qwen3.6-35b-a3b",
       pid: 1234
     });
   });
@@ -51,7 +55,7 @@ describe("model-neutral agent API", () => {
       return Response.json({
         object: "list",
         data: [{
-          id: "deepseek-v4-flash",
+          id: "qwen3.6-35b-a3b",
           supported_parameters: ["messages", "stream", "tools", "tool_choice"]
         }]
       });
@@ -63,7 +67,7 @@ describe("model-neutral agent API", () => {
     expect(response.body).toMatchObject({
       version: 1,
       runtime: { readiness: "ready", phase: "running", pid: 1234 },
-      model: { id: "deepseek-v4-flash", source: "runtime:/v1/models" },
+      model: { id: "qwen3.6-35b-a3b", source: "runtime:/v1/models" },
       chat: {
         completions: true,
         streaming: true,
@@ -83,15 +87,37 @@ describe("model-neutral agent API", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("fails Agent closed when the selected and loaded model is not Qwen", async () => {
+    const config = services.store.get();
+    config.model.id = "glm-5.2";
+    await services.store.set(config);
+    vi.mocked(services.runtime.getState).mockReturnValue({
+      ...services.runtime.getState(),
+      loadedModelId: "glm-5.2"
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      object: "list",
+      data: [{ id: "glm-5.2", supported_parameters: ["tools"] }]
+    })));
+
+    const response = await request(createApp(services))
+      .post("/api/agent/chat")
+      .set("x-dsbox-control", "1")
+      .send({ messages: [{ role: "user", content: "Use an agent tool" }] })
+      .expect(409);
+
+    expect(response.body.error.code).toBe("tool_calling_unverified");
+  });
+
   it("actively probes the runtime instead of inferring support from the model id", async () => {
     const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/v1/models")) {
-        return Response.json({ object: "list", data: [{ id: "deepseek-v4-flash" }] });
+        return Response.json({ object: "list", data: [{ id: "qwen3.6-35b-a3b" }] });
       }
       expect(url).toMatch(/\/v1\/chat\/completions$/);
       const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      expect(payload).toMatchObject({ model: "deepseek-v4-flash", tool_choice: "none", max_tokens: 1 });
+      expect(payload).toMatchObject({ model: "qwen3.6-35b-a3b", tool_choice: "none", max_tokens: 1 });
       expect(payload.tools).toBeInstanceOf(Array);
       return Response.json({ choices: [{ message: { role: "assistant", content: "OK" }, finish_reason: "stop" }] });
     });
@@ -136,7 +162,6 @@ describe("model-neutral agent API", () => {
   });
 
   it.each([
-    { modelId: "deepseek-v4-flash", reasoningField: "reasoning_content" },
     { modelId: "qwen3.6-35b-a3b", reasoningField: "reasoning" }
   ] as const)(
     "runs the same canonical tool loop for $modelId and preserves call_id, reasoning, and usage",
@@ -261,7 +286,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       if (url.includes("duckduckgo.com")) {
@@ -323,7 +348,7 @@ describe("model-neutral agent API", () => {
     const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/v1/models")) {
-        return Response.json({ object: "list", data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }] });
+        return Response.json({ object: "list", data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }] });
       }
       if (url.includes("duckduckgo.com")) {
         webRequests += 1;
@@ -400,7 +425,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       if (url.includes("duckduckgo.com")) {
@@ -483,7 +508,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       completion += 1;
@@ -532,7 +557,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       return new Response("", { status: 200, headers: { "content-type": "text/event-stream" } });
@@ -560,7 +585,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       return new Response(
@@ -622,7 +647,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       completions += 1;
@@ -665,7 +690,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       completion += 1;
@@ -708,7 +733,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       completion += 1;
@@ -753,7 +778,7 @@ describe("model-neutral agent API", () => {
       if (url.endsWith("/v1/models")) {
         return Response.json({
           object: "list",
-          data: [{ id: "deepseek-v4-flash", supported_parameters: ["tools"] }]
+          data: [{ id: "qwen3.6-35b-a3b", supported_parameters: ["tools"] }]
         });
       }
       markStarted();

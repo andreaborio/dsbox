@@ -715,14 +715,14 @@
       "token": "dsbox",
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
-      "maximum": 14
+      "maximum": 15
     },
     {
       "path": "tests/app.test.ts",
       "token": "dsbox",
       "classification": "compatibility",
       "reason": "Tests and fixtures freeze legacy aliases, persisted identifiers, wire values, and bridge behavior.",
-      "maximum": 37
+      "maximum": 38
     },
     {
       "path": "tests/app.test.ts",

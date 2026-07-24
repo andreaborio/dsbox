@@ -85,7 +85,7 @@ describe("Chat Web control", () => {
     });
   });
 
-  it("keeps Web configurable for the Qwen standard-chat fallback", () => {
+  it("locks Web when the confirmed agent capability is unavailable", () => {
     expect(resolveWebSearchControl({
       modelSupportsTools: true,
       agentAvailable: false,
@@ -93,7 +93,7 @@ describe("Chat Web control", () => {
       tools: ["web_search"],
       preference: true,
       streaming: false
-    })).toMatchObject({ visible: true, requestEnabled: true, pressed: true });
+    })).toMatchObject({ visible: true, requestEnabled: false, pressed: false, disabled: true });
   });
 
   it("locks Web on models that do not support tools yet", () => {
@@ -107,7 +107,7 @@ describe("Chat Web control", () => {
     })).toMatchObject({ visible: true, requestEnabled: false, pressed: false, disabled: true, label: "Web off" });
   });
 
-  it("keeps the Qwen network gate visible without tool capability and only disables changes while streaming", () => {
+  it("keeps the Qwen network gate visible but locked without an advertised web capability", () => {
     expect(resolveWebSearchControl({
       modelSupportsTools: true,
       agentAvailable: true,
@@ -115,7 +115,7 @@ describe("Chat Web control", () => {
       tools: ["runtime_status"],
       preference: true,
       streaming: false
-    })).toMatchObject({ visible: true, requestEnabled: true });
+    })).toMatchObject({ visible: true, requestEnabled: false, pressed: false, disabled: true });
 
     expect(resolveWebSearchControl({
       modelSupportsTools: true,
