@@ -518,6 +518,41 @@ describe("engine arguments", () => {
     }
   });
 
+  it("keeps the M5 24 GiB Qwen reproducer on canonical Hebrus AUTO", async () => {
+    const config = createDefaultConfig(24 * 1024 ** 3);
+    config.model = {
+      id: "qwen3.6-35b-a3b",
+      path: "/models/qwen-24g-expert-major-v2.gguf"
+    };
+    config.advanced.extraArgs = [
+      "--resident",
+      "--ssd-streaming",
+      "--ssd-streaming-cache-experts 9000"
+    ].join(" ");
+    const available = new Set([
+      `${config.repository.directory}/hebrus-server`,
+      `${config.repository.directory}/ds4-server`
+    ]);
+
+    const binary = await resolveEngineBinaryPath(
+      config.repository.directory,
+      async (candidate) => available.has(candidate)
+    );
+    const args = buildEngineArguments(config, "qwen35moe");
+
+    expect(config.repository.url).toBe("https://github.com/andreaborio/hebrus.git");
+    expect(binary).toBe(`${config.repository.directory}/hebrus-server`);
+    expect(config.streaming).toMatchObject({ cacheMode: "auto", cacheSizeGb: 12 });
+    expect(args.slice(args.indexOf("--ctx"), args.indexOf("--ctx") + 2))
+      .toEqual(["--ctx", "16384"]);
+    expect(args.slice(args.indexOf("--tokens"), args.indexOf("--tokens") + 2))
+      .toEqual(["--tokens", "8192"]);
+    expect(args).not.toContain("--resident");
+    expect(args).not.toContain("--ssd-streaming");
+    expect(args).not.toContain("--ssd-streaming-cache-experts");
+    expect(args).not.toContain("9000");
+  });
+
   it("preserves manual GB and advanced exact overrides without duplicates", () => {
     const manual = createDefaultConfig(64 * 1024 ** 3);
     manual.model.id = "custom-moe";
@@ -703,7 +738,7 @@ describe("ExpertMajor v2 one-click preparation", () => {
       "qwen35moe"
     );
 
-    expect(EXPERT_MAJOR_RUNTIME_COMMIT).toBe("57acfd408a3154851a0c59be432904300abb3b6c");
+    expect(EXPERT_MAJOR_RUNTIME_COMMIT).toBe("8015bd39a8d81ebfb997e3955117f481e946a962");
     expect(selected.repository).toMatchObject({
       url: "https://github.com/andreaborio/hebrus.git",
       directory: managedDirectory,

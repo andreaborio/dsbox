@@ -66,7 +66,9 @@ export interface WebSearchControlState {
 }
 
 export function resolveWebSearchControl(options: WebSearchControlOptions): WebSearchControlState {
-  const available = options.modelSupportsTools;
+  const available = options.modelSupportsTools
+    && options.agentAvailable
+    && options.tools.includes("web_search");
   const pressed = available && options.preference;
   const state = pressed ? "on" : "off";
   const action = pressed ? "off" : "on";
@@ -78,7 +80,7 @@ export function resolveWebSearchControl(options: WebSearchControlOptions): WebSe
     label: pressed ? "Web on" : "Web off",
     ariaLabel: `Turn web search ${action}`,
     title: !available
-      ? "Web search is currently available only when Qwen tools are supported."
+      ? "Web search is locked until the runtime confirms the exact supported Qwen model."
       : pressed
       ? `Web search is ${state}. Hebrus Studio may use the network when a prompt needs current information.`
       : `Web search is ${state}. Click to turn it ${action}.`
@@ -1824,7 +1826,11 @@ export function ChatView({ snapshot, controller, onNavigate }: Props) {
                               <span className="tools-menu__icon tools-menu__icon--network"><Globe2 size={14} /></span>
                               <span className="tools-menu__copy">
                                 <span><strong>Web search</strong><ScopeBadge scope="network" /></span>
-                                <small>{qwenToolModel ? "Enabled by default for Qwen. Search queries may leave this Mac." : "Network tools are locked until a Qwen model is selected."}</small>
+                                <small>{qwenToolModel
+                                  ? webSearchControl.disabled
+                                    ? "Locked until the runtime confirms the exact supported Qwen model."
+                                    : "Enabled for the active Qwen model. Search queries may leave this Mac."
+                                  : "Network tools are locked until a supported Qwen model is selected."}</small>
                               </span>
                               <button
                                 type="button"

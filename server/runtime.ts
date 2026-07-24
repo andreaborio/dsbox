@@ -57,7 +57,7 @@ const fallbackModelVariables: Record<string, string> = {
 
 const localModelInventoryVersion = 1;
 export const EXPERT_MAJOR_RUNTIME_BRANCH = "main";
-export const EXPERT_MAJOR_RUNTIME_COMMIT = "57acfd408a3154851a0c59be432904300abb3b6c";
+export const EXPERT_MAJOR_RUNTIME_COMMIT = "8015bd39a8d81ebfb997e3955117f481e946a962";
 export const GLM52_RUNTIME_BRANCH = EXPERT_MAJOR_RUNTIME_BRANCH;
 export const GLM52_RUNTIME_COMMIT = EXPERT_MAJOR_RUNTIME_COMMIT;
 export const ENGINE_BINARY_NAMES = ["hebrus-server", "ds4-server"] as const;
@@ -420,7 +420,8 @@ const initialState: RuntimeState = {
   currentTask: null,
   gitHead: null,
   gitBranch: null,
-  readiness: "offline"
+  readiness: "offline",
+  loadedModelId: null
 };
 
 export function parseEnvironment(input: string): Record<string, string> {
@@ -576,7 +577,12 @@ export class RuntimeManager {
     if (!child) return;
     this.clearAutomaticMemoryWatchdog();
     this.stopping = true;
-    this.setState({ phase: "stopping", currentTask: "Emergency memory-pressure shutdown" });
+    this.setState({
+      phase: "stopping",
+      readiness: "offline",
+      loadedModelId: null,
+      currentTask: "Emergency memory-pressure shutdown"
+    });
     this.log("warn", "dsbox", "Safety watchdog is sending SIGTERM to protect macOS memory pressure.");
     child.kill("SIGTERM");
     let exited = await this.waitForChildExit(child, automaticSafetyTermGraceMs);
@@ -600,6 +606,7 @@ export class RuntimeManager {
     this.setState({
       phase: "error",
       readiness: "offline",
+      loadedModelId: null,
       pid: null,
       currentTask: null,
       lastError: reason,
@@ -656,6 +663,7 @@ export class RuntimeManager {
     this.setState({
       phase: "preparing",
       readiness: "offline",
+      loadedModelId: null,
       currentTask: "Selecting the model and settings",
       lastError: null
     });
@@ -666,7 +674,7 @@ export class RuntimeManager {
     if (this.state.phase === "error" && this.state.lastError === message) return;
     this.log("error", "dsbox", message);
     if (!this.engine && !this.task) {
-      this.setState({ phase: "error", readiness: "offline", currentTask: null, lastError: message });
+      this.setState({ phase: "error", readiness: "offline", loadedModelId: null, currentTask: null, lastError: message });
     }
   }
 
@@ -1820,7 +1828,13 @@ export class RuntimeManager {
       }
       const saved = await this.persistLocalModel(candidate, this.localModelId(candidate, modelId));
       this.log("success", "dsbox", `${candidate.name} selected from this Mac. No download required.`);
-      this.setState({ phase: this.state.installed ? "idle" : "uninstalled", currentTask: null, lastError: null, readiness: "offline" });
+      this.setState({
+        phase: this.state.installed ? "idle" : "uninstalled",
+        currentTask: null,
+        lastError: null,
+        readiness: "offline",
+        loadedModelId: null
+      });
       await this.refresh();
       return { ...candidate, modelId: saved.model.id, selected: true };
     } finally {
@@ -1892,6 +1906,7 @@ export class RuntimeManager {
         this.setState({
           phase: this.state.installed ? "idle" : "uninstalled",
           readiness: "offline",
+          loadedModelId: null,
           currentTask: null,
           lastError: null
         });
@@ -2325,11 +2340,13 @@ export class RuntimeManager {
     }
 
     const command = [binary, ...args];
+    const launchModelId = config.model.id;
     if (qwen35) this.log("info", "dsbox", "Qwen3.6 ExpertMajor v2 AUTO profile applied with tool-enabled chat.");
     this.log("info", "dsbox", `$ ${command.map(shellDisplayArgument).join(" ")}`);
     this.setState({
       phase: "starting",
       readiness: "loading",
+      loadedModelId: null,
       currentTask: "Loading the model and Metal graph",
       lastError: null,
       command,
@@ -2363,6 +2380,7 @@ export class RuntimeManager {
       this.setState({
         phase: normal ? "idle" : "error",
         readiness: "offline",
+        loadedModelId: null,
         pid: null,
         currentTask: null,
         lastError: message,
@@ -2380,9 +2398,11 @@ export class RuntimeManager {
         });
         if (!response.ok) return;
         const payload = await response.json() as { data?: Array<{ id?: string }> };
-        const modelId = payload.data?.[0]?.id;
-        if (modelId && modelId !== config.model.id) {
-          this.log("info", "dsbox", `Model exposed by the runtime: ${modelId}`);
+        const modelId = payload.data?.[0]?.id?.trim();
+        if (!modelId) return;
+        if (modelId !== launchModelId) {
+          this.log("error", "dsbox", `Runtime model mismatch: launched ${launchModelId}, but /v1/models exposed ${modelId}.`);
+          return;
         }
         this.log(
           "success",
@@ -2391,7 +2411,12 @@ export class RuntimeManager {
             ? `${path.basename(binary)} is ready for Qwen chat and tool-enabled Chat Completions.`
             : `${path.basename(binary)} is ready for chat and coding agents.`
         );
-        this.setState({ phase: "running", readiness: "ready", currentTask: null });
+        this.setState({
+          phase: "running",
+          readiness: "ready",
+          loadedModelId: modelId,
+          currentTask: null
+        });
         if (this.readinessTimer) clearInterval(this.readinessTimer);
         this.readinessTimer = null;
       } catch {
@@ -2408,7 +2433,12 @@ export class RuntimeManager {
     this.readinessTimer = null;
     this.clearAutomaticMemoryWatchdog();
     this.stopping = true;
-    this.setState({ phase: "stopping", currentTask: "Saving KV cache and stopping" });
+    this.setState({
+      phase: "stopping",
+      readiness: "offline",
+      loadedModelId: null,
+      currentTask: "Saving KV cache and stopping"
+    });
     this.log("info", "dsbox", "Sending SIGTERM so the engine can finish the active request and save the KV cache.");
     const child = this.engine;
     child.kill("SIGTERM");
@@ -2435,6 +2465,7 @@ export class RuntimeManager {
     this.log("warn", "dsbox", "Force stop requested; the latest KV checkpoint may not be saved.");
     this.clearAutomaticMemoryWatchdog();
     this.stopping = true;
+    this.setState({ phase: "stopping", readiness: "offline", loadedModelId: null });
     this.engine.kill("SIGKILL");
   }
 
@@ -2489,13 +2520,19 @@ export class RuntimeManager {
       await this.start();
     } catch (error) {
       if (isTaskCancelledError(error)) {
-        this.setState({ phase: this.state.installed ? "idle" : "uninstalled", readiness: "offline", currentTask: null, lastError: null });
+        this.setState({
+          phase: this.state.installed ? "idle" : "uninstalled",
+          readiness: "offline",
+          loadedModelId: null,
+          currentTask: null,
+          lastError: null
+        });
         throw error;
       }
       const message = error instanceof Error ? error.message : String(error);
       if (this.state.lastError !== message) this.log("error", "dsbox", message);
       if (!this.engine && !this.task) {
-        this.setState({ phase: "error", readiness: "offline", currentTask: null, lastError: message });
+        this.setState({ phase: "error", readiness: "offline", loadedModelId: null, currentTask: null, lastError: message });
       }
       throw error;
     }

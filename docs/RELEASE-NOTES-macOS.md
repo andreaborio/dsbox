@@ -37,6 +37,14 @@ external release gates below are complete.
   republished for the product rename.
 - Pins the Qwen3.6 35B A3B MLX affine4/group-64 ExpertMajor v2 artifact by
   revision, filename, byte size, SHA-256, and minimum runtime commit.
+- Pins that minimum to the merged Hebrus commit containing the guarded
+  3,521-expert cache ceiling and phase-pressure gate. The Hebrus Studio release
+  gate must run the reported travel prompt on a
+  physical M5 24 GiB host with thinking `medium` and `high` under Studio's
+  configured 16,384-token candidate context, record the seed, and separately
+  sustain decode beyond 1,719 generated tokens for each setting. Natural
+  responses and a subsequent request in the same server must finish with no
+  pressure `WARNING`, new swapout, watchdog `SIGTERM`, or stream failure.
 - Keeps the app text-only and the control plane loopback-only.
 
 ## Packaging status
@@ -77,7 +85,7 @@ readiness remains blocked.
 ### DSBox 0.3.2
 
 This closeout release pins Hebrus Studio to DwarfStar v0.2.0 at
-`57acfd408a3154851a0c59be432904300abb3b6c` and tightens the public model
+`8015bd39a8d81ebfb997e3955117f481e946a962` and tightens the public model
 contract without adding startup flags.
 
 ### Release hardening

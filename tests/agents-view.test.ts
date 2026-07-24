@@ -28,8 +28,8 @@ describe("Agents runtime truth", () => {
   it("requires both a running phase and ready readiness", () => {
     expect(resolveAgentConnectionPresentation({ phase: "running", readiness: "ready" }, true)).toMatchObject({
       state: "ready",
-      capabilityTitle: "Qwen3.6 · Agent ready",
-      capabilityBadge: "Tools",
+      capabilityTitle: "Qwen3.6 · Runtime ready",
+      capabilityBadge: "Online",
       actionLabel: "Check gateway"
     });
     expect(resolveAgentConnectionPresentation({ phase: "idle", readiness: "ready" }, true).state).toBe("offline");

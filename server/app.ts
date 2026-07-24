@@ -14,8 +14,8 @@ import { ModelCatalog } from "./catalog.js";
 import { ModelDownloadError, ModelDownloadManager } from "./model-downloads.js";
 import { CONTENT_SECURITY_POLICY } from "./security.js";
 import { assertTextOnlyInput, UnsupportedInputModalityError } from "./text-only.js";
+import { handleAgentChat, qwenWebSearchEnabled, resolveAgentCapabilities } from "./agent.js";
 import { searchWeb } from "./web-search.js";
-import { handleAgentChat, resolveAgentCapabilities } from "./agent.js";
 
 export interface AppServices {
   store: ConfigStore;
@@ -549,11 +549,38 @@ export function createApp(services: AppServices) {
       response.status(403).json({ code: "web_search_blocked", error: "Web search is disabled for this request" });
       return;
     }
+    const state = services.runtime.getState();
+    const modelId = services.store.get().model.id;
+    if (!qwenWebSearchEnabled(
+      state.loadedModelId,
+      modelId,
+      state.phase === "running" && state.readiness === "ready"
+    )) {
+      response.status(409).json({
+        code: "web_search_model_not_enabled",
+        error: "Web search is currently enabled only for the active Qwen3.6 model."
+      });
+      return;
+    }
     const controller = new AbortController();
     const abort = () => controller.abort();
     request.once("aborted", abort);
     response.once("close", abort);
     try {
+      // Recheck immediately before egress so a model switch closes the gate.
+      const currentState = services.runtime.getState();
+      const currentModelId = services.store.get().model.id;
+      if (!qwenWebSearchEnabled(
+        currentState.loadedModelId,
+        currentModelId,
+        currentState.phase === "running" && currentState.readiness === "ready"
+      )) {
+        response.status(409).json({
+          code: "web_search_model_not_enabled",
+          error: "The active model changed before web search could start."
+        });
+        return;
+      }
       response.json(await searchWeb(String(request.body?.query ?? ""), globalThis.fetch, controller.signal));
     } catch (error) {
       if (controller.signal.aborted) return;

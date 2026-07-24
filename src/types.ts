@@ -80,6 +80,7 @@ export interface RuntimeState {
   gitHead: string | null;
   gitBranch: string | null;
   readiness: "offline" | "loading" | "ready";
+  loadedModelId: string | null;
 }
 
 export interface MetricSample {

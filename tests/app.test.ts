@@ -79,7 +79,7 @@ describe("Hebrus Studio API", () => {
     await request(createApp(services)).post("/api/runtime/start").expect(403);
   });
 
-  it("blocks web-search egress unless the request carries the explicit gate", async () => {
+  it("blocks web-search egress without consent or an active Qwen runtime", async () => {
     const externalFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
       '<a class="result-link" href="https://example.com">Example</a><td class="result-snippet">Current result</td>',
       { status: 200 }
@@ -94,12 +94,41 @@ describe("Hebrus Studio API", () => {
       expect(blocked.body).toMatchObject({ code: "web_search_blocked" });
       expect(externalFetch).not.toHaveBeenCalled();
 
-      const allowed = await request(app)
+      const unqualified = await request(app)
+        .post("/api/skills/web-search")
+        .set("x-dsbox-control", "1")
+        .send({ query: "current example", allow_web_search: true })
+        .expect(409);
+      expect(unqualified.body).toMatchObject({ code: "web_search_model_not_enabled" });
+      expect(externalFetch).not.toHaveBeenCalled();
+    } finally {
+      externalFetch.mockRestore();
+    }
+  });
+
+  it("allows explicitly consented web search for the active Qwen runtime", async () => {
+    const config = services.store.get();
+    config.model.id = "qwen3.6-35b-a3b";
+    await services.store.set(config);
+    const state = services.runtime.getState();
+    vi.spyOn(services.runtime, "getState").mockReturnValue({
+      ...state,
+      phase: "running",
+      readiness: "ready",
+      loadedModelId: "qwen3.6-35b-a3b",
+      pid: 1234
+    });
+    const externalFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      '<a class="result-link" href="https://example.com">Example</a><td class="result-snippet">Current result</td>',
+      { status: 200 }
+    ));
+    try {
+      const response = await request(createApp(services))
         .post("/api/skills/web-search")
         .set("x-dsbox-control", "1")
         .send({ query: "current example", allow_web_search: true })
         .expect(200);
-      expect(allowed.body.results[0]).toMatchObject({ title: "Example", url: "https://example.com/" });
+      expect(response.body.results[0]).toMatchObject({ title: "Example", url: "https://example.com/" });
       expect(externalFetch).toHaveBeenCalledOnce();
     } finally {
       externalFetch.mockRestore();

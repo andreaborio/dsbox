@@ -58,10 +58,10 @@ export function resolveAgentConnectionPresentation(
   if (state === "ready") {
     return {
       state,
-      capabilityTitle: `${runtimeName} · Agent ready`,
-      capabilityBadge: "Tools",
+      capabilityTitle: `${runtimeName} · Runtime ready`,
+      capabilityBadge: "Online",
       capabilityDescription: isQwen
-        ? "The active runtime supports OpenAI-compatible /v1/chat/completions with streaming, tools, tool_choice, and multiple tool calls. Responses API and Anthropic Messages are not exposed."
+        ? "The model is online. Hebrus Studio verifies tool calling separately; network tools stay locked unless the runtime confirms the exact supported Qwen model."
         : "The local gateway is ready for compatible coding agents.",
       actionLabel: isQwen ? "Check gateway" : "Test connection"
     };

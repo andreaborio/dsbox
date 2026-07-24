@@ -9,6 +9,7 @@ import { searchWeb } from "./web-search.js";
 
 const CAPABILITY_VERSION = 1 as const;
 const AGENT_EVENT_VERSION = 1 as const;
+const QWEN_WEB_SEARCH_MODEL_ID = "qwen3.6-35b-a3b";
 export const MAX_AGENT_STEPS = 8;
 const MAX_TOOL_CALLS_PER_TURN = 8;
 const MAX_TOOL_CALLS_PER_RUN = 24;
@@ -250,12 +251,41 @@ function modelTools(allowWebSearch: boolean, includeHistoricalWebSearch = false)
   }));
 }
 
-function publicTools(): AgentCapabilities["tools"] {
-  return toolDefinitions.map((tool) => ({
+function publicTools(webSearchQualified = false): AgentCapabilities["tools"] {
+  return toolDefinitions.filter((tool) => webSearchQualified || tool.name !== "web_search").map((tool) => ({
     name: tool.name,
     description: tool.description,
     inputSchema: structuredClone(tool.inputSchema)
   }));
+}
+
+export function qwenWebSearchEnabled(
+  runtimeModelId: string | null,
+  selectedModelId: string,
+  toolCalling: boolean
+): boolean {
+  return toolCalling
+    && runtimeModelId === QWEN_WEB_SEARCH_MODEL_ID
+    && selectedModelId === QWEN_WEB_SEARCH_MODEL_ID;
+}
+
+function authoritativeQwenRuntime(services: AgentServices): boolean {
+  const state = services.runtime.getState();
+  return qwenWebSearchEnabled(
+    state.loadedModelId,
+    services.store.get().model.id,
+    state.phase === "running" && state.readiness === "ready"
+  );
+}
+
+function requireAuthoritativeQwenRuntime(services: AgentServices): void {
+  if (!authoritativeQwenRuntime(services)) {
+    throw new AgentError(
+      "agent_model_not_enabled",
+      "Agent tools require the selected Qwen3.6 model to be confirmed as loaded by the active runtime.",
+      false
+    );
+  }
 }
 
 async function readResponseTextBounded(response: globalThis.Response, limit: number): Promise<string> {
@@ -395,6 +425,7 @@ function capabilityCacheKey(services: AgentServices): string {
     phase: state.phase,
     pid: state.pid,
     gitHead: state.gitHead,
+    loadedModelId: state.loadedModelId,
     selectedModel: config.model.id,
     host: config.server.internalHost,
     port: config.server.internalPort
@@ -442,11 +473,19 @@ export async function resolveAgentCapabilities(
         const models = Array.isArray(payload.data)
           ? payload.data.map(asRecord).filter((model): model is RuntimeModel & Record<string, unknown> => Boolean(model))
           : [];
-        const configured = models.find((model) => model.id === config.model.id);
-        const active = configured ?? models[0] ?? null;
+        const active = models[0] ?? null;
         runtimeModelId = typeof active?.id === "string" ? active.id : null;
-        const metadataSupport = active ? supportFromModelMetadata(active) : null;
-        support = metadataSupport ?? (runtimeModelId
+        const identityMatches = runtimeModelId !== null
+          && runtimeModelId === state.loadedModelId
+          && runtimeModelId === config.model.id;
+        const metadataSupport = identityMatches && active ? supportFromModelMetadata(active) : null;
+        support = !identityMatches
+          ? {
+              status: "unknown",
+              source: "runtime_models_error",
+              detail: "The selected, loaded, and currently exposed model identities do not match."
+            }
+          : metadataSupport ?? (runtimeModelId
           ? await probeToolSupport(fetcher, internalBaseUrl(services), runtimeModelId, signal)
           : {
               status: "unknown",
@@ -464,7 +503,12 @@ export async function resolveAgentCapabilities(
     }
   }
 
-  const toolCalling = state.readiness === "ready" && support.status === "supported";
+  const toolCalling = qwenWebSearchEnabled(
+    state.loadedModelId,
+    config.model.id,
+    state.phase === "running" && state.readiness === "ready" && support.status === "supported"
+  );
+  const webSearchEnabled = qwenWebSearchEnabled(runtimeModelId, config.model.id, toolCalling);
   const value: AgentCapabilities = {
     version: CAPABILITY_VERSION,
     observedAt: new Date().toISOString(),
@@ -484,7 +528,9 @@ export async function resolveAgentCapabilities(
       maxSteps: MAX_AGENT_STEPS
     },
     evidence: support,
-    tools: publicTools()
+    // Temporary product policy: expose network search only for the active
+    // Qwen3.6 profile. DeepSeek and unknown model identities remain closed.
+    tools: publicTools(webSearchEnabled)
   };
   capabilityCache.set(services, {
     key,
@@ -604,6 +650,7 @@ async function executeTool(
   const signal = AbortSignal.any([parentSignal, controller.signal]);
   try {
     if (name === "web_search") {
+      requireAuthoritativeQwenRuntime(services);
       const args = webSearchSchema.parse(input);
       return await searchWeb(args.query, (url, init) => fetcher(url, init), signal);
     }
@@ -917,6 +964,17 @@ export async function handleAgentChat(
     });
     return;
   }
+  if (input.allow_web_search && !capabilities.tools.some((tool) => tool.name === "web_search")) {
+    response.status(409).json({
+      error: {
+        code: "web_search_model_not_enabled",
+        message: "Web search is currently enabled only for the active Qwen3.6 model.",
+        retryable: false
+      },
+      capabilities
+    });
+    return;
+  }
   const requestedModel = input.model;
   if (capabilities.model.id
       && requestedModel
@@ -986,6 +1044,7 @@ export async function handleAgentChat(
   const seenCallIds = new Set<string>();
   try {
     while (!controller.signal.aborted) {
+      requireAuthoritativeQwenRuntime(services);
       step += 1;
       updateActivity(services, "prefill", runId, startedAt);
       const upstreamBody: Record<string, unknown> = {
